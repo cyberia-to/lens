@@ -21,13 +21,15 @@ three operations. commit is O(N). open produces a proof. verify checks the proof
 
 ## five lenses
 
-| lens | algebra | field | spec |
-|------|---------|-------|------|
-| [[brakedown]] | [[nebu]] (+ nebu²/³/⁴) | F_p (+ extensions) | [[brakedown]] |
-| [[binius]] | [[kuro]] | F₂ tower | [[binius]] |
-| [[ring]] | [[jali]] | R_q | [[ring]] |
-| [[isogeny]] | [[genies]] | F_q | [[isogeny]] |
-| [[tropical]] | [[trop]] | (min,+) | [[tropical]] |
+| algebra | field | construction | spec |
+|---------|-------|-------------|------|
+| [[nebu]] (+ nebu²/³/⁴) | F_p (+ extensions) | expander-graph codes (Brakedown) | [[nebu]] |
+| [[kuro]] | F₂ tower | binary Reed-Solomon (Binius) | [[kuro]] |
+| [[jali]] | R_q | NTT-batched expander codes | [[jali]] |
+| [[trop]] | (min,+) | witness-verify via nebu lens | [[trop]] |
+| [[genies]] | F_q | expander codes over F_q | [[genies]] |
+
+files named by algebra, not by construction. the construction (Brakedown, Binius) is an implementation detail inside each spec.
 
 ## three roles
 

@@ -31,11 +31,11 @@ lens is consumed by three components:
 ## five lenses
 
 ```
-brakedown/    nebu lens (F_p, expander-graph codes, Merkle-free)
-binius/       kuro lens (F₂ tower, binary Reed-Solomon)
-ring/         jali lens (R_q, NTT batching, automorphisms)
-isogeny/      genies lens (F_q, Brakedown over isogeny field)
-tropical/     trop lens (min,+, witness-verify via Brakedown)
+nebu/         F_p lens (expander-graph codes, Brakedown construction)
+kuro/         F₂ lens (binary Reed-Solomon, Binius construction)
+jali/         R_q lens (NTT-batched expander codes)
+trop/         (min,+) lens (witness-verify via nebu lens)
+genies/       F_q lens (expander codes over isogeny field)
 ```
 
 ## companion repos
