@@ -28,7 +28,7 @@ three operations. commit is O(N). open produces a proof. verify checks the proof
 |------|---------|-------|----------|------------|-------------|
 | [[expander-pcs\|Brakedown]] | [[nebu]] (+ nebu², nebu³, nebu⁴) | F_p (+ extensions) | expander-graph linear code | ~1.3 KiB | ~660 F_p ops |
 | [[binary-pcs\|Binius]] | [[kuro]] | F₂ tower | binary Reed-Solomon | workload-dependent | ~660 F₂ ops |
-| [[ring-pcs\|Ring-aware]] | [[jali]] | R_q | NTT-batched Brakedown | ~1.3 KiB (batched) | ring-structured |
+| [[ring-pcs\|Ikat]] | [[jali]] | R_q | NTT-batched Brakedown | ~1.3 KiB (batched) | ring-structured |
 | [[isogeny-pcs\|Isogeny]] | [[genies]] | F_q | Brakedown over F_q | ~1.3 KiB (wider) | ~660 F_q ops |
 | [[tropical-pcs\|Tropical]] | [[trop]] | (min,+) | witness-verify via Brakedown | witness-proportional | dual certificate |
 
@@ -46,4 +46,4 @@ the lens serves three roles — all using the same interface:
 
 one interface. five lenses. three roles.
 
-see [[expander-pcs]] for the Brakedown lens. see [[binary-pcs]] for the Binius lens. see [[ring-pcs]] for the Ring-aware lens. see [[isogeny-pcs]] for the Isogeny lens. see [[tropical-pcs]] for the Tropical lens. see [[accumulator]] for how all five fold into one object.
+see [[expander-pcs]] for the Brakedown lens. see [[binary-pcs]] for the Binius lens. see [[ring-pcs]] for the Ikat lens. see [[isogeny-pcs]] for the Isogeny lens. see [[tropical-pcs]] for the Tropical lens. see [[accumulator]] for how all five fold into one object.

@@ -19,7 +19,7 @@ zheng
 ├── Hash:         hemera                      (one hash, universal)
 ├── PCS₁:         Brakedown (Goldilocks)      (arithmetic workloads)
 ├── PCS₂:         Binius (F₂ tower)           (binary workloads)
-├── PCS₃:         Ring-aware (R_q)            (FHE/lattice workloads) ← this
+├── PCS₃:         Ikat (R_q)            (FHE/lattice workloads) ← this
 ├── PCS₄:         Isogeny (F_q)              (privacy workloads)
 └── PCS₅:         Tropical (min,+)           (optimization workloads)
 ```
