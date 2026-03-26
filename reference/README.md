@@ -23,13 +23,13 @@ three operations. commit is O(N). open produces a proof. verify checks the proof
 
 | algebra | field | construction | spec |
 |---------|-------|-------------|------|
-| [[nebu]] (+ nebu²/³/⁴) | F_p (+ extensions) | expander-graph codes (Brakedown) | [[nebu]] |
-| [[kuro]] | F₂ tower | binary Reed-Solomon (Binius) | [[kuro]] |
-| [[jali]] | R_q | NTT-batched expander codes | [[jali]] |
-| [[trop]] | (min,+) | witness-verify via nebu lens | [[trop]] |
-| [[genies]] | F_q | expander codes over F_q | [[genies]] |
+| F_p (+ extensions) | [[Goldilocks field]] | expander-graph codes (Brakedown) | [[field]] |
+| F₂ tower | binary | binary Reed-Solomon (Binius) | [[binary]] |
+| R_q | polynomial ring | NTT-batched expander codes | [[ring]] |
+| (min,+) | tropical semiring | witness-verify via field lens | [[tropical]] |
+| F_q | isogeny curves | expander codes over F_q | [[isogeny]] |
 
-files named by algebra, not by construction. the construction (Brakedown, Binius) is an implementation detail inside each spec.
+files named by algebra (the math), not by implementation repo (nebu, kuro, etc.).
 
 ## three roles
 
