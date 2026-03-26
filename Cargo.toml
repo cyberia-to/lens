@@ -1,0 +1,19 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "lens"
+version = "0.1.0"
+edition = "2024"
+description = "polynomial commitment: five lenses for five algebras"
+license = "Cyber"
+
+[dependencies]
+nebu = { path = "../nebu/rs" }
+hemera = { package = "cyber-hemera", path = "../hemera/rs" }
+kuro = { path = "../kuro/rs" }
+jali = { path = "../jali/rs" }
+trop = { path = "../trop/rs" }
+genies = { path = "../genies/rs" }
