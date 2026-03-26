@@ -40,18 +40,22 @@ genies/       F_q lens (expander codes over isogeny field)
 
 ## companion repos
 
-| repo | path | role |
-|------|------|------|
-| nebu | `~/git/nebu/` | Goldilocks field arithmetic |
-| hemera | `~/git/hemera/` | hash function (commitment binding) |
-| kuro | `~/git/kuro/` | F₂ tower arithmetic |
+### arithmetics (lens depends on — one per algebra)
+
+| repo | path | algebra |
+|------|------|---------|
+| nebu | `~/git/nebu/` | F_p scalar + extensions |
+| kuro | `~/git/kuro/` | F₂ binary tower |
 | jali | `~/git/jali/` | R_q polynomial ring |
-| trop | `~/git/trop/` | tropical semiring |
-| genies | `~/git/genies/` | isogeny group action |
-| lens | `~/git/lens/` | polynomial commitment (this repo) |
-| nox | `~/git/nox/` | VM (consumes lens for noun identity) |
-| zheng | `~/git/zheng/` | proof system (consumes lens for proof commitment) |
-| bbg | `~/git/bbg/` | authenticated state (consumes lens for state root) |
+| trop | `~/git/trop/` | (min,+) tropical semiring |
+| genies | `~/git/genies/` | F_q isogeny group action |
+
+### architecture (the five-layer stack)
+
+```
+hemera (identity)  → lens (commitment)  → nox (execution) → zheng (verification) → bbg (state)
+~/git/hemera/        ~/git/lens/ (this)    ~/git/nox/         ~/git/zheng/            ~/git/bbg/
+```
 
 ## do not touch zones
 
