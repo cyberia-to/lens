@@ -60,5 +60,5 @@ hemera (identity)  → lens (commitment)  → nox (execution) → zheng (verific
 ## do not touch zones
 
 - `Cargo.toml` dependency versions — discuss before changing
-- `reference/` — canonical spec, change there first then propagate
+- `specs/` — canonical spec, change there first then propagate
 - Lens trait interface — requires cross-repo coordination (nox + zheng + bbg)
