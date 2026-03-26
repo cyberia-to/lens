@@ -19,17 +19,29 @@ trait Lens<F: Field> {
 
 three operations. commit is O(N). open produces a proof. verify checks the proof. all transparent (no trusted setup), all post-quantum. see [[trait]] for the full specification.
 
+## naming convention
+
+every algebra has five names at different layers:
+
+| layer | meaning | example |
+|-------|---------|---------|
+| domain (adjective) | mathematical modifier | scalar, binary, polynomial, tropical, isogeny |
+| algebra (noun) | mathematical object | field, tower, ring, semiring, curves |
+| impl (repo) | concrete library | nebu, kuro, jali, trop, genies |
+| construction (scheme) | commitment construction | Brakedown, Binius, Ikat, Assayer, Porphyry |
+| full name | domain + algebra | scalar field, binary tower, polynomial ring, tropical semiring, isogeny curves |
+
+lens files are named `domain-algebra.md` (full name). construction names are inside files. impl repos are dependencies.
+
 ## five lenses
 
-| algebra | field | construction | spec |
-|---------|-------|-------------|------|
-| F_p (+ extensions) | [[Goldilocks field]] | expander-graph codes (Brakedown) | [[field]] |
-| F₂ tower | binary | binary Reed-Solomon (Binius) | [[binary]] |
-| R_q | polynomial ring | NTT-batched expander codes | [[ring]] |
-| (min,+) | tropical semiring | witness-verify via field lens | [[tropical]] |
-| F_q | isogeny curves | expander codes over F_q | [[isogeny]] |
-
-files named by algebra (the math), not by implementation repo (nebu, kuro, etc.).
+| domain | algebra | full name | construction | impl | spec |
+|--------|---------|-----------|-------------|------|------|
+| scalar | field | scalar field | Brakedown (expander-graph codes over F_p) | [[nebu]] | [[scalar-field]] |
+| binary | tower | binary tower | Binius (binary Reed-Solomon over F₂) | [[kuro]] | [[binary-tower]] |
+| polynomial | ring | polynomial ring | Ikat (NTT-batched, structure IS the pattern) | [[jali]] | [[polynomial-ring]] |
+| tropical | semiring | tropical semiring | Assayer (witness-verify via dual certificate) | [[trop]] | [[tropical-semiring]] |
+| isogeny | curves | isogeny curves | Porphyry (expander codes over deep field F_q) | [[genies]] | [[isogeny-curves]] |
 
 ## three roles
 
@@ -51,9 +63,17 @@ zheng (proof commitment via Lens.commit)
 bbg (state commitment via Lens.commit)
 ```
 
-lens depends on hemera for commitment binding (Merkle trees, Fiat-Shamir). lens depends on arithmetic repos (nebu, kuro, jali, trop, genies) for field operations per backend.
+### arithmetics (lens depends on — one per algebra)
 
-## consumers
+| impl | algebra | provides |
+|------|---------|----------|
+| nebu | scalar field | F_p arithmetic + extensions (Fp2, Fp3, Fp4) |
+| kuro | binary tower | F₂ tower arithmetic (F₂ → F₂¹²⁸) |
+| jali | polynomial ring | R_q = F_p[x]/(x^n+1) arithmetic |
+| trop | tropical semiring | (min,+) semiring arithmetic |
+| genies | isogeny curves | F_q arithmetic + group action |
+
+### consumers
 
 | consumer | what it uses | how |
 |----------|-------------|-----|
