@@ -1,0 +1,139 @@
+// ---
+// tags: trop, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  Tropical eigenvalue (minimum mean cycle weight).
+//
+//  The tropical eigenvalue of a matrix A is
+//    lambda = min over all elementary cycles C of (weight(C) / |C|).
+//
+//  Uses Karp's algorithm:
+//    1. Compute D[k][v] = min-weight k-edge walk from source 0 to v, k = 0..n.
+//    2. lambda = min_v max_{0 <= k < n} (D[n][v] - D[k][v]) / (n - k).
+//
+//  Returns the floor of lambda as a U32, or INF if acyclic.
+
+module trop.eigenvalue
+
+use trop.element.{INF, Tropical, add, mul, is_inf, from_u32}
+use trop.matrix.{MAX_N, TropMatrix, get}
+
+/// Maximum dimension for eigenvalue computation.
+/// D table is (MAX_N+1) x MAX_N = 65 * 64 = 4160 entries.
+const D_ROWS: U32 = 65
+
+/// Compute the tropical eigenvalue (minimum mean cycle weight).
+///
+/// Returns INF if the graph is acyclic (no cycles).
+/// Otherwise returns floor(lambda) where lambda is the minimum
+/// mean cycle weight.
+///
+/// Uses Karp's algorithm: O(n^3).
+pub fn eigenvalue(a: TropMatrix) -> U32 {
+    let n: U32 = a.n
+    if n == 0 {
+        return INF
+    }
+
+    // D[k][v] = min weight of a k-edge walk from vertex 0 to vertex v.
+    // Layout: d[k * MAX_N + v], k in 0..n+1, v in 0..n.
+    let mut d: [U32; 4160] = [INF; 4160]
+
+    // D[0][0] = 0 (tropical one = weight zero)
+    d[0] = 0
+
+    // Fill D table: D[k+1][w] = min over v of (D[k][v] + A[v][w])
+    for k in 0..64 {
+        if k < n {
+            for v in 0..64 {
+                if v < n {
+                    let dkv: Tropical = from_u32(d[k * MAX_N + v])
+                    if is_inf(dkv) == false {
+                        for w in 0..64 {
+                            if w < n {
+                                let edge: Tropical = get(a, v, w)
+                                let candidate: Tropical = mul(dkv, edge)
+                                let idx: U32 = (k + 1) * MAX_N + w
+                                let current: Tropical = from_u32(d[idx])
+                                d[idx] = add(current, candidate).val
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Karp's formula:
+    // lambda = min_v max_{k<n} (D[n][v] - D[k][v]) / (n - k)
+    //
+    // We track the best rational best_num / best_den.
+    // Cross-multiply to compare: a/b < c/d iff a*d < b*c.
+    let mut best_num: U32 = INF
+    let mut best_den: U32 = 1
+    let mut found: U32 = 0
+
+    for v in 0..64 {
+        if v < n {
+            let dnv: U32 = d[n * MAX_N + v]
+            if dnv != INF {
+                // For this v, find max_{k<n} (D[n][v] - D[k][v]) / (n - k)
+                let mut worst_num: U32 = 0
+                let mut worst_den: U32 = 1
+                let mut v_valid: U32 = 0
+
+                for k in 0..64 {
+                    if k < n {
+                        let dkv: U32 = d[k * MAX_N + v]
+                        if dkv != INF {
+                            if dnv >= dkv {
+                                let num: U32 = dnv - dkv
+                                let den: U32 = n - k
+
+                                // Check if num/den > worst_num/worst_den
+                                // i.e. num * worst_den > worst_num * den
+                                if v_valid == 0 {
+                                    worst_num = num
+                                    worst_den = den
+                                    v_valid = 1
+                                } else {
+                                    let lhs: U32 = num * worst_den
+                                    let rhs: U32 = worst_num * den
+                                    if lhs > rhs {
+                                        worst_num = num
+                                        worst_den = den
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if v_valid == 1 {
+                    // Check if worst_num/worst_den < best_num/best_den
+                    if found == 0 {
+                        best_num = worst_num
+                        best_den = worst_den
+                        found = 1
+                    } else {
+                        let lhs: U32 = worst_num * best_den
+                        let rhs: U32 = best_num * worst_den
+                        if lhs < rhs {
+                            best_num = worst_num
+                            best_den = worst_den
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if found == 0 {
+        return INF
+    }
+
+    // Return floor(best_num / best_den)
+    best_num / best_den
+}

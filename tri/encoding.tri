@@ -1,0 +1,62 @@
+// ---
+// tags: trop, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  U32 <-> Tropical serialization utilities.
+//
+//  Tropical elements are stored as raw U32 values.
+//  INF (4294967295) encodes +infinity (tropical zero).
+//  0 encodes tropical one (multiplicative identity).
+
+module trop.encoding
+
+use trop.element.{INF, Tropical, from_u32, is_inf}
+
+/// Encode a Tropical element to a U32 for serialization.
+pub fn encode(t: Tropical) -> U32 {
+    t.val
+}
+
+/// Decode a U32 into a Tropical element.
+pub fn decode(v: U32) -> Tropical {
+    from_u32(v)
+}
+
+/// Encode a finite value, returning INF if the input equals the sentinel.
+/// This is identity — included for explicit documentation in circuits.
+pub fn encode_finite(v: U32) -> U32 {
+    v
+}
+
+/// Decode and check finiteness. Returns 1 if finite, 0 if infinity.
+pub fn is_finite_u32(v: U32) -> U32 {
+    if v == INF {
+        0
+    } else {
+        1
+    }
+}
+
+/// Batch encode: copy n Tropical values from an array to raw U32 output.
+pub fn batch_encode(src: [Tropical; 64], n: U32) -> [U32; 64] {
+    let mut dst: [U32; 64] = [INF; 64]
+    for i in 0..64 {
+        if i < n {
+            dst[i] = src[i].val
+        }
+    }
+    dst
+}
+
+/// Batch decode: copy n raw U32 values into Tropical elements.
+pub fn batch_decode(src: [U32; 64], n: U32) -> [Tropical; 64] {
+    let mut dst: [Tropical; 64] = [Tropical { val: INF }; 64]
+    for i in 0..64 {
+        if i < n {
+            dst[i] = from_u32(src[i])
+        }
+    }
+    dst
+}

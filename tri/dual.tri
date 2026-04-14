@@ -1,0 +1,91 @@
+// ---
+// tags: trop, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  Max-plus (dual tropical) semiring.
+//
+//  The max-plus semiring (max, +):
+//    - Addition: a + b = max(a, b)
+//    - Multiplication: a * b = a + b (ordinary, saturating)
+//    - Additive identity (ZERO): 0 representing -inf
+//    - Multiplicative identity (ONE): value 0 encoded as 1
+//
+//  Encoding: MaxPlus(0) = -inf. MaxPlus(v) for v >= 1 represents value (v - 1).
+
+module trop.dual
+
+/// Sentinel for -infinity (additive identity for max).
+pub const NEG_INF: U32 = 0
+
+/// A max-plus semiring element.
+/// val == 0 is -inf (additive identity).
+/// val >= 1 represents the value (val - 1).
+pub struct MaxPlus {
+    val: U32
+}
+
+/// Construct a MaxPlus element representing the value v.
+/// v must be < 4294967295 (U32 max is reserved for encoding headroom).
+pub fn from_val(v: U32) -> MaxPlus {
+    MaxPlus { val: v + 1 }
+}
+
+/// Extract the represented value. Returns NEG_INF sentinel (4294967295) if -inf.
+pub fn to_val(m: MaxPlus) -> U32 {
+    if m.val == 0 {
+        4294967295
+    } else {
+        m.val - 1
+    }
+}
+
+/// Check whether this is -inf.
+pub fn is_neg_inf(m: MaxPlus) -> bool {
+    m.val == 0
+}
+
+/// Check whether this is finite.
+pub fn is_finite(m: MaxPlus) -> bool {
+    m.val != 0
+}
+
+/// Max-plus addition: max(a, b).
+pub fn add(a: MaxPlus, b: MaxPlus) -> MaxPlus {
+    if a.val > b.val {
+        a
+    } else {
+        b
+    }
+}
+
+/// Max-plus multiplication: a + b (with -inf absorbing).
+/// Internal encoding: result.val = a.val + b.val - 1.
+pub fn mul(a: MaxPlus, b: MaxPlus) -> MaxPlus {
+    if a.val == 0 {
+        MaxPlus { val: 0 }
+    } else if b.val == 0 {
+        MaxPlus { val: 0 }
+    } else {
+        // Decoded values: (a.val - 1) + (b.val - 1) = a.val + b.val - 2
+        // Re-encode: a.val + b.val - 2 + 1 = a.val + b.val - 1
+        let sum: U32 = a.val + b.val
+        // Overflow check: if sum wrapped, it will be less than either operand
+        if sum < a.val {
+            MaxPlus { val: 4294967295 }
+        } else {
+            MaxPlus { val: sum - 1 }
+        }
+    }
+}
+
+/// Max-plus zero: -inf (identity for max).
+pub fn zero() -> MaxPlus {
+    MaxPlus { val: 0 }
+}
+
+/// Max-plus one: represents value 0 (identity for addition).
+pub fn one() -> MaxPlus {
+    MaxPlus { val: 1 }
+}

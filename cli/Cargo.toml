@@ -1,0 +1,10 @@
+[package]
+name = "trop-cli"
+version = "0.1.0"
+edition = "2024"
+description = "CLI for tropical semiring operations"
+license = "LicenseRef-Cyber"
+
+[dependencies]
+trop = { path = "../rs" }
+trop-wgsl = { path = "../wgsl" }
