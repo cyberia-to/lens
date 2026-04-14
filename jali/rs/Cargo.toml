@@ -14,6 +14,7 @@ rust-version.workspace = true
 keywords = ["polynomial-ring", "ntt", "fhe", "crypto"]
 categories = ["cryptography", "no-std::no-alloc"]
 readme = "../README.md"
+exclude = ["../specs/", "../docs/", "../CLAUDE.md"]
 
 [lib]
 name = "jali"

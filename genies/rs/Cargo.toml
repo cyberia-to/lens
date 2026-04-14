@@ -9,6 +9,7 @@ rust-version.workspace = true
 keywords = ["isogeny", "csidh", "post-quantum", "crypto"]
 categories = ["cryptography", "no-std::no-alloc"]
 readme = "../README.md"
+exclude = ["../specs/", "../docs/", "../CLAUDE.md"]
 
 [dependencies]
 

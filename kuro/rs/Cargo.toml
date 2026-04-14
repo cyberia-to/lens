@@ -9,6 +9,7 @@ rust-version.workspace = true
 keywords = ["binary-field", "tower", "zk", "crypto"]
 categories = ["cryptography", "no-std::no-alloc"]
 readme = "../README.md"
+exclude = ["../specs/", "../docs/", "../CLAUDE.md"]
 
 [lib]
 name = "kuro"

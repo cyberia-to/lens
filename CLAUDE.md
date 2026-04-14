@@ -38,23 +38,25 @@ tropical-semiring/   Assayer      (witness-verify via dual certificate, impl: tr
 isogeny-curves/      Porphyry     (expander codes over deep field F_q, impl: genies)
 ```
 
-## companion repos
+## workspace crates
 
-### arithmetics (lens depends on — one per algebra)
+### arithmetics (subcrates — one per algebra)
 
-| repo | path | algebra |
-|------|------|---------|
-| nebu | `~/git/nebu/` | F_p scalar + extensions |
-| kuro | `~/git/kuro/` | F₂ binary tower |
-| jali | `~/git/jali/` | R_q polynomial ring |
-| trop | `~/git/trop/` | (min,+) tropical semiring |
-| genies | `~/git/genies/` | F_q isogeny group action |
+| crate | path | crates.io | algebra |
+|-------|------|-----------|---------|
+| nebu | `nebu/rs/` | cyb-nebu | F_p scalar + extensions |
+| kuro | `kuro/rs/` | cyb-kuro | F₂ binary tower |
+| jali | `jali/rs/` | cyb-jali | R_q polynomial ring |
+| trop | `trop/rs/` | cyb-trop | (min,+) tropical semiring |
+| genies | `genies/rs/` | cyb-genies | F_q isogeny group action |
 
-### architecture (the five-layer stack)
+each also has `wgsl/` (GPU backend) and `cli/` (command-line tool) subcrates.
+
+### external repos (the five-layer stack)
 
 ```
 hemera (identity)  → lens (commitment)  → nox (execution) → zheng (verification) → bbg (state)
-~/git/hemera/        ~/git/lens/ (this)    ~/git/nox/         ~/git/zheng/            ~/git/bbg/
+~/git/hemera/        this repo             ~/git/nox/         ~/git/zheng/            ~/git/bbg/
 ```
 
 ## do not touch zones
