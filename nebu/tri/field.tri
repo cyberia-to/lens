@@ -1,0 +1,84 @@
+// ---
+// tags: nebu, trident
+// crystal-type: source
+// crystal-domain: comp
+// ---
+// Goldilocks prime field (p = 2^64 - 2^32 + 1).
+//
+// In Trident, Field IS Goldilocks natively. These wrappers provide
+// the explicit nebu API for consistency with Rust/WASM targets.
+
+module nebu.field
+
+// -- Constants ---------------------------------------------------------------
+
+pub const ZERO: Field = 0;
+pub const ONE: Field = 1;
+pub const NEG_ONE: Field = sub(0, 1);
+
+// -- Core arithmetic (thin wrappers around native ops) -----------------------
+
+#[pure]
+pub fn add(a: Field, b: Field) -> Field {
+    a + b
+}
+
+#[pure]
+pub fn field_sub(a: Field, b: Field) -> Field {
+    sub(a, b)
+}
+
+#[pure]
+pub fn mul(a: Field, b: Field) -> Field {
+    a * b
+}
+
+#[pure]
+pub fn field_neg(a: Field) -> Field {
+    neg(a)
+}
+
+#[pure]
+pub fn field_inv(a: Field) -> Field {
+    inv(a)
+}
+
+#[pure]
+pub fn square(a: Field) -> Field {
+    a * a
+}
+
+// -- Derived operations ------------------------------------------------------
+
+/// Poseidon2 S-box: a^7 in 4 multiplications.
+#[pure]
+pub fn pow7(a: Field) -> Field {
+    let x2: Field = a * a;
+    let x3: Field = x2 * a;
+    let x4: Field = x2 * x2;
+    x3 * x4
+}
+
+/// General exponentiation by square-and-multiply.
+/// Bounded to 32 bits (U32 exponent).
+#[pure]
+pub fn exp(base: Field, e: U32) -> Field {
+    let mut result: Field = 1;
+    let mut b: Field = base;
+    let mut bits: U32 = e;
+    for _i in 0..32 bounded 32 {
+        if bits & 1 == 1 {
+            result = result * b;
+        }
+        b = b * b;
+        let pair: (U32, U32) = bits /% 2;
+        bits = pair.0;
+    }
+    result
+}
+
+/// Check if a field element is zero.
+#[pure]
+pub fn is_zero(a: Field) -> bool {
+    a == 0
+}

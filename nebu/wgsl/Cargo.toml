@@ -1,0 +1,15 @@
+# ---
+# tags: nebu, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "nebu-wgsl"
+version = "0.1.0"
+edition = "2024"
+description = "GPU backend for nebu — Goldilocks field via wgpu compute shaders"
+
+[dependencies]
+nebu = { path = "../rs" }
+wgpu = "24"
+pollster = "0.4"
