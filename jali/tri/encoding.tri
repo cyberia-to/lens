@@ -1,0 +1,59 @@
+// ---
+// tags: jali, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  Ring element encoding: conversion between RingElement and raw Field arrays.
+//
+//  In Trident, Field IS Goldilocks, so encoding is trivial -- a ring
+//  element is already an array of Field elements. These helpers provide
+//  a clean interface for packing/unpacking and for converting between
+//  coefficient slices and the RingElement struct.
+
+module jali.encoding
+
+use jali.ring.{RingElement}
+
+/// Extract the coefficient array from a ring element.
+pub fn to_array(elem: RingElement) -> [Field; 1024] {
+    elem.coeffs
+}
+
+/// Construct a ring element from a coefficient array.
+pub fn from_array(coeffs: [Field; 1024]) -> RingElement {
+    RingElement { coeffs: coeffs }
+}
+
+/// Pack the first `count` coefficients from a ring element into a
+/// destination array, zeroing the rest. Useful for extracting a
+/// message polynomial that occupies only part of the ring.
+pub fn pack_partial(elem: RingElement, count: U32) -> [Field; 1024] {
+    let mut out: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        if i < count {
+            out[i] = elem.coeffs[i]
+        }
+    }
+    out
+}
+
+/// Embed a short array (up to 1024 elements) into a ring element,
+/// padding with zeros. The prover supplies `count` via the call site.
+pub fn embed(values: [Field; 1024], count: U32) -> RingElement {
+    let mut coeffs: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        if i < count {
+            coeffs[i] = values[i]
+        }
+    }
+    RingElement { coeffs: coeffs }
+}
+
+/// Assert two ring elements are equal (all 1024 coefficients match).
+/// Useful as a verification constraint in proof circuits.
+pub fn assert_eq(a: RingElement, b: RingElement) {
+    for i in 0..1024 {
+        assert(a.coeffs[i] == b.coeffs[i])
+    }
+}

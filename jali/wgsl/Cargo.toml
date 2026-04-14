@@ -1,0 +1,11 @@
+[package]
+name = "jali-wgsl"
+version = "0.1.0"
+edition = "2021"
+description = "GPU backend for jali — polynomial ring NTT via wgpu compute shaders"
+
+[dependencies]
+jali = { path = "../rs" }
+nebu = { path = "../../nebu/rs" }
+wgpu = "24"
+pollster = "0.4"
