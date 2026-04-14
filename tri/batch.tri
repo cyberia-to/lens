@@ -1,0 +1,88 @@
+// ---
+// tags: nebu, trident
+// crystal-type: source
+// crystal-domain: comp
+// ---
+// Batch inversion via Montgomery's trick.
+//
+// Inverts N elements with 1 inversion + 3(N-1) multiplications.
+
+module nebu.batch
+
+// -- Fixed-size batch inverse (N = 256) --------------------------------------
+
+/// Batch-invert 256 field elements. All inputs must be non-zero.
+/// Uses Montgomery's trick: 1 inversion + 3*(N-1) multiplications.
+pub fn batch_inv_256(input: [Field; 256]) -> [Field; 256] {
+    let mut prefix: [Field; 256] = [0; 256];
+    let mut result: [Field; 256] = [0; 256];
+
+    // Phase 1: prefix products
+    prefix[0] = input[0];
+    for i in 1..256 bounded 255 {
+        prefix[i] = prefix[i - 1] * input[i];
+    }
+
+    // Phase 2: invert the total product
+    let mut inv_acc: Field = inv(prefix[255]);
+
+    // Phase 3: propagate inverses backward
+    for i_rev in 0..255 bounded 255 {
+        let i: U32 = 255 - i_rev;
+        result[i] = inv_acc * prefix[i - 1];
+        inv_acc = inv_acc * input[i];
+    }
+    result[0] = inv_acc;
+
+    result
+}
+
+/// Batch-invert 64 field elements. All inputs must be non-zero.
+pub fn batch_inv_64(input: [Field; 64]) -> [Field; 64] {
+    let mut prefix: [Field; 64] = [0; 64];
+    let mut result: [Field; 64] = [0; 64];
+
+    // Phase 1: prefix products
+    prefix[0] = input[0];
+    for i in 1..64 bounded 63 {
+        prefix[i] = prefix[i - 1] * input[i];
+    }
+
+    // Phase 2: invert the total product
+    let mut inv_acc: Field = inv(prefix[63]);
+
+    // Phase 3: propagate inverses backward
+    for i_rev in 0..63 bounded 63 {
+        let i: U32 = 63 - i_rev;
+        result[i] = inv_acc * prefix[i - 1];
+        inv_acc = inv_acc * input[i];
+    }
+    result[0] = inv_acc;
+
+    result
+}
+
+/// Batch-invert 16 field elements. All inputs must be non-zero.
+pub fn batch_inv_16(input: [Field; 16]) -> [Field; 16] {
+    let mut prefix: [Field; 16] = [0; 16];
+    let mut result: [Field; 16] = [0; 16];
+
+    // Phase 1: prefix products
+    prefix[0] = input[0];
+    for i in 1..16 bounded 15 {
+        prefix[i] = prefix[i - 1] * input[i];
+    }
+
+    // Phase 2: invert the total product
+    let mut inv_acc: Field = inv(prefix[15]);
+
+    // Phase 3: propagate inverses backward
+    for i_rev in 0..15 bounded 15 {
+        let i: U32 = 15 - i_rev;
+        result[i] = inv_acc * prefix[i - 1];
+        inv_acc = inv_acc * input[i];
+    }
+    result[0] = inv_acc;
+
+    result
+}

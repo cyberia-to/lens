@@ -1,0 +1,17 @@
+# ---
+# tags: nebu, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "nebu-cli"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "nebu"
+path = "src/main.rs"
+
+[dependencies]
+nebu = { path = "../rs" }
+nebu-wgsl = { path = "../wgsl" }

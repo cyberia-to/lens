@@ -1,0 +1,58 @@
+// ---
+// tags: nebu, trident
+// crystal-type: source
+// crystal-domain: comp
+// ---
+// Field <-> U32 pair encoding.
+//
+// A Goldilocks field element fits in 64 bits = two U32 limbs.
+// lo = lower 32 bits, hi = upper 32 bits (little-endian).
+
+module nebu.encoding
+
+// -- Field <-> U32 pair conversion -------------------------------------------
+
+/// Split a field element into (lo, hi) U32 limbs.
+/// lo = bits [0..31], hi = bits [32..63].
+#[pure]
+pub fn to_u32_pair(a: Field) -> (U32, U32) {
+    split(a)
+}
+
+/// Reconstruct a field element from (lo, hi) U32 limbs.
+/// result = lo + hi * 2^32.
+#[pure]
+pub fn from_u32_pair(lo: U32, hi: U32) -> Field {
+    as_field(lo) + as_field(hi) * as_field(4294967296)
+}
+
+/// Extract the lower 32 bits of a field element.
+#[pure]
+pub fn lo32(a: Field) -> U32 {
+    let pair: (U32, U32) = split(a);
+    pair.0
+}
+
+/// Extract the upper 32 bits of a field element.
+#[pure]
+pub fn hi32(a: Field) -> U32 {
+    let pair: (U32, U32) = split(a);
+    pair.1
+}
+
+/// Pack four U32 values into two field elements (for compact storage).
+/// Returns (f0, f1) where f0 = a + b*2^32, f1 = c + d*2^32.
+#[pure]
+pub fn pack_4xu32(a: U32, b: U32, c: U32, d: U32) -> (Field, Field) {
+    let f0: Field = from_u32_pair(a, b);
+    let f1: Field = from_u32_pair(c, d);
+    (f0, f1)
+}
+
+/// Unpack two field elements into four U32 values.
+#[pure]
+pub fn unpack_4xu32(f0: Field, f1: Field) -> (U32, U32, U32, U32) {
+    let p0: (U32, U32) = split(f0);
+    let p1: (U32, U32) = split(f1);
+    (p0.0, p0.1, p1.0, p1.1)
+}

@@ -1,0 +1,14 @@
+# ---
+# tags: nebu, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "nebu"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
