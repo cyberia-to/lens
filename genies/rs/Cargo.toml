@@ -1,0 +1,15 @@
+[package]
+name = "genies"
+version = "0.1.0"
+edition = "2024"
+description = "Commutative group action over supersingular isogenies for post-quantum privacy"
+license = "LicenseRef-Cyber"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "genies"
+harness = false
