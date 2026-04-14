@@ -1,0 +1,136 @@
+// Checked inversion utilities for F₂ tower fields.
+//
+// Tower-recursive inversion reduces inversion in GF(2^{2k}) to one
+// inversion in GF(2^k) plus a few sub-field multiplications. The
+// recursion bottoms out at F₂ where 1⁻¹ = 1.
+//
+// These functions return a pair (result, ok) where ok = 1 means the
+// input was nonzero and result holds the inverse, ok = 0 means the
+// input was zero and result is zeroed out.
+
+module kuro.inv
+
+use kuro.tower.*
+
+pub struct InvResult128 { result: F2_128, ok: U32 }
+pub struct InvResult64  { result: F2_64,  ok: U32 }
+pub struct InvResult32  { result: F2_32,  ok: U32 }
+pub struct InvResult16  { result: F2_16,  ok: U32 }
+pub struct InvResult8   { result: F2_8,   ok: U32 }
+pub struct InvResult4   { result: F2_4,   ok: U32 }
+pub struct InvResult2   { result: F2_2,   ok: U32 }
+
+/// Checked inversion for F₂¹²⁸. Returns ok = 0 for zero input.
+pub fn checked_inv_128(a: F2_128) -> InvResult128 {
+    let z: U32 = f2_128_is_zero(a);
+    // z == 0 means a is zero; z != 0 means a is nonzero
+    // When a is zero, return zero result with ok = 0
+    // When a is nonzero, return inv(a) with ok = 1
+    // Since we cannot branch, we compute inv unconditionally on nonzero.
+    // Caller must ensure a != 0 before using result, or check ok flag.
+    let is_nz: U32 = 1u32 & (z | (z >> 1u32) | (z >> 2u32) | (z >> 3u32)
+        | (z >> 4u32) | (z >> 5u32) | (z >> 6u32) | (z >> 7u32)
+        | (z >> 8u32) | (z >> 9u32) | (z >> 10u32) | (z >> 11u32)
+        | (z >> 12u32) | (z >> 13u32) | (z >> 14u32) | (z >> 15u32)
+        | (z >> 16u32) | (z >> 17u32) | (z >> 18u32) | (z >> 19u32)
+        | (z >> 20u32) | (z >> 21u32) | (z >> 22u32) | (z >> 23u32)
+        | (z >> 24u32) | (z >> 25u32) | (z >> 26u32) | (z >> 27u32)
+        | (z >> 28u32) | (z >> 29u32) | (z >> 30u32) | (z >> 31u32));
+    // If a is zero, is_nz = 0; if nonzero, is_nz = 1
+    // We need a safe fallback: replace zero input with ONE before inverting
+    let safe_a: F2_128 = F2_128 {
+        w0: a.w0 | (1u32 ^ is_nz),  // set bit 0 when a is zero
+        w1: a.w1,
+        w2: a.w2,
+        w3: a.w3,
+    };
+    let inv_val: F2_128 = f2_128_inv(safe_a);
+    // Mask result to zero when input was zero
+    let m: U32 = 0u32 - is_nz; // 0xFFFFFFFF when nonzero, 0 when zero
+    InvResult128 {
+        result: F2_128 { w0: inv_val.w0 & m, w1: inv_val.w1 & m,
+                          w2: inv_val.w2 & m, w3: inv_val.w3 & m },
+        ok: is_nz,
+    }
+}
+
+/// Checked inversion for F₂⁶⁴.
+pub fn checked_inv_64(a: F2_64) -> InvResult64 {
+    let z: U32 = a.lo | a.hi;
+    let is_nz: U32 = 1u32 & (z | (z >> 1u32) | (z >> 2u32) | (z >> 3u32)
+        | (z >> 4u32) | (z >> 5u32) | (z >> 6u32) | (z >> 7u32)
+        | (z >> 8u32) | (z >> 9u32) | (z >> 10u32) | (z >> 11u32)
+        | (z >> 12u32) | (z >> 13u32) | (z >> 14u32) | (z >> 15u32)
+        | (z >> 16u32) | (z >> 17u32) | (z >> 18u32) | (z >> 19u32)
+        | (z >> 20u32) | (z >> 21u32) | (z >> 22u32) | (z >> 23u32)
+        | (z >> 24u32) | (z >> 25u32) | (z >> 26u32) | (z >> 27u32)
+        | (z >> 28u32) | (z >> 29u32) | (z >> 30u32) | (z >> 31u32));
+    let safe_a: F2_64 = F2_64 { lo: a.lo | (1u32 ^ is_nz), hi: a.hi };
+    let inv_val: F2_64 = f2_64_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult64 {
+        result: F2_64 { lo: inv_val.lo & m, hi: inv_val.hi & m },
+        ok: is_nz,
+    }
+}
+
+/// Checked inversion for F₂³².
+pub fn checked_inv_32(a: F2_32) -> InvResult32 {
+    let z: U32 = a.val;
+    let is_nz: U32 = 1u32 & (z | (z >> 1u32) | (z >> 2u32) | (z >> 3u32)
+        | (z >> 4u32) | (z >> 5u32) | (z >> 6u32) | (z >> 7u32)
+        | (z >> 8u32) | (z >> 9u32) | (z >> 10u32) | (z >> 11u32)
+        | (z >> 12u32) | (z >> 13u32) | (z >> 14u32) | (z >> 15u32)
+        | (z >> 16u32) | (z >> 17u32) | (z >> 18u32) | (z >> 19u32)
+        | (z >> 20u32) | (z >> 21u32) | (z >> 22u32) | (z >> 23u32)
+        | (z >> 24u32) | (z >> 25u32) | (z >> 26u32) | (z >> 27u32)
+        | (z >> 28u32) | (z >> 29u32) | (z >> 30u32) | (z >> 31u32));
+    let safe_a: F2_32 = F2_32 { val: a.val | (1u32 ^ is_nz) };
+    let inv_val: F2_32 = f2_32_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult32 { result: F2_32 { val: inv_val.val & m }, ok: is_nz }
+}
+
+/// Checked inversion for F₂¹⁶.
+pub fn checked_inv_16(a: F2_16) -> InvResult16 {
+    let is_nz: U32 = 1u32 & (a.val | (a.val >> 1u32) | (a.val >> 2u32)
+        | (a.val >> 3u32) | (a.val >> 4u32) | (a.val >> 5u32)
+        | (a.val >> 6u32) | (a.val >> 7u32) | (a.val >> 8u32)
+        | (a.val >> 9u32) | (a.val >> 10u32) | (a.val >> 11u32)
+        | (a.val >> 12u32) | (a.val >> 13u32) | (a.val >> 14u32)
+        | (a.val >> 15u32));
+    let safe_a: F2_16 = F2_16 { val: a.val | (1u32 ^ is_nz) };
+    let inv_val: F2_16 = f2_16_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult16 { result: F2_16 { val: inv_val.val & m }, ok: is_nz }
+}
+
+/// Checked inversion for F₂⁸.
+pub fn checked_inv_8(a: F2_8) -> InvResult8 {
+    let is_nz: U32 = 1u32 & (a.val | (a.val >> 1u32) | (a.val >> 2u32)
+        | (a.val >> 3u32) | (a.val >> 4u32) | (a.val >> 5u32)
+        | (a.val >> 6u32) | (a.val >> 7u32));
+    let safe_a: F2_8 = F2_8 { val: a.val | (1u32 ^ is_nz) };
+    let inv_val: F2_8 = f2_8_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult8 { result: F2_8 { val: inv_val.val & m }, ok: is_nz }
+}
+
+/// Checked inversion for F₂⁴.
+pub fn checked_inv_4(a: F2_4) -> InvResult4 {
+    let is_nz: U32 = 1u32 & (a.val | (a.val >> 1u32) | (a.val >> 2u32)
+        | (a.val >> 3u32));
+    let safe_a: F2_4 = F2_4 { val: a.val | (1u32 ^ is_nz) };
+    let inv_val: F2_4 = f2_4_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult4 { result: F2_4 { val: inv_val.val & m }, ok: is_nz }
+}
+
+/// Checked inversion for F₂².
+pub fn checked_inv_2(a: F2_2) -> InvResult2 {
+    let is_nz: U32 = 1u32 & (a.val | (a.val >> 1u32));
+    let safe_a: F2_2 = F2_2 { val: a.val | (1u32 ^ is_nz) };
+    let inv_val: F2_2 = f2_2_inv(safe_a);
+    let m: U32 = 0u32 - is_nz;
+    InvResult2 { result: F2_2 { val: inv_val.val & m }, ok: is_nz }
+}

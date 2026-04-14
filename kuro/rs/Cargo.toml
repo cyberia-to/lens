@@ -1,0 +1,17 @@
+[package]
+name = "kuro"
+version = "0.1.0"
+edition = "2021"
+description = "F₂ tower field arithmetic for binary proving"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "tower"
+harness = false

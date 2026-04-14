@@ -1,0 +1,10 @@
+[package]
+name = "kuro-wgsl"
+version = "0.1.0"
+edition = "2021"
+description = "GPU backend for kuro — F₂ tower arithmetic via wgpu compute shaders"
+
+[dependencies]
+kuro = { path = "../rs" }
+wgpu = "24"
+pollster = "0.4"

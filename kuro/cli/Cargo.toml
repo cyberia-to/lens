@@ -1,0 +1,12 @@
+[package]
+name = "kuro-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kuro"
+path = "src/main.rs"
+
+[dependencies]
+kuro = { path = "../rs" }
+kuro-wgsl = { path = "../wgsl" }
