@@ -1,0 +1,127 @@
+// ---
+// tags: jali, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  Polynomial ring R_q = F_p[x]/(x^n+1) over Goldilocks.
+//
+//  Ring elements are arrays of native Field elements (Field IS Goldilocks).
+//  All coefficient arithmetic is native field ops -- no modular reduction
+//  wrappers needed. This is the most natural Trident algebra: the proving
+//  field and the ring scalar field are identical.
+//
+//  Fixed dimension n = 1024 (compile-time constant arrays).
+
+module jali.ring
+
+use jali.ntt.{forward, inverse}
+
+/// Ring dimension.
+pub const N: U32 = 1024
+
+/// A polynomial in R_q = F_p[x]/(x^1024 + 1).
+/// Coefficients stored as a fixed-size array of Field elements.
+/// coeffs[i] is the coefficient of x^i.
+pub struct RingElement {
+    coeffs: [Field; 1024]
+}
+
+/// The zero polynomial (additive identity).
+pub fn zero() -> RingElement {
+    RingElement { coeffs: [0; 1024] }
+}
+
+/// The one polynomial (multiplicative identity): 1 + 0*x + 0*x^2 + ...
+pub fn one() -> RingElement {
+    let mut c: [Field; 1024] = [0; 1024]
+    c[0] = 1
+    RingElement { coeffs: c }
+}
+
+/// Construct a ring element from a raw coefficient array.
+pub fn from_coeffs(c: [Field; 1024]) -> RingElement {
+    RingElement { coeffs: c }
+}
+
+/// Coefficient-wise addition: (a + b) in R_q.
+pub fn add(a: RingElement, b: RingElement) -> RingElement {
+    let mut result: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        result[i] = a.coeffs[i] + b.coeffs[i]
+    }
+    RingElement { coeffs: result }
+}
+
+/// Coefficient-wise subtraction: (a - b) in R_q.
+pub fn sub(a: RingElement, b: RingElement) -> RingElement {
+    let mut result: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        result[i] = a.coeffs[i] + field.neg(b.coeffs[i])
+    }
+    RingElement { coeffs: result }
+}
+
+/// Negation: -a in R_q.
+pub fn neg(a: RingElement) -> RingElement {
+    let mut result: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        result[i] = field.neg(a.coeffs[i])
+    }
+    RingElement { coeffs: result }
+}
+
+/// Scalar multiplication: s * a, multiply every coefficient by s.
+pub fn scalar_mul(a: RingElement, s: Field) -> RingElement {
+    let mut result: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        result[i] = a.coeffs[i] * s
+    }
+    RingElement { coeffs: result }
+}
+
+/// Polynomial multiplication in R_q via negacyclic NTT.
+/// Both operands must be in coefficient form.
+/// Computes: forward NTT -> pointwise mul -> inverse NTT.
+pub fn mul(a: RingElement, b: RingElement) -> RingElement {
+    let a_ntt: [Field; 1024] = forward(a.coeffs)
+    let b_ntt: [Field; 1024] = forward(b.coeffs)
+    let mut c_ntt: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        c_ntt[i] = a_ntt[i] * b_ntt[i]
+    }
+    let result: [Field; 1024] = inverse(c_ntt)
+    RingElement { coeffs: result }
+}
+
+/// Pointwise (Hadamard) multiplication of two coefficient arrays.
+/// Used when both operands are already in NTT domain.
+pub fn pointwise_mul(a: RingElement, b: RingElement) -> RingElement {
+    let mut result: [Field; 1024] = [0; 1024]
+    for i in 0..1024 {
+        result[i] = a.coeffs[i] * b.coeffs[i]
+    }
+    RingElement { coeffs: result }
+}
+
+/// Check if a ring element is the zero polynomial.
+pub fn is_zero(a: RingElement) -> bool {
+    let mut all_zero: bool = true
+    for i in 0..1024 {
+        if a.coeffs[i] != 0 {
+            all_zero = false
+        }
+    }
+    all_zero
+}
+
+/// Ring equality: compare all 1024 coefficients.
+pub fn eq(a: RingElement, b: RingElement) -> bool {
+    let mut equal: bool = true
+    for i in 0..1024 {
+        if a.coeffs[i] != b.coeffs[i] {
+            equal = false
+        }
+    }
+    equal
+}

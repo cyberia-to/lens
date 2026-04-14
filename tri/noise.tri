@@ -1,0 +1,62 @@
+// ---
+// tags: jali, trident
+// crystal-type: circuit
+// crystal-domain: comp
+// ---
+
+//  Noise budget tracking for lattice-based FHE schemes.
+//
+//  Tracks a log2 upper bound on noise magnitude through homomorphic
+//  operations. When the noise budget is exhausted, decryption fails.
+//  Conservative (worst-case) bounds -- never underestimates noise.
+
+module jali.noise
+
+/// Log2 upper bound on the noise magnitude.
+pub struct NoiseBudget {
+    log_bound: U32
+}
+
+/// Create a fresh noise budget with an initial bound.
+pub fn fresh(initial_bound: U32) -> NoiseBudget {
+    NoiseBudget { log_bound: initial_bound }
+}
+
+/// Noise budget after homomorphic addition.
+/// Addition roughly doubles the noise: max(a, b) + 1.
+pub fn after_add(a: NoiseBudget, b: NoiseBudget) -> NoiseBudget {
+    let max_log: U32 = if a.log_bound > b.log_bound {
+        a.log_bound
+    } else {
+        b.log_bound
+    }
+    NoiseBudget { log_bound: max_log + 1 }
+}
+
+/// Noise budget after homomorphic multiplication.
+/// Multiplication increases noise as: log(a) + log(b) + log2(n).
+/// log_n is the log2 of the ring dimension (10 for n=1024).
+pub fn after_mul(a: NoiseBudget, b: NoiseBudget, log_n: U32) -> NoiseBudget {
+    NoiseBudget { log_bound: a.log_bound + b.log_bound + log_n }
+}
+
+/// Noise budget after bootstrapping resets to a fixed noise level.
+pub fn after_bootstrap(bootstrap_noise: U32) -> NoiseBudget {
+    NoiseBudget { log_bound: bootstrap_noise }
+}
+
+/// Check whether bootstrapping is needed.
+/// Returns true if current noise meets or exceeds the maximum tolerable budget.
+pub fn needs_bootstrap(budget: NoiseBudget, max_budget: U32) -> bool {
+    budget.log_bound >= max_budget
+}
+
+/// Remaining budget before decryption failure.
+/// Returns 0 if already exceeded.
+pub fn remaining(budget: NoiseBudget, max_budget: U32) -> U32 {
+    if budget.log_bound >= max_budget {
+        0
+    } else {
+        max_budget - budget.log_bound
+    }
+}

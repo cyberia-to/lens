@@ -1,0 +1,18 @@
+# ---
+# tags: jali, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "jali-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "jali"
+path = "src/main.rs"
+
+[dependencies]
+jali = { path = "../rs" }
+jali-wgsl = { path = "../wgsl" }
+nebu = { path = "../../nebu/rs" }

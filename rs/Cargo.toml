@@ -1,0 +1,23 @@
+# ---
+# tags: jali, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "jali"
+version = "0.1.0"
+edition = "2021"
+description = "polynomial ring arithmetic R_q = F_p[x]/(x^n+1) over Goldilocks"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+nebu = { path = "../../nebu/rs" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "ring"
+harness = false
