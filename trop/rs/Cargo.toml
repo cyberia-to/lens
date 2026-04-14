@@ -1,0 +1,15 @@
+[package]
+name = "trop"
+version = "0.1.0"
+edition = "2024"
+description = "Tropical semiring arithmetic for provable optimization"
+license = "LicenseRef-Cyber"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "tropical"
+harness = false

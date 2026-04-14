@@ -1,0 +1,10 @@
+[package]
+name = "trop-wgsl"
+version = "0.1.0"
+edition = "2024"
+description = "GPU backend for trop — tropical matmul via wgpu compute shaders"
+
+[dependencies]
+trop = { path = "../rs" }
+wgpu = "24"
+pollster = "0.4"
