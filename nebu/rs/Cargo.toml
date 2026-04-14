@@ -4,11 +4,24 @@
 # crystal-domain: comp
 # ---
 [package]
-name = "nebu"
-version = "0.1.0"
-edition = "2024"
+name = "cyb-nebu"
+version.workspace = true
+edition.workspace = true
+license-file = "../../LICENSE"
+description = "Goldilocks prime field arithmetic"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["goldilocks", "finite-field", "zk", "crypto"]
+categories = ["cryptography", "no-std::no-alloc"]
+readme = "../README.md"
 
 [lib]
+name = "nebu"
 path = "lib.rs"
 
 [dependencies]
+acpu = { version = "0.2", optional = true }
+
+[features]
+default = ["fast"]
+fast = ["acpu"]

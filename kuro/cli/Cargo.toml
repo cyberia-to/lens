@@ -1,12 +1,13 @@
 [package]
 name = "kuro-cli"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+publish = false
 
 [[bin]]
 name = "kuro"
 path = "src/main.rs"
 
 [dependencies]
-kuro = { path = "../rs" }
-kuro-wgsl = { path = "../wgsl" }
+kuro.workspace = true
+kuro-wgsl.workspace = true

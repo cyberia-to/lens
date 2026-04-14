@@ -1,14 +1,19 @@
 [package]
-name = "genies"
-version = "0.1.0"
-edition = "2024"
+name = "cyb-genies"
+version.workspace = true
+edition.workspace = true
+license-file = "../../LICENSE"
 description = "Commutative group action over supersingular isogenies for post-quantum privacy"
-license = "LicenseRef-Cyber"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["isogeny", "csidh", "post-quantum", "crypto"]
+categories = ["cryptography", "no-std::no-alloc"]
+readme = "../README.md"
 
 [dependencies]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
 
 [[bench]]
 name = "genies"

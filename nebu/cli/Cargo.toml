@@ -5,13 +5,14 @@
 # ---
 [package]
 name = "nebu-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+publish = false
 
 [[bin]]
 name = "nebu"
 path = "src/main.rs"
 
 [dependencies]
-nebu = { path = "../rs" }
-nebu-wgsl = { path = "../wgsl" }
+nebu.workspace = true
+nebu-wgsl.workspace = true

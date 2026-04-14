@@ -5,14 +5,15 @@
 # ---
 [package]
 name = "jali-cli"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+publish = false
 
 [[bin]]
 name = "jali"
 path = "src/main.rs"
 
 [dependencies]
-jali = { path = "../rs" }
-jali-wgsl = { path = "../wgsl" }
-nebu = { path = "../../nebu/rs" }
+jali.workspace = true
+jali-wgsl.workspace = true
+nebu.workspace = true

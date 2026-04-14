@@ -1,14 +1,19 @@
 [package]
-name = "trop"
-version = "0.1.0"
-edition = "2024"
+name = "cyb-trop"
+version.workspace = true
+edition.workspace = true
+license-file = "../../LICENSE"
 description = "Tropical semiring arithmetic for provable optimization"
-license = "LicenseRef-Cyber"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["tropical", "semiring", "optimization", "crypto"]
+categories = ["cryptography", "no-std::no-alloc"]
+readme = "../README.md"
 
 [dependencies]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
 
 [[bench]]
 name = "tropical"

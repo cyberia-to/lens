@@ -1,0 +1,28 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "cyber-lens"
+version.workspace = true
+edition.workspace = true
+license-file = "../LICENSE"
+description = "polynomial commitment: five lenses for five algebras"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["polynomial-commitment", "zk", "crypto", "pcs"]
+categories = ["cryptography"]
+readme = "../README.md"
+
+[lib]
+name = "lens"
+path = "lib.rs"
+
+[dependencies]
+nebu.workspace = true
+kuro.workspace = true
+jali.workspace = true
+trop.workspace = true
+genies.workspace = true
+cyber-hemera.workspace = true

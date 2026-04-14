@@ -1,10 +1,11 @@
 [package]
 name = "genies-wgsl"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "GPU backend for genies — batch F_q arithmetic and isogeny computation"
+publish = false
 
 [dependencies]
-genies = { path = "../rs" }
-wgpu = "24"
-pollster = "0.4"
+genies.workspace = true
+wgpu.workspace = true
+pollster.workspace = true

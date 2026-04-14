@@ -1,10 +1,10 @@
 [package]
 name = "genies-cli"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 description = "CLI for isogeny-based cryptographic operations"
-license = "LicenseRef-Cyber"
+publish = false
 
 [dependencies]
-genies = { path = "../rs" }
-genies-wgsl = { path = "../wgsl" }
+genies.workspace = true
+genies-wgsl.workspace = true

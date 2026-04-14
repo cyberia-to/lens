@@ -3,17 +3,41 @@
 # crystal-type: source
 # crystal-domain: comp
 # ---
-[package]
-name = "lens"
+[workspace]
+resolver = "3"
+members = [
+    "src",
+    "nebu/rs", "nebu/wgsl", "nebu/cli",
+    "kuro/rs", "kuro/wgsl", "kuro/cli",
+    "jali/rs", "jali/wgsl", "jali/cli",
+    "trop/rs", "trop/wgsl", "trop/cli",
+    "genies/rs", "genies/wgsl", "genies/cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "polynomial commitment: five lenses for five algebras"
-license = "Cyber"
+license-file = "LICENSE"
+repository = "https://github.com/cyberia-to/lens"
+rust-version = "1.89"
 
-[dependencies]
-nebu = { path = "../nebu/rs" }
-hemera = { package = "cyber-hemera", path = "../hemera/rs" }
-kuro = { path = "../kuro/rs" }
-jali = { path = "../jali/rs" }
-trop = { path = "../trop/rs" }
-genies = { path = "../genies/rs" }
+[workspace.dependencies]
+# internal — package names on crates.io use cyb-/cyber- prefix,
+# workspace aliases use bare names via the `package` key
+nebu = { version = "0.1.0", path = "nebu/rs", package = "cyb-nebu" }
+kuro = { version = "0.1.0", path = "kuro/rs", package = "cyb-kuro" }
+jali = { version = "0.1.0", path = "jali/rs", package = "cyb-jali" }
+trop = { version = "0.1.0", path = "trop/rs", package = "cyb-trop" }
+genies = { version = "0.1.0", path = "genies/rs", package = "cyb-genies" }
+nebu-wgsl = { path = "nebu/wgsl" }
+kuro-wgsl = { path = "kuro/wgsl" }
+jali-wgsl = { path = "jali/wgsl" }
+trop-wgsl = { path = "trop/wgsl" }
+genies-wgsl = { path = "genies/wgsl" }
+
+# external
+cyber-hemera = "0.2"
+acpu = "0.2"
+wgpu = "24"
+pollster = "0.4"
+criterion = "0.5"
