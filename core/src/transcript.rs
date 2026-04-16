@@ -5,7 +5,7 @@
 
 use cyber_hemera::{Hash, Hasher};
 
-use crate::Field;
+use cyb_algebra_proof::Hash2Field;
 
 /// Fiat-Shamir transcript for non-interactive proofs.
 ///
@@ -44,7 +44,7 @@ impl Transcript {
     /// - Goldilocks (64-bit): take low 8 bytes, reduce mod p
     /// - F₂¹²⁸ (128-bit): take low 16 bytes
     /// - F_q (512-bit): use all available bytes
-    pub fn squeeze_field<F: Field>(&mut self) -> F {
+    pub fn squeeze_field<F: Hash2Field>(&mut self) -> F {
         let hash = self.squeeze();
         F::from_hash(hash.as_bytes())
     }

@@ -8,6 +8,7 @@
 mod transcript;
 mod types;
 
+pub use cyb_algebra_proof::Hash2Field;
 pub use transcript::Transcript;
 pub use types::{Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};
 

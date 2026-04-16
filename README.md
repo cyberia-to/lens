@@ -6,55 +6,69 @@ crystal-domain: crypto
 ---
 # lens
 
-polynomial commitment for [[cyber]]. five constructions over five algebras.
-commit to a polynomial, prove evaluations, verify without seeing the polynomial.
+polynomial commitment for [[cyber]]. five constructions over five
+[[algebra|algebras]]. commit to a polynomial, prove evaluations,
+verify without seeing the polynomial.
 
 ```
-hemera (hash) → lens (commitment) → nox (execution) → zheng (proof) → bbg (state)
+algebra (five fields) → hemera (hash) → lens (commitment) → nox → zheng → bbg
 ```
-
-lens sits between [[hemera]] (the hash function) and the three consumers:
-[[nox]] uses it for noun identity, [[zheng]] for proof commitment, [[bbg]] for state authentication.
 
 ## how it works
 
-a polynomial commitment scheme (PCS) has three operations:
+a multilinear polynomial f over ν variables has 2^ν evaluations. the prover
+commits the polynomial (one hemera hash). later, the prover can open the
+commitment at any point — proving f(r) = y without revealing f. the verifier
+checks the proof with no access to the polynomial.
 
 ```rust
-// commit: seal a polynomial into a 32-byte digest
+use cyb_lens_brakedown::*;
+use nebu::Goldilocks;
+
+// polynomial: f(x₁, x₂) with 4 evaluations
+let poly = MultilinearPoly::new(vec![
+    Goldilocks::new(1), Goldilocks::new(2),
+    Goldilocks::new(3), Goldilocks::new(4),
+]);
+
+// commit → 32 bytes
 let commitment = Brakedown::commit(&poly);
 
-// open: prove that poly(point) = value
-let proof = Brakedown::open(&poly, &point, &mut transcript);
+// open at (0, 1) → f(0,1) = 3
+let point = vec![Goldilocks::ZERO, Goldilocks::ONE];
+let value = poly.evaluate(&point);
 
-// verify: check the proof without seeing the polynomial
-assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut transcript));
+// prover generates proof
+let mut pt = Transcript::new(b"example");
+let proof = Brakedown::open(&poly, &point, &mut pt);
+
+// verifier checks (no access to polynomial)
+let mut vt = Transcript::new(b"example");
+assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut vt));
 ```
 
-the polynomial is multilinear — ν variables, 2^ν evaluations. the commitment is a hemera hash
-of the expander-encoded polynomial. the proof is a chain of tensor reductions with proximity
-queries at Fiat-Shamir-derived codeword positions.
-
-all five constructions share one trait (`Lens<F: Field>`) and one commitment format (hemera Hash).
-this allows [[zheng]] to fold proofs from different algebras into one accumulator.
+the commitment is binding (can't change the polynomial after committing) and
+the proof is sound (can't fake an evaluation). all security reduces to hemera
+collision resistance — no trusted setup, no pairings, post-quantum.
 
 ## five constructions
 
-| crate | construction | algebra | field | what it commits |
-|-------|-------------|---------|-------|----------------|
-| [cyb-lens-brakedown](brakedown/) | Brakedown | [[nebu]] | Goldilocks F_p | Margulis expander encoding + tensor decomposition |
-| [cyb-lens-binius](binius/) | Binius | [[kuro]] | F₂ tower | binary folding with hemera Merkle tree |
-| [cyb-lens-ikat](ikat/) | Ikat | [[jali]] | R_q NTT slots | ring elements → NTT → batched Brakedown |
-| [cyb-lens-assayer](assayer/) | Assayer | [[trop]] | (wrapper) | tropical witness + dual certificate → Brakedown |
-| [cyb-lens-porphyry](porphyry/) | Porphyry | [[genies]] | F_q (512-bit) | Brakedown over deep isogeny field |
+each algebra has its own optimal commitment scheme:
 
-four implement `Lens<F>` directly. Assayer is a wrapper protocol — the tropical semiring
-has no subtraction, so it packs the optimization witness as Goldilocks elements and delegates
-commitment to Brakedown.
+| construction | crate | algebra | encoding |
+|-------------|-------|---------|----------|
+| Brakedown | [cyb-lens-brakedown](brakedown/) | Goldilocks (nebu) | Margulis expander + tensor decomposition |
+| Binius | [cyb-lens-binius](binius/) | F₂ tower (kuro) | binary folding + hemera Merkle tree |
+| Ikat | [cyb-lens-ikat](ikat/) | R_q NTT slots (jali) | ring elements → NTT → batched Brakedown |
+| Assayer | [cyb-lens-assayer](assayer/) | tropical → F_p | witness + dual certificate → Brakedown |
+| Porphyry | [cyb-lens-porphyry](porphyry/) | F_q 512-bit (genies) | Brakedown over deep isogeny field |
+
+four implement `Lens<F: Field>`. Assayer wraps Brakedown — the tropical semiring
+has no subtraction, so the optimization witness is packed as Goldilocks elements.
 
 ## the trait
 
-defined in [cyb-lens-core](core/):
+from [cyb-lens-core](core/) (depends on [cyb-algebra](https://github.com/cyberia-to/algebra) for the Field trait):
 
 ```rust
 pub trait Lens<F: Field> {
@@ -66,184 +80,129 @@ pub trait Lens<F: Field> {
 }
 ```
 
-types: `Field` (scalar trait), `MultilinearPoly<F>` (evaluation table), `Commitment` (hemera Hash),
-`Opening` (Tensor / Folding / Witness variants), `Transcript` (hemera sponge for Fiat-Shamir).
+## inside each construction
 
-## five algebras
+### Brakedown
 
-| crate | algebra | what it computes | tests |
-|-------|---------|-----------------|-------|
-| [cyb-nebu](nebu/rs/) | F_p (Goldilocks, p = 2^64 - 2^32 + 1) | field arithmetic, NTT, extensions Fp2–Fp4 | 73 |
-| [cyb-kuro](kuro/rs/) | F₂ tower (F₂ → F₂¹²⁸) | Karatsuba mul, packed 128-element SIMD | 77 |
-| [cyb-jali](jali/rs/) | R_q = F_p[x]/(x^n+1) | negacyclic NTT, noise tracking, automorphisms | 70 |
-| [cyb-trop](trop/rs/) | (min, +) semiring | matrix ops, Kleene star, determinant, eigenvalue | 77 |
-| [cyb-genies](genies/rs/) | F_q (CSIDH-512, 512-bit) | Montgomery curves, isogeny walks, class group action | 55 |
+the primary construction. Margulis expander graph (algebraic, proven expansion
+via Kazhdan's property T) encodes the polynomial into a codeword. hemera hashes
+the codeword → 32-byte commitment. opening is recursive tensor decomposition:
+each round halves the polynomial using an evaluation-point coordinate. proximity
+testing at each round: 20 codeword positions (Fiat-Shamir derived) prove the
+prover has the actual codeword, not a fake.
 
-each algebra also has a `wgsl/` GPU backend (wgpu compute shaders) and a `cli/` tool.
+### Binius
 
-## usage
+binary-native. kuro's F₂¹²⁸ elements pack 128 bits per machine word. folding
+halves the polynomial using F₂¹²⁸ challenges. each round is committed via hemera
+Merkle tree with authentication paths. AND/XOR cost 1 constraint each (vs ~32 in
+F_p) — this is why binary workloads (quantized AI, comparison circuits) use Binius.
 
-```toml
-# everything — trait + all five constructions + all five algebras
-[dependencies]
-cyber-lens = "0.1"
+### Ikat
 
-# just the trait (for consumers like nox, zheng, bbg)
-[dependencies]
-cyb-lens-core = "0.1"
-
-# one specific construction
-[dependencies]
-cyb-lens-brakedown = "0.1"  # pulls in cyb-lens-core + cyb-nebu
-
-# one specific algebra (no commitment, just field arithmetic)
-[dependencies]
-cyb-nebu = "0.1"
-```
-
-### commit → open → verify
-
-```rust
-use cyb_lens_brakedown::*;
-use nebu::Goldilocks;
-
-// create a 2-variable polynomial: f(0,0)=1, f(1,0)=2, f(0,1)=3, f(1,1)=4
-let poly = MultilinearPoly::new(vec![
-    Goldilocks::new(1), Goldilocks::new(2),
-    Goldilocks::new(3), Goldilocks::new(4),
-]);
-
-// commit
-let commitment = Brakedown::commit(&poly);
-
-// evaluate at (0, 1) → f(0,1) = 3
-let point = vec![Goldilocks::ZERO, Goldilocks::ONE];
-let value = poly.evaluate(&point);
-
-// open: prover generates proof
-let mut prover_transcript = Transcript::new(b"example");
-let proof = Brakedown::open(&poly, &point, &mut prover_transcript);
-
-// verify: verifier checks proof (no access to polynomial)
-let mut verifier_transcript = Transcript::new(b"example");
-assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut verifier_transcript));
-```
-
-### Ikat ring commitment
+ring-aware. jali's R_q = F_p[x]/(x^n+1) decomposes via NTT into n independent
+Goldilocks slots. Ikat converts ring elements to NTT form, batches the slots into
+one multilinear polynomial, and commits via Brakedown. multiple ring polynomial
+multiplies share one commitment.
 
 ```rust
 use cyb_lens_ikat::Ikat;
 use jali::ring::RingElement;
 
-// create ring elements (R_q polynomials)
-let mut elem = RingElement::new(1024);
-elem.coeffs[0] = nebu::Goldilocks::new(42);
-
-// batch ring elements → NTT → single multilinear polynomial
+let elem = RingElement::new(1024);
 let (commitment, poly) = Ikat::commit_rings(&[elem]);
 ```
 
-### Assayer tropical witness
+### Assayer
+
+tropical witness-verify. optimization problems (shortest path, assignment, Viterbi,
+transport) produce a witness (the optimal solution) and a dual certificate (LP dual
+variables proving no cheaper alternative exists). Assayer packs both as Goldilocks
+elements and commits via Brakedown. verification checks three properties:
+
+1. structural validity (assignment is a legal path/matching)
+2. cost correctness (claimed cost = sum of assigned weights)
+3. dual feasibility (distance labels satisfy triangle inequality)
 
 ```rust
 use cyb_lens_assayer::*;
-use trop::Tropical;
 
-// shortest path: 0 →3→ 1 →2→ 2, cost = 5
-let witness = TropicalWitness {
-    num_vertices: 3,
-    edges: vec![
-        Edge { from: 0, to: 1, weight: Tropical::from_u64(3) },
-        Edge { from: 1, to: 2, weight: Tropical::from_u64(2) },
-    ],
-    assignment: vec![0, 1],
-    cost: Tropical::from_u64(5),
-    source: 0, target: 2,
-};
+let witness = TropicalWitness { /* shortest path solution */ };
+let cert = DualCertificate { /* distance labels */ };
 
-// dual certificate: distance labels proving optimality
-let cert = DualCertificate {
-    dual_vars: vec![Goldilocks::new(0), Goldilocks::new(3), Goldilocks::new(5)],
-    dual_objective: Goldilocks::new(5),
-};
-
-// verify: structural validity + cost correctness + dual feasibility
 assert!(Assayer::verify_tropical(&witness, &cert));
-
-// commit via Brakedown delegation
 let (commitment, poly) = Assayer::commit_witness(&witness, &cert);
 ```
 
-## workspace structure
+### Porphyry
+
+Brakedown over genies' F_q (CSIDH-512 prime, 512 bits). same expander + tensor
+structure, wider field elements (64 bytes each). privacy workloads (stealth
+addresses, VDF, blind signatures) prove natively in F_q without the 64× penalty
+of encoding 512-bit operations as Goldilocks constraints.
+
+## three consumers
+
+| consumer | what it uses lens for |
+|----------|---------------------|
+| [[nox]] | noun identity: hemera(Lens.commit(noun_poly) ‖ tag) → 32 bytes |
+| [[zheng]] | proof commitment: SuperSpartan queries Lens.open at random points |
+| [[bbg]] | state root: BBG_root = hemera(Lens.commit(state) ‖ ...) |
+
+## crates
+
+```toml
+# everything
+[dependencies]
+cyber-lens = "0.1"
+
+# just the trait (for consumers)
+[dependencies]
+cyb-lens-core = "0.1"
+
+# one construction
+[dependencies]
+cyb-lens-brakedown = "0.1"
+```
+
+| crate | what |
+|-------|------|
+| [cyb-lens-core](core/) | Lens trait, Commitment, Opening, Transcript, MultilinearPoly |
+| [cyb-lens-brakedown](brakedown/) | Margulis expander + tensor decomposition over F_p |
+| [cyb-lens-binius](binius/) | binary folding + Merkle tree over F₂ |
+| [cyb-lens-ikat](ikat/) | NTT batching → Brakedown over R_q slots |
+| [cyb-lens-assayer](assayer/) | tropical witness-verify → Brakedown delegation |
+| [cyb-lens-porphyry](porphyry/) | Brakedown over F_q (512-bit) |
+| [cyber-lens](src/) | facade: re-exports core + all five |
+
+## workspace
 
 ```
 lens/
-├── core/           cyb-lens-core         Lens trait, Field, types, Transcript
-├── brakedown/      cyb-lens-brakedown    Margulis expander + tensor decomposition
-├── binius/         cyb-lens-binius       binary folding + Merkle tree
-├── ikat/           cyb-lens-ikat         NTT batching → Brakedown
-├── assayer/        cyb-lens-assayer      tropical witness → Brakedown
-├── porphyry/       cyb-lens-porphyry     Brakedown over F_q (512-bit)
-├── src/            cyber-lens            facade re-exports everything
-├── nebu/           cyb-nebu              Goldilocks F_p arithmetic
-│   ├── rs/         core library
-│   ├── wgsl/       GPU backend
-│   └── cli/        command-line tool
-├── kuro/           cyb-kuro              F₂ binary tower
-├── jali/           cyb-jali              polynomial ring R_q
-├── trop/           cyb-trop              tropical semiring
-├── genies/         cyb-genies            isogeny curves F_q
-└── specs/          specifications
-    ├── commitment.md    complete commitment layer spec
-    ├── trait.md         Lens trait + naming conventions
-    ├── scalar-field.md  Brakedown spec
-    ├── binary-tower.md  Binius spec
-    ├── polynomial-ring.md  Ikat spec
-    ├── tropical-semiring.md  Assayer spec
-    └── isogeny-curves.md  Porphyry spec
+├── core/           cyb-lens-core         trait + types + transcript
+├── brakedown/      cyb-lens-brakedown    20 tests
+├── binius/         cyb-lens-binius       6 tests
+├── ikat/           cyb-lens-ikat         5 tests
+├── assayer/        cyb-lens-assayer      9 tests
+├── porphyry/       cyb-lens-porphyry     6 tests
+├── src/            cyber-lens            28 integration tests
+└── specs/          commitment layer spec
 ```
 
-## dependency graph
+algebraic backends live in [algebra](https://github.com/cyberia-to/algebra)
+(352 tests: nebu, kuro, jali, trop, genies).
 
-```
-         hemera
-           ↓
-      cyb-lens-core ←─── nox, zheng, bbg (consumers)
-      ↓     ↓     ↓     ↓        ↓
-  brakedown binius ikat assayer porphyry
-      ↓       ↓     ↓    ↓  ↓      ↓
-    nebu    kuro   jali trop brakedown genies
-                     ↓
-                   nebu
-```
-
-## tests
-
-426 tests across the workspace:
-
-| layer | tests |
-|-------|-------|
-| algebras (nebu, kuro, jali, trop, genies) | 352 |
-| constructions (brakedown, binius, ikat, assayer, porphyry) | 46 |
-| integration (cross-construction roundtrips, soundness) | 28 |
-| total | 426 |
+## 74 tests
 
 ```bash
-cargo test --workspace \
-  --exclude nebu-wgsl --exclude kuro-wgsl \
-  --exclude jali-wgsl --exclude trop-wgsl \
-  --exclude genies-wgsl
+cargo test --workspace
 ```
 
 ## specs
 
-the `specs/` directory contains the canonical specification:
-
-- [commitment.md](specs/commitment.md) — types, trait, opening protocol, composition interface, crate structure, security parameters
-- [trait.md](specs/trait.md) — Lens trait definition, naming conventions, dependency graph
-- per-construction specs: [scalar-field](specs/scalar-field.md), [binary-tower](specs/binary-tower.md), [polynomial-ring](specs/polynomial-ring.md), [tropical-semiring](specs/tropical-semiring.md), [isogeny-curves](specs/isogeny-curves.md)
-
-security: all security reduces to hemera (Poseidon2) collision resistance. no trusted setup, no pairings, no discrete log. post-quantum.
+- [commitment.md](specs/commitment.md) — types, trait, opening protocol, composition interface
+- [trait.md](specs/trait.md) — Lens trait, naming conventions
+- per-construction: [scalar-field](specs/scalar-field.md), [binary-tower](specs/binary-tower.md), [polynomial-ring](specs/polynomial-ring.md), [tropical-semiring](specs/tropical-semiring.md), [isogeny-curves](specs/isogeny-curves.md)
 
 ## license
 

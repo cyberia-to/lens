@@ -12,4 +12,5 @@ readme = "../README.md"
 
 [dependencies]
 cyb-algebra.workspace = true
+cyb-algebra-proof = { path = "../../algebra/proof" }
 cyber-hemera.workspace = true
