@@ -6,6 +6,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "core",
+    "brakedown", "binius", "ikat", "assayer", "porphyry",
     "src",
     "nebu/rs", "nebu/wgsl", "nebu/cli",
     "kuro/rs", "kuro/wgsl", "kuro/cli",

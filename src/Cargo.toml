@@ -21,9 +21,9 @@ name = "lens"
 path = "lib.rs"
 
 [dependencies]
-nebu.workspace = true
-kuro.workspace = true
-jali.workspace = true
-trop.workspace = true
-genies.workspace = true
-cyber-hemera.workspace = true
+cyb-lens-core = { path = "../core" }
+cyb-lens-brakedown = { path = "../brakedown" }
+cyb-lens-binius = { path = "../binius" }
+cyb-lens-ikat = { path = "../ikat" }
+cyb-lens-assayer = { path = "../assayer" }
+cyb-lens-porphyry = { path = "../porphyry" }

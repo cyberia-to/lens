@@ -1,0 +1,14 @@
+[package]
+name = "cyb-lens-brakedown"
+version.workspace = true
+edition.workspace = true
+license-file = "../LICENSE"
+description = "Brakedown polynomial commitment — expander-graph codes over Goldilocks"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["brakedown", "polynomial-commitment", "zk", "crypto"]
+categories = ["cryptography"]
+
+[dependencies]
+cyb-lens-core = { path = "../core" }
+nebu.workspace = true

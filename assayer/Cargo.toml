@@ -1,0 +1,15 @@
+[package]
+name = "cyb-lens-assayer"
+version.workspace = true
+edition.workspace = true
+license-file = "../LICENSE"
+description = "Assayer — tropical witness-verify commitment via Brakedown delegation"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["tropical", "witness-verify", "optimization", "crypto"]
+categories = ["cryptography"]
+
+[dependencies]
+cyb-lens-core = { path = "../core" }
+cyb-lens-brakedown = { path = "../brakedown" }
+trop.workspace = true
