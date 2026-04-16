@@ -11,10 +11,5 @@ categories = ["cryptography"]
 readme = "../README.md"
 
 [dependencies]
+cyb-algebra.workspace = true
 cyber-hemera.workspace = true
-nebu = { workspace = true, optional = true }
-kuro = { workspace = true, optional = true }
-genies = { workspace = true, optional = true }
-
-[features]
-default = []

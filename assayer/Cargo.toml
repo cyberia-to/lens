@@ -10,7 +10,7 @@ keywords = ["tropical", "witness-verify", "optimization", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core", features = ["nebu"] }
+cyb-lens-core = { path = "../core" }
 cyb-lens-brakedown = { path = "../brakedown" }
 nebu.workspace = true
 trop.workspace = true

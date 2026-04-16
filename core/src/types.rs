@@ -1,26 +1,9 @@
 //! Core types for polynomial commitment.
 
-use core::ops::{Add, Mul, Neg, Sub};
+// Re-export algebraic trait hierarchy from cyb-algebra
+pub use cyb_algebra::{Field, Ring, Semiring};
 
 use cyber_hemera::Hash;
-
-/// Field scalar — supports full arithmetic including subtraction and inversion.
-///
-/// Four algebras satisfy this: Goldilocks (nebu), F₂¹²⁸ (kuro),
-/// Fq (genies), and Goldilocks via NTT slots (jali).
-///
-/// Tropical (trop) is a semiring and does not satisfy Field.
-/// Assayer handles tropical commitment via delegation to Brakedown.
-pub trait Field:
-    Copy + Eq + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Neg<Output = Self>
-{
-    const ZERO: Self;
-    const ONE: Self;
-    fn inv(self) -> Self;
-    /// Derive a field element from hash output bytes.
-    /// Used by Transcript::squeeze_field for Fiat-Shamir challenges.
-    fn from_hash(bytes: &[u8]) -> Self;
-}
 
 /// A binding digest of a polynomial — a hemera hash.
 ///
@@ -68,8 +51,6 @@ impl<F: Field> MultilinearPoly<F> {
     }
 
     /// Evaluate at a point r = (r₁, ..., r_ν) via multilinear extension.
-    ///
-    /// f(r) = Σ_{x ∈ {0,1}^ν} f(x) · Π_i (x_i·r_i + (1-x_i)·(1-r_i))
     pub fn evaluate(&self, point: &[F]) -> F {
         assert_eq!(point.len(), self.num_vars);
         let mut result = F::ZERO;
@@ -77,7 +58,11 @@ impl<F: Field> MultilinearPoly<F> {
         for (i, &val) in self.evals.iter().enumerate() {
             let mut basis = F::ONE;
             for (j, &r_j) in point.iter().enumerate() {
-                let bit = if (i >> j) & 1 == 1 { r_j } else { F::ONE - r_j };
+                let bit = if (i >> j) & 1 == 1 {
+                    r_j
+                } else {
+                    F::ONE - r_j
+                };
                 basis = basis * bit;
             }
             result = result + val * basis;
@@ -87,8 +72,6 @@ impl<F: Field> MultilinearPoly<F> {
 }
 
 /// A proof that a committed polynomial evaluates to a claimed value at a point.
-///
-/// Each construction produces a structurally different proof.
 #[derive(Clone, Debug)]
 pub enum Opening {
     /// Brakedown, Ikat, Porphyry: recursive tensor decomposition
@@ -96,10 +79,6 @@ pub enum Opening {
     Tensor {
         round_commitments: Vec<Commitment>,
         final_poly: Vec<u8>,
-        /// Proximity queries: (codeword_index, codeword_value) pairs.
-        /// The verifier derives query indices from the transcript and
-        /// checks that the claimed codeword values are consistent with
-        /// the round commitments via re-encoding.
         query_responses: Vec<(usize, Vec<u8>)>,
     },
     /// Binius: folding with Merkle authentication paths.

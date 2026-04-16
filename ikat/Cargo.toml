@@ -10,7 +10,7 @@ keywords = ["ikat", "polynomial-commitment", "fhe", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core", features = ["nebu"] }
+cyb-lens-core = { path = "../core" }
 cyb-lens-brakedown = { path = "../brakedown" }
 jali.workspace = true
 nebu.workspace = true

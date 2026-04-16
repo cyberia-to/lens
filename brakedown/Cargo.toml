@@ -10,6 +10,6 @@ keywords = ["brakedown", "polynomial-commitment", "zk", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core", features = ["nebu"] }
+cyb-lens-core = { path = "../core" }
 nebu.workspace = true
 cyber-hemera.workspace = true

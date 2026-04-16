@@ -5,12 +5,11 @@
 //! for the trait; they depend on a specific construction crate only when
 //! instantiating it.
 
-mod impls;
 mod transcript;
 mod types;
 
 pub use transcript::Transcript;
-pub use types::{Commitment, Field, MultilinearPoly, Opening};
+pub use types::{Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};
 
 /// Polynomial commitment scheme — commit to a multilinear polynomial,
 /// prove evaluations, verify without seeing the polynomial.
