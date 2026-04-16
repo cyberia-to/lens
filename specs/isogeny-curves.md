@@ -2,48 +2,28 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: isogeny PCS, F_q PCS, genies PCS
+alias: isogeny lens, Porphyry, genies lens
 ---
-# isogeny PCS
+# isogeny lens (Porphyry)
 
-the F_q PCS backend for [[zheng]]. dedicated polynomial commitment over [[genies]]'s isogeny field F_q where q = 4·ℓ₁·ℓ₂·...·ℓₙ - 1. privacy primitives (stealth addresses, VDF verification, blind signatures, ring signatures) prove natively in their own field — no non-native arithmetic penalty.
+the F_q lens. dedicated polynomial commitment over [[genies]]'s isogeny field F_q where q = 4·ℓ₁·ℓ₂·...·ℓₙ - 1. privacy primitives (stealth addresses, VDF verification, blind signatures, ring signatures) prove natively in their own field — no non-native arithmetic penalty.
 
-implements the [[pcs|PCS]] trait for F_q. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash.
+implements the [[trait|Lens]] trait for F_q. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash.
 
-## architecture
+part of the five-lens architecture — see [[commitment]] for the full picture.
 
-```
-zheng
-├── IOP:          SuperSpartan + sumcheck     (field-generic, shared)
-├── Composition:  HyperNova folding           (field-generic, shared)
-├── Hash:         hemera                      (one hash, universal)
-├── PCS₁:         Brakedown (Goldilocks)      (arithmetic workloads)
-├── PCS₂:         Binius (F₂ tower)           (binary workloads)
-├── PCS₃:         Ikat (R_q)            (FHE/lattice workloads)
-├── PCS₄:         Isogeny (F_q)              (privacy workloads)
-└── PCS₅:         Tropical (min,+)           (optimization workloads)
-```
+see [[commitment]] §2 for the Lens trait definition.
 
-zheng exposes a PCS trait. all four backends implement it:
-
-```
-trait PCS<F: Field> {
-    fn commit(poly: &MultilinearPoly<F>) -> Commitment;
-    fn open(poly: &MultilinearPoly<F>, point: &[F]) -> Opening;
-    fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening) -> bool;
-}
-```
-
-## why dedicated PCS, not non-native
+## why dedicated lens, not non-native
 
 genies uses primes q that may be 512-bit or larger (CSIDH-512: 512-bit prime). encoding F_q operations as F_p constraints costs (512/64)² = 64× per operation. a single isogeny walk involves thousands of F_q operations. 64× × thousands = unacceptable.
 
-dedicated PCS₄ over F_q: each F_q operation = 1 constraint. same approach as Binius for F₂ — match the PCS to the algebra.
+dedicated Porphyry lens over F_q: each F_q operation = 1 constraint. same approach as Binius for F₂ — match the lens to the algebra.
 
 | approach | cost per F_q mul | isogeny walk (1000 muls) |
 |----------|-----------------|------------------------|
 | non-native in F_p | ~64 F_p constraints | ~64,000 constraints |
-| dedicated PCS₄ | 1 F_q constraint | ~1,000 constraints |
+| dedicated Porphyry | 1 F_q constraint | ~1,000 constraints |
 
 ## F_q field structure
 
@@ -70,7 +50,7 @@ commit(poly over F_q):
   1. encode evaluations via expander-graph linear code over F_q
   2. build hemera Merkle tree over encoded rows
      (hemera hashes bytes — field element serialization is transparent)
-  3. root = hemera hash (same 32-byte format as all PCS backends)
+  3. root = hemera hash (same 32-byte format as all lens backends)
 ```
 
 hemera operates on byte sequences. F_q elements serialize to bytes. same Merkle tree, same commitment format, same Fiat-Shamir transcript.
@@ -93,7 +73,7 @@ verify(commitment, point, value, proof):
 
 ## cost comparison
 
-| operation | F_p (Brakedown) | F_q (Isogeny PCS) | notes |
+| operation | F_p (Brakedown) | F_q (Porphyry) | notes |
 |---|---|---|---|
 | F_p multiply | 1 constraint | N/A | nebu workload |
 | F_q multiply | ~64 constraints (non-native) | 1 constraint | genies workload |
@@ -116,7 +96,7 @@ verify(commitment, point, value, proof):
 genies sub-traces fold into the shared F_p accumulator via HyperNova:
 
 ```
-nox<F_q> sub-trace → zheng<Isogeny PCS> proof
+nox<F_q> sub-trace → zheng<Porphyry> proof
                            ↓
             HyperNova fold into shared F_p accumulator
             cost: ~766 F_p constraints per boundary crossing
@@ -133,7 +113,7 @@ universal_ccs = {
 }
 ```
 
-one accumulator covers all four algebras. the decider runs once in F_p.
+one accumulator covers all five algebras. the decider runs once in F_p.
 
 ## recursion boundary
 
@@ -158,7 +138,7 @@ a separate repo **genies** provides F_q arithmetic:
 - no hemera dependency, no nebu dependency
 - pure isogeny field algebra
 
-zheng depends on genies for the Isogeny PCS backend. hemera remains the only hash throughout.
+zheng depends on genies for the Porphyry backend. hemera remains the only hash throughout.
 
 ## open questions
 
@@ -167,4 +147,4 @@ zheng depends on genies for the Isogeny PCS backend. hemera remains the only has
 3. **proof size**: Brakedown over F_q produces larger proofs (field elements are bigger). target: < 10 KiB per isogeny proof
 4. **cross-field soundness**: HyperNova folding F_p and F_q instances into same accumulator — security reduction
 
-see [[polynomial-commitment]] for the Brakedown PCS, [[binary-pcs]] for the F₂ backend, [[recursion]] for cross-algebra folding
+see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[tropical-semiring]] for Assayer, [[commitment]] for the full lens architecture

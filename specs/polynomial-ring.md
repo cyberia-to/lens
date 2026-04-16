@@ -2,43 +2,31 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: ring PCS, R_q PCS, jali PCS, ring-aware PCS
+alias: ring lens, Ikat, jali lens
 ---
-# ring PCS
+# ring lens (Ikat)
 
-the R_q PCS backend for [[zheng]]. polynomial ring workloads (FHE bootstrapping, lattice KEM, convolution) prove natively through their ring structure. the cyclotomic ring R_q = F_p[x]/(x^n+1) decomposes via NTT into n copies of F_p — ring-aware proving exploits this decomposition for batch commitments, automorphism arguments, and running noise accumulators.
+the R_q lens for [[zheng]]. polynomial ring workloads (FHE bootstrapping, lattice KEM, convolution) prove natively through their ring structure. the cyclotomic ring R_q = F_p[x]/(x^n+1) decomposes via NTT into n copies of F_p — ring-aware proving exploits this decomposition for batch commitments, automorphism arguments, and running noise accumulators.
 
-implements the [[pcs|PCS]] trait with ring-structured constraint encodings over [[jali]]'s R_q arithmetic. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. [[hemera]] remains the only hash.
+implements the [[trait|Lens]] trait with ring-structured constraint encodings over [[jali]]'s R_q arithmetic. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. [[hemera]] remains the only hash.
 
 ## architecture
 
-```
-zheng
-├── IOP:          SuperSpartan + sumcheck     (field-generic, shared)
-├── Composition:  HyperNova folding           (field-generic, shared)
-├── Hash:         hemera                      (one hash, universal)
-├── PCS₁:         Brakedown (Goldilocks)      (arithmetic workloads)
-├── PCS₂:         Binius (F₂ tower)           (binary workloads)
-├── PCS₃:         Ikat (R_q)            (FHE/lattice workloads) ← this
-├── PCS₄:         Isogeny (F_q)              (privacy workloads)
-└── PCS₅:         Tropical (min,+)           (optimization workloads)
-```
-
-zheng exposes a PCS trait. all five backends implement it:
+part of the five-lens architecture — see [[commitment]] for the full picture.
 
 ```
-trait PCS<F: Field> {
+trait Lens<F: Field> {
     fn commit(poly: &MultilinearPoly<F>) -> Commitment;
     fn open(poly: &MultilinearPoly<F>, point: &[F]) -> Opening;
     fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening) -> bool;
 }
 ```
 
-## why ring-aware PCS
+## why ring-aware lens
 
 a generic SuperSpartan prover treats each NTT multiply as independent degree-2 constraints. it doesn't see that blind rotation performs n structured polynomial multiplies over the same ring. the 3072× cost gap (one R_q multiply = 3n F_p multiplies at n=1024) makes generic proving prohibitive for FHE workloads.
 
-ring-aware PCS exploits three R_q structural properties:
+ring-aware lens exploits three R_q structural properties:
 
 ### NTT batching
 
@@ -93,14 +81,14 @@ savings:     ~64nm / (30m) = ~2n per operation
 
 TFHE bootstrapping refreshes ciphertext noise. four phases, each with a different algebraic character:
 
-| phase | operation | algebra | PCS |
+| phase | operation | algebra | lens |
 |---|---|---|---|
-| gadget decomposition | bit-split coefficients | F₂ (binary) | PCS₂ (Binius) |
-| blind rotation | n polynomial multiplies in R_q | R_q (ring) | PCS₃ (this) |
-| key switching | matrix × vector over F_p | F_p (matrix) | PCS₁ (Brakedown) |
-| modulus switching | rescale coefficients | F_p (field) | PCS₁ (Brakedown) |
+| gadget decomposition | bit-split coefficients | F₂ (binary) | Binius |
+| blind rotation | n polynomial multiplies in R_q | R_q (ring) | Ikat (this) |
+| key switching | matrix × vector over F_p | F_p (matrix) | Brakedown |
+| modulus switching | rescale coefficients | F_p (field) | Brakedown |
 
-bootstrapping is a cross-algebra computation. each phase proves via the appropriate PCS backend. HyperNova folds across boundaries.
+bootstrapping is a cross-algebra computation. each phase proves via the appropriate lens backend. HyperNova folds across boundaries.
 
 ## jet library
 
@@ -119,7 +107,7 @@ key_switch(ct, ks_key, k):
 
 gadget_decomp(ct, base, levels):
   recognize binary decomposition of coefficients
-  delegate to Binius PCS for binary sub-trace
+  delegate to Binius for binary sub-trace
   cost: O(N × levels) binary constraints (1 each in F₂)
 
 noise_track(noise_bound, operation):
@@ -131,18 +119,18 @@ noise_track(noise_bound, operation):
 ## cross-algebra bootstrapping flow
 
 ```
-step 1: gadget_decomp(ct)          → PCS₂ (F₂, Binius)
+step 1: gadget_decomp(ct)          → Binius (F₂)
          fold into accumulator       ~766 F_p constraints
 
-step 2: blind_rotation(decomposed)  → PCS₃ (R_q, ring-aware)
+step 2: blind_rotation(decomposed)  → Ikat (R_q, ring-aware)
          ntt_batch jet               ~n × N constraints (batched)
          fold into accumulator       ~766 F_p constraints
 
-step 3: key_switch(rotated, ks)     → PCS₁ (F_p, Brakedown)
+step 3: key_switch(rotated, ks)     → Brakedown (F_p)
          key_switch jet              ~k × log(N) constraints
          fold into accumulator       ~766 F_p constraints
 
-step 4: mod_switch(switched)        → PCS₁ (F_p, Brakedown)
+step 4: mod_switch(switched)        → Brakedown (F_p)
          ~N constraints              (coefficient rescaling)
          fold into accumulator       ~766 F_p constraints
 
@@ -196,7 +184,7 @@ a separate repo **jali** (जाली) provides R_q polynomial ring arithmetic:
 - noise distributions and tracking
 - depends only on nebu
 
-zheng depends on jali for the Ring PCS backend. hemera remains the only hash throughout.
+zheng depends on jali for the Ikat backend. hemera remains the only hash throughout.
 
 ## open questions
 
@@ -205,4 +193,4 @@ zheng depends on jali for the Ring PCS backend. hemera remains the only hash thr
 3. **noise model precision**: running accumulator tracks worst-case — adaptive noise tracking (tighten bounds from measured noise) would improve throughput
 4. **multi-key FHE**: threshold FHE bootstrapping with multiple keys — each key has separate automorphism group, jet recognition across key boundaries
 
-see [[polynomial-commitment]] for Brakedown PCS, [[binary-pcs]] for F₂ backend, [[isogeny-pcs]] for F_q backend, [[tropical-pcs]] for (min,+) backend, [[recursion]] for cross-algebra folding
+see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[isogeny-curves]] for Porphyry, [[tropical-semiring]] for Assayer, [[commitment]] for cross-algebra folding

@@ -2,48 +2,90 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: polynomial commitments, polynomial commitment scheme, PCS, lens, lenses
+alias: polynomial commitments, polynomial commitment scheme, lens, lenses
 ---
-# polynomial commitment scheme (lens)
+# lens trait
 
 the universal cryptographic primitive. commit to a polynomial, prove evaluations, verify without seeing the polynomial. one primitive serves proof commitment, state authentication, noun identity, and data availability.
 
-a lens is how an algebra presents its work for verification. each algebra computes in its own structure — scalars, binary, rings, semirings, isogenies. the lens makes that computation verifiable. different structures need different optics. same laws of verification ([[SuperSpartan]] + [[sumcheck]]), different lenses.
+a lens is how an algebra presents its work for verification. each algebra computes in its own structure — scalars, binary, rings, isogenies. the lens makes that computation verifiable. different structures need different optics.
 
 ## the interface
 
-```
+```rust
 trait Lens<F: Field> {
     fn commit(poly: &MultilinearPoly<F>) -> Commitment;     // 32 bytes
-    fn open(poly: &MultilinearPoly<F>, point: &[F]) -> Opening;
-    fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening) -> bool;
+    fn open(poly: &MultilinearPoly<F>, point: &[F], transcript: &mut Transcript) -> Opening;
+    fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening, transcript: &mut Transcript) -> bool;
+    fn batch_open(poly: &MultilinearPoly<F>, points: &[(Vec<F>, F)], transcript: &mut Transcript) -> Opening;
+    fn batch_verify(commitment: &Commitment, points: &[(Vec<F>, F)], proof: &Opening, transcript: &mut Transcript) -> bool;
 }
 ```
 
-three operations. commit is O(N). open produces a proof. verify checks the proof. all transparent (no trusted setup), all post-quantum.
+five operations. commit is O(N). open produces a proof. verify checks the proof. batch_open amortizes m openings into one. all transparent (no trusted setup), all post-quantum.
+
+see [[commitment]] for the complete specification including types, security properties, and crate structure.
+
+## naming convention
+
+every algebra has five names at different layers:
+
+| layer | meaning | example |
+|-------|---------|---------|
+| domain (adjective) | mathematical modifier | scalar, binary, polynomial, tropical, isogeny |
+| algebra (noun) | mathematical object | field, tower, ring, semiring, curves |
+| impl (repo) | concrete library | nebu, kuro, jali, trop, genies |
+| construction (scheme) | commitment construction | Brakedown, Binius, Ikat, Assayer, Porphyry |
+| full name | domain + algebra | scalar field, binary tower, polynomial ring, tropical semiring, isogeny curves |
+
+lens files are named `domain-algebra.md` (full name). construction names are inside files. impl repos are dependencies.
 
 ## five lenses
 
-| lens | algebra | field | encoding | proof size | verify cost |
-|------|---------|-------|----------|------------|-------------|
-| [[expander-pcs\|Brakedown]] | [[nebu]] (+ nebu², nebu³, nebu⁴) | F_p (+ extensions) | expander-graph linear code | ~1.3 KiB | ~660 F_p ops |
-| [[binary-pcs\|Binius]] | [[kuro]] | F₂ tower | binary Reed-Solomon | workload-dependent | ~660 F₂ ops |
-| [[ring-pcs\|Ikat]] | [[jali]] | R_q | NTT-batched Brakedown | ~1.3 KiB (batched) | ring-structured |
-| [[isogeny-pcs\|Isogeny]] | [[genies]] | F_q | Brakedown over F_q | ~1.3 KiB (wider) | ~660 F_q ops |
-| [[tropical-pcs\|Tropical]] | [[trop]] | (min,+) | witness-verify via Brakedown | witness-proportional | dual certificate |
+| construction | algebra | impl | field | spec |
+|-------------|---------|------|-------|------|
+| Brakedown | scalar field | [[nebu]] | F_p | [[scalar-field]] |
+| Binius | binary tower | [[kuro]] | F₂ | [[binary-tower]] |
+| Ikat | polynomial ring | [[jali]] | F_p (NTT slots) | [[polynomial-ring]] |
+| Assayer | tropical semiring | [[trop]] | F_p (delegation) | [[tropical-semiring]] |
+| Porphyry | isogeny curves | [[genies]] | F_q | [[isogeny-curves]] |
 
-all five implement the same Lens trait. all fold into the same [[HyperNova]] accumulator via universal CCS with algebra selectors.
+four constructions implement `Lens<F>` directly. Assayer is a wrapper protocol that delegates commitment to Brakedown over F_p — see [[tropical-semiring]].
 
 ## three roles
 
-the lens serves three roles — all using the same interface:
+proof commitment — commit [[nox]] execution trace for [[zheng]] verification
+state commitment — commit [[bbg]] polynomial state (BBG_poly, A(x), N(x))
+noun identity — commit [[nox]] noun polynomial for content addressing
 
-**1. proof commitment.** commit to [[nox]] execution trace. [[SuperSpartan]] verifies constraints via [[sumcheck]]. [[HyperNova]] folds into accumulator.
+one trait. five lenses. three roles.
 
-**2. state commitment.** BBG_poly (10 public dimensions), A(x) (private commitments), N(x) (nullifiers). BBG_root = H(commit(BBG_poly) ‖ commit(A) ‖ commit(N)).
+## dependency
 
-**3. noun identity.** every [[nox]] noun is a multilinear polynomial. noun identity = hemera(Lens.commit(noun) ‖ domain_tag) — 32 bytes. axis = Lens opening. DAS = Lens opening at random positions.
+```
+hemera (hash — commitment binding, Fiat-Shamir)
+  ↓
+lens (polynomial commitment — this repo)
+  ↓
+nox (noun identity via Lens.commit)
+zheng (proof commitment via Lens.commit/open/verify)
+bbg (state commitment via Lens.commit)
+```
 
-one interface. five lenses. three roles.
+### arithmetics (lens depends on — one per algebra)
 
-see [[expander-pcs]] for the Brakedown lens. see [[binary-pcs]] for the Binius lens. see [[ring-pcs]] for the Ikat lens. see [[isogeny-pcs]] for the Isogeny lens. see [[tropical-pcs]] for the Tropical lens. see [[accumulator]] for how all five fold into one object.
+| impl | algebra | provides |
+|------|---------|----------|
+| nebu | scalar field | F_p arithmetic + extensions (Fp2, Fp3, Fp4) |
+| kuro | binary tower | F₂ tower arithmetic (F₂ → F₂¹²⁸) |
+| jali | polynomial ring | R_q = F_p[x]/(x^n+1) arithmetic |
+| trop | tropical semiring | (min,+) semiring arithmetic |
+| genies | isogeny curves | F_q arithmetic + group action |
+
+### consumers
+
+| consumer | what it uses | how |
+|----------|-------------|-----|
+| nox | Lens.commit for noun identity | identity = hemera(Lens.commit(noun_poly) ‖ tag) |
+| zheng | Lens.commit/open/verify for proof commitment | zheng adds SuperSpartan + sumcheck on top |
+| bbg | Lens.commit for state root | BBG_root = hemera(Lens.commit(BBG_poly) ‖ ...) |

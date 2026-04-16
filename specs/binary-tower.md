@@ -2,32 +2,20 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: binary PCS, F2 tower PCS, Binius PCS
+alias: binary lens, F2 tower lens, Binius
 ---
-# binary PCS
+# binary lens (Binius)
 
-the F₂ tower PCS backend for [[zheng]]. binary-native polynomial commitment over [[kuro]]'s tower: F₂ → F₂² → F₂⁴ → ... → F₂¹²⁸. bitwise operations (XOR, AND, NOT, SHL, LT) cost 1 constraint each — 32-64× cheaper than encoding them in [[Goldilocks field|Goldilocks]] where bit decomposition forces 32-64 constraints per operation.
+the F₂ tower lens for [[zheng]]. binary-native polynomial commitment over [[kuro]]'s tower: F₂ → F₂² → F₂⁴ → ... → F₂¹²⁸. bitwise operations (XOR, AND, NOT, SHL, LT) cost 1 constraint each — 32-64× cheaper than encoding them in [[Goldilocks field|Goldilocks]] where bit decomposition forces 32-64 constraints per operation.
 
-implements the [[pcs|PCS]] trait for F₂ tower fields. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash — used externally for commitment binding and Fiat-Shamir, never proved inside binary circuits.
+implements the [[trait|Lens]] trait for F₂ tower fields. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash — used externally for commitment binding and Fiat-Shamir, never proved inside binary circuits.
 
 ## architecture
 
-```
-zheng
-├── IOP:          SuperSpartan + sumcheck     (field-generic, shared)
-├── Composition:  HyperNova folding           (field-generic, shared)
-├── Hash:         hemera                      (one hash, universal)
-├── PCS₁:         Brakedown (Goldilocks)      (arithmetic workloads)
-├── PCS₂:         Binius (F₂ tower)           (binary workloads)
-├── PCS₃:         Ikat (R_q)            (FHE/lattice workloads)
-├── PCS₄:         Isogeny (F_q)              (privacy workloads)
-└── PCS₅:         Tropical (min,+)           (optimization workloads)
-```
-
-zheng exposes a PCS trait. Brakedown and Binius both implement it:
+part of the five-lens architecture — see [[commitment]] for the full picture.
 
 ```
-trait PCS<F: Field> {
+trait Lens<F: Field> {
     fn commit(poly: &MultilinearPoly<F>) -> Commitment;
     fn open(poly: &MultilinearPoly<F>, point: &[F]) -> Opening;
     fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening) -> bool;
@@ -147,7 +135,7 @@ a separate repo **kuro** (黒) provides F₂ tower arithmetic:
 - no hemera dependency, no nebu dependency
 - pure binary algebra
 
-zheng depends on kuro for the Binius PCS backend. hemera remains the only hash throughout.
+zheng depends on kuro for the Binius lens. hemera remains the only hash throughout.
 
 ## open questions
 
@@ -156,4 +144,4 @@ zheng depends on kuro for the Binius PCS backend. hemera remains the only hash t
 3. **optimal partition granularity**: how large should binary sub-traces be before boundary overhead dominates
 4. **kuro SIMD strategy**: AVX-512 (512 elements), AVX2 (256 elements), or portable u128
 
-see [[polynomial-commitment]] for the Brakedown PCS, [[recursion]] for cross-algebra folding, [[sumcheck]] for the shared IOP
+see [[scalar-field]] for Brakedown, [[commitment]] for the shared interface

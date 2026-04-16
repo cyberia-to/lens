@@ -2,13 +2,13 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: expander PCS, Brakedown, recursive Brakedown, linear-code PCS
+alias: expander lens, Brakedown, recursive Brakedown, linear-code lens
 ---
-# expander PCS
+# scalar field lens (Brakedown)
 
-the [[Goldilocks field|Goldilocks]] polynomial commitment scheme. commits via expander-graph linear codes. opens via recursive tensor decomposition. zero Merkle trees. O(N) commit. O(log N + λ) proof. one [[hemera]] call for binding.
+the [[Goldilocks field|Goldilocks]] polynomial commitment. commits via expander-graph linear codes. opens via recursive tensor decomposition. zero Merkle trees. O(N) commit. O(log N + λ) proof. one [[hemera]] call for binding.
 
-implements the [[pcs|PCS]] trait for $\mathbb{F}_p$.
+implements the [[trait|Lens]] trait for $\mathbb{F}_p$. part of the five-lens architecture — see [[commitment]] for the full picture.
 
 ## encoding
 
@@ -52,15 +52,18 @@ each level SQUARES the compression. log log N levels. prover: O(N + √N + ...) 
 
 ## batch opening
 
-multiple openings amortised into one proof:
+multiple openings amortized into one proof via the multilinear equality polynomial:
 
 ```
 batch_open(f, [(r₁, y₁), (r₂, y₂), ..., (r_m, y_m)]):
-  α = hemera_squeeze(r₁, ..., r_m)          random linear combination
-  combined = Σ αⁱ · (f(rᵢ) - yᵢ) / (x - rᵢ)
-  proof = open(combined, random_point)
+  α = transcript.squeeze_field()
+  r* = transcript.squeeze_field()
+  combined_value = Σ αⁱ · yᵢ · eq(rᵢ, r*)
+  proof = open(f, r*)
 
-cost: one recursive opening regardless of m
+  eq(r, x) = Π_j (r_j x_j + (1-r_j)(1-x_j))
+
+cost: one recursive opening + O(m·ν) for combining claims
 ```
 
 critical for: state jets (4 openings per cyberlink → 1 proof), DAS (20 samples → 1 proof), namespace queries (N entries → 1 proof).
@@ -85,4 +88,4 @@ requires:
 
 the expander graph needs left-degree $d \approx 20\text{-}30$ for 128-bit security over Goldilocks ($|\mathbb{F}| \approx 2^{64}$).
 
-see [[pcs]] for the generic interface, [[binary-pcs]] for the F₂ backend, [[accumulator]] for folding, [[recursive brakedown]] for the research
+see [[commitment]] for the shared interface, [[binary-tower]] for Binius, [[isogeny-curves]] for Porphyry

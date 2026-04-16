@@ -2,48 +2,25 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: tropical PCS, semiring PCS, trop PCS
+alias: tropical lens, Assayer, trop lens
 ---
-# tropical PCS
+# tropical lens (Assayer)
 
-the (min,+) PCS backend for [[zheng]]. optimization workloads (shortest path, assignment, Viterbi, transport) prove natively through their algebraic structure. the tropical semiring has no additive inverse — min(a,b) cannot be undone — so the PCS delegates commitment to [[Brakedown]] (PCS₁) while exploiting tropical structure at the constraint level.
+the (min,+) lens. optimization workloads (shortest path, assignment, Viterbi, transport) prove natively through their algebraic structure. the tropical semiring has no additive inverse — min(a,b) cannot be undone — so Assayer delegates commitment to [[scalar-field|Brakedown]] while exploiting tropical structure at the constraint level.
 
-implements the [[pcs|PCS]] trait via delegation to Brakedown with tropical-aware constraint encoding.
+delegates to [[scalar-field|Brakedown]] via the [[trait|Lens]] trait with tropical-aware constraint encoding.
 
-## architecture
+part of the five-lens architecture — see [[commitment]] for the full picture.
 
-```
-zheng
-├── IOP:          SuperSpartan + sumcheck     (field-generic, shared)
-├── Composition:  HyperNova folding           (field-generic, shared)
-├── Hash:         hemera                      (one hash, universal)
-├── PCS₁:         Brakedown (Goldilocks)      (arithmetic workloads)
-├── PCS₂:         Binius (F₂ tower)           (binary workloads)
-├── PCS₃:         Ikat (R_q)            (FHE/lattice workloads)
-├── PCS₄:         Isogeny (F_q)              (privacy workloads)
-└── PCS₅:         Tropical (min,+)            (optimization workloads)
-```
-
-## why a separate PCS spec
+## why a separate lens spec
 
 trop is not a field. (min,+) has no additive inverse — you cannot "un-min." polynomial commitment requires a ring or field. so tropical polynomials do not exist in the classical sense.
 
-the resolution: tropical computation produces a WITNESS (the optimal assignment and its cost). the PROOF verifies the witness in F_p via Brakedown. the PCS₅ spec defines exactly what this witness-verify pattern looks like for each tropical workload.
+the resolution: tropical computation produces a WITNESS (the optimal assignment and its cost). the PROOF verifies the witness in F_p via Brakedown. the Assayer spec defines exactly what this witness-verify pattern looks like for each tropical workload.
 
-this is not "trop doesn't have a PCS." this is "trop's PCS is a structured witness-verify protocol that delegates commitment to Brakedown."
+Assayer is a structured witness-verify protocol. tropical computation produces a witness; Brakedown commits it over F_p.
 
-```
-trait PCS<F: Field> {
-    fn commit(poly: &MultilinearPoly<F>) -> Commitment;
-    fn open(poly: &MultilinearPoly<F>, point: &[F]) -> Opening;
-    fn verify(commitment: &Commitment, point: &[F], value: F, proof: &Opening) -> bool;
-}
-
-// tropical PCS implements this via:
-//   commit: Brakedown commit of the WITNESS polynomial (assignment + costs)
-//   open:   Brakedown open + tropical validity certificate
-//   verify: Brakedown verify + dual feasibility check
-```
+see [[commitment]] §2 for the Lens trait definition.
 
 ## tropical witness structure
 
@@ -154,7 +131,7 @@ tropical sub-traces fold into the shared F_p accumulator via HyperNova:
 ```
 trop computation → witness + certificate
                        ↓
-    commit witness via Brakedown (PCS₁)
+    commit witness via Brakedown
     encode three checks as F_p CCS constraints
                        ↓
     HyperNova fold into shared F_p accumulator
@@ -182,7 +159,7 @@ a separate repo **trop** provides tropical semiring operations:
 - no hemera dependency, no nebu dependency
 - pure semiring algebra
 
-zheng depends on trop for witness generation. verification runs on Brakedown (PCS₁).
+zheng depends on trop for witness generation. verification runs on Brakedown.
 
 ## open questions
 
@@ -190,4 +167,4 @@ zheng depends on trop for witness generation. verification runs on Brakedown (PC
 2. **incremental tropical proofs**: when the graph changes by one edge, can the witness update incrementally without full recomputation?
 3. **tropical recursion**: can tropical witnesses fold into the accumulator via a tropical-specific folding step, or must everything cross to F_p first?
 
-see [[polynomial-commitment]] for Brakedown PCS, [[binary-pcs]] for F₂ backend, [[isogeny-pcs]] for F_q backend, [[recursion]] for cross-algebra folding
+see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[isogeny-curves]] for Porphyry, [[commitment]] for the full lens architecture
