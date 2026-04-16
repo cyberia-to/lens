@@ -12,3 +12,9 @@ readme = "../README.md"
 
 [dependencies]
 cyber-hemera.workspace = true
+nebu = { workspace = true, optional = true }
+kuro = { workspace = true, optional = true }
+genies = { workspace = true, optional = true }
+
+[features]
+default = []

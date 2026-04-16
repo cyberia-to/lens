@@ -5,6 +5,7 @@
 //! for the trait; they depend on a specific construction crate only when
 //! instantiating it.
 
+mod impls;
 mod transcript;
 mod types;
 
