@@ -36,7 +36,7 @@ pub fn sqrt(n: Goldilocks) -> Option<Goldilocks> {
     let mut big_m: u32 = 32;                         // two-adicity
     let mut c = Goldilocks::new(7).exp(s);            // 7^s, a 2^M-th root of unity
     let mut t = n.exp(s);                             // n^s
-    let mut r = n.exp((s + 1) / 2);                   // n^((s+1)/2) = n^(2^31)
+    let mut r = n.exp(s.div_ceil(2));                   // n^(ceil(s/2)) = n^(2^31)
 
     loop {
         if t == Goldilocks::ONE {
@@ -63,7 +63,7 @@ pub fn sqrt(n: Goldilocks) -> Option<Goldilocks> {
 
         big_m = i;
         c = b.square();
-        t = t * c;
-        r = r * b;
+        t *= c;
+        r *= b;
     }
 }

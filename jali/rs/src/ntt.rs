@@ -45,9 +45,9 @@ pub fn negacyclic_forward(coeffs: &mut [Goldilocks], n: usize) {
 
     // Step 1: twist — multiply coeffs[i] by psi^i
     let mut psi_pow = Goldilocks::ONE;
-    for i in 0..n {
-        coeffs[i] = coeffs[i] * psi_pow;
-        psi_pow = psi_pow * psi;
+    for c in coeffs.iter_mut().take(n) {
+        *c *= psi_pow;
+        psi_pow *= psi;
     }
 
     // Step 2: standard forward NTT
@@ -68,9 +68,9 @@ pub fn negacyclic_inverse(coeffs: &mut [Goldilocks], n: usize) {
     let psi = psi_for(n);
     let psi_inv = psi.inv();
     let mut psi_inv_pow = Goldilocks::ONE;
-    for i in 0..n {
-        coeffs[i] = coeffs[i] * psi_inv_pow;
-        psi_inv_pow = psi_inv_pow * psi_inv;
+    for c in coeffs.iter_mut().take(n) {
+        *c *= psi_inv_pow;
+        psi_inv_pow *= psi_inv;
     }
 }
 

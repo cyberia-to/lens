@@ -90,12 +90,10 @@ pub fn eigenvalue(a: &TropMatrix) -> Tropical {
             }
         }
 
-        if v_valid {
-            if !found || worst_num * best_den < best_num * worst_den {
-                best_num = worst_num;
-                best_den = worst_den;
-                found = true;
-            }
+        if v_valid && (!found || worst_num * best_den < best_num * worst_den) {
+            best_num = worst_num;
+            best_den = worst_den;
+            found = true;
         }
     }
 

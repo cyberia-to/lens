@@ -63,8 +63,8 @@ pub fn ntt(a: &mut [Goldilocks]) {
             for i in 0..half_m {
                 let t = w * a[j + i + half_m];
                 a[j + i + half_m] = a[j + i] - t;
-                a[j + i] = a[j + i] + t;
-                w = w * omega_m;
+                a[j + i] += t;
+                w *= omega_m;
             }
             j += m;
         }
@@ -97,7 +97,7 @@ pub fn intt(a: &mut [Goldilocks]) {
                 let v = a[j + i + half_m];
                 a[j + i] = u + v;
                 a[j + i + half_m] = w * (u - v);
-                w = w * omega_m_inv;
+                w *= omega_m_inv;
             }
             j += m;
         }
@@ -108,7 +108,7 @@ pub fn intt(a: &mut [Goldilocks]) {
     // Scale by N⁻¹ mod p: n_inv = p - (p-1)/N
     let n_inv = Goldilocks::new(P - (P - 1) / n as u64);
     for x in a.iter_mut() {
-        *x = *x * n_inv;
+        *x *= n_inv;
     }
 }
 
@@ -126,7 +126,7 @@ pub fn precompute_twiddles(n: usize, table: &mut [Goldilocks]) {
         for _ in 0..half_m {
             table[idx] = w;
             idx += 1;
-            w = w * omega_m;
+            w *= omega_m;
         }
     }
 }

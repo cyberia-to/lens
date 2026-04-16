@@ -44,17 +44,11 @@ pub fn sample_uniform(seed: u64, n: usize) -> RingElement {
     let mut elem = RingElement::new(n);
     for i in 0..n {
         // Rejection sampling: draw u64, accept if < P
-        loop {
-            let val = rng.next();
-            if val < P {
-                elem.coeffs[i] = Goldilocks::new(val);
-                break;
-            }
-            // Also accept val mod P for efficiency (slight bias but acceptable for testing)
-            // Actually, for correctness use clean rejection
-            elem.coeffs[i] = Goldilocks::new(val % P);
-            break;
+        let mut val = rng.next();
+        while val >= P {
+            val = rng.next();
         }
+        elem.coeffs[i] = Goldilocks::new(val);
     }
     elem
 }

@@ -55,10 +55,6 @@ impl NoiseBudget {
     ///
     /// Returns 0 if already exceeded.
     pub fn remaining(budget: &NoiseBudget, max_budget: u32) -> u32 {
-        if budget.log_bound >= max_budget {
-            0
-        } else {
-            max_budget - budget.log_bound
-        }
+        max_budget.saturating_sub(budget.log_bound)
     }
 }

@@ -12,6 +12,7 @@
 //! kuro is to F₂ what nebu is to Goldilocks.
 
 #![no_std]
+#![allow(clippy::should_implement_trait)]
 
 pub mod tower;
 pub mod packed;

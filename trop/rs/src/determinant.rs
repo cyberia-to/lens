@@ -37,8 +37,8 @@ pub fn determinant(a: &TropMatrix) -> Tropical {
     );
 
     let mut perm: [usize; MAX_NAIVE_DIM] = [0; MAX_NAIVE_DIM];
-    for i in 0..n {
-        perm[i] = i;
+    for (i, elem) in perm.iter_mut().take(n).enumerate() {
+        *elem = i;
     }
 
     let mut best = Tropical::INF;
@@ -49,8 +49,8 @@ pub fn determinant(a: &TropMatrix) -> Tropical {
 /// Evaluate the cost of the current permutation and update best.
 fn eval_perm(a: &TropMatrix, perm: &[usize], n: usize, best: &mut Tropical) {
     let mut cost = Tropical::ONE; // 0, the multiplicative identity
-    for i in 0..n {
-        cost = cost.mul(a.get(i, perm[i]));
+    for (i, &col) in perm.iter().enumerate().take(n) {
+        cost = cost.mul(a.get(i, col));
         if cost.is_inf() {
             return; // early exit: can't improve
         }
@@ -72,7 +72,7 @@ fn permutation_search(
     }
     for i in 0..k {
         permutation_search(a, perm, k - 1, n, best);
-        if k % 2 == 0 {
+        if k.is_multiple_of(2) {
             perm.swap(i, k - 1);
         } else {
             perm.swap(0, k - 1);

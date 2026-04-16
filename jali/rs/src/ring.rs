@@ -136,11 +136,11 @@ impl RingElement {
         for i in 0..n {
             let j = (i * t) % two_n;
             if j < n {
-                result.coeffs[j] = result.coeffs[j] + self.coeffs[i];
+                result.coeffs[j] += self.coeffs[i];
             } else {
                 // x^j = x^(j-n) * x^n = -x^(j-n)
                 let idx = j - n;
-                result.coeffs[idx] = result.coeffs[idx] - self.coeffs[i];
+                result.coeffs[idx] -= self.coeffs[i];
             }
         }
         result

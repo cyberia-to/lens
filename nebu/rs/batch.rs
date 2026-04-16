@@ -32,7 +32,7 @@ pub fn batch_inv(a: &[Goldilocks], result: &mut [Goldilocks]) {
     // Phase 3: propagate inverses backward
     for i in (1..n).rev() {
         result[i] = inv_all * result[i - 1];
-        inv_all = inv_all * a[i];
+        inv_all *= a[i];
     }
     result[0] = inv_all;
 }
@@ -61,7 +61,7 @@ pub fn batch_inv_safe(a: &[Goldilocks], result: &mut [Goldilocks]) {
         } else {
             inv_all * result[i - 1]
         };
-        inv_all = inv_all * ai;
+        inv_all *= ai;
     }
     result[0] = if a[0].is_zero() { Goldilocks::ZERO } else { inv_all };
 }

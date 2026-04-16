@@ -34,7 +34,7 @@ pub fn batch_inv_128(input: &[F2_128], output: &mut [F2_128]) {
     }
 
     if running.is_zero() {
-        for i in 0..n { output[i] = F2_128::ZERO; }
+        for elem in output.iter_mut().take(n) { *elem = F2_128::ZERO; }
         return;
     }
 

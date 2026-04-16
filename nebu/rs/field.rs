@@ -17,7 +17,7 @@ pub const EPSILON: u64 = P.wrapping_neg(); // 0xFFFF_FFFF
 ///
 /// Internal value may be non-canonical (in `[0, 2^64)`).
 /// Use `as_u64()` to reduce to `[0, p)`.
-#[derive(Clone, Copy, Default, Eq, Hash)]
+#[derive(Clone, Copy, Default, Eq)]
 #[repr(transparent)]
 pub struct Goldilocks {
     value: u64,
@@ -76,7 +76,7 @@ impl Goldilocks {
         let mut result = Self::ONE;
         while e > 0 {
             if e & 1 == 1 {
-                result = result * base;
+                result *= base;
             }
             base = base.square();
             e >>= 1;
@@ -93,7 +93,7 @@ impl Goldilocks {
         for i in (0..=62).rev() {
             t = t.square();
             if i != 32 {
-                t = t * self;
+                t *= self;
             }
         }
         t
@@ -114,6 +114,13 @@ impl PartialEq for Goldilocks {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.as_u64() == other.as_u64()
+    }
+}
+
+impl core::hash::Hash for Goldilocks {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_u64().hash(state);
     }
 }
 

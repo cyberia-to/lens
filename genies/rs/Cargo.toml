@@ -11,6 +11,10 @@ categories = ["cryptography", "no-std::no-alloc"]
 readme = "../README.md"
 exclude = ["../specs/", "../docs/", "../CLAUDE.md"]
 
+[lib]
+name = "genies"
+path = "src/lib.rs"
+
 [dependencies]
 
 [dev-dependencies]

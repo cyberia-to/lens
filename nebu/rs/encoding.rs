@@ -32,12 +32,12 @@ pub fn bytes_to_field_elements(bytes: &[u8], out: &mut [Goldilocks]) -> usize {
     if bytes.is_empty() {
         return 0;
     }
-    let n_chunks = (bytes.len() + 6) / 7;
+    let n_chunks = bytes.len().div_ceil(7);
     let n = n_chunks.min(out.len());
-    for i in 0..n {
+    for (i, elem) in out.iter_mut().take(n).enumerate() {
         let start = i * 7;
         let end = (start + 7).min(bytes.len());
-        out[i] = encode_7(&bytes[start..end]);
+        *elem = encode_7(&bytes[start..end]);
     }
     n
 }
