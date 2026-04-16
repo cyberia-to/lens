@@ -11,7 +11,9 @@ use cyber_hemera::Hash;
 ///
 /// Tropical (trop) is a semiring and does not satisfy Field.
 /// Assayer handles tropical commitment via delegation to Brakedown.
-pub trait Field: Copy + Eq + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Neg<Output = Self> {
+pub trait Field:
+    Copy + Eq + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Neg<Output = Self>
+{
     const ZERO: Self;
     const ONE: Self;
     fn inv(self) -> Self;
@@ -47,7 +49,10 @@ impl<F: Field> MultilinearPoly<F> {
     /// Create from an evaluation table. Length must be a power of 2.
     pub fn new(evals: Vec<F>) -> Self {
         let n = evals.len();
-        assert!(n.is_power_of_two(), "evaluation table length must be a power of 2");
+        assert!(
+            n.is_power_of_two(),
+            "evaluation table length must be a power of 2"
+        );
         let num_vars = n.trailing_zeros() as usize;
         Self { evals, num_vars }
     }

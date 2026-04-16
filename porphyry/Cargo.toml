@@ -10,5 +10,6 @@ keywords = ["porphyry", "polynomial-commitment", "isogeny", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
+cyb-lens-core = { path = "../core", features = ["genies"] }
 genies.workspace = true
+cyber-hemera.workspace = true

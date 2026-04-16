@@ -17,6 +17,7 @@
 pub mod batch;
 pub mod encoding;
 pub mod inv;
+pub mod ops;
 pub mod packed;
 pub mod tower;
 

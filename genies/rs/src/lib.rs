@@ -16,6 +16,7 @@ pub mod curve;
 pub mod encoding;
 pub mod fq;
 pub mod isogeny;
+pub mod ops;
 
 #[cfg(test)]
 mod vectors;

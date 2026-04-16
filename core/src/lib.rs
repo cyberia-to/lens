@@ -30,11 +30,7 @@ pub trait Lens<F: Field> {
     fn commit(poly: &MultilinearPoly<F>) -> Commitment;
 
     /// Produce a proof that poly(point) = value.
-    fn open(
-        poly: &MultilinearPoly<F>,
-        point: &[F],
-        transcript: &mut Transcript,
-    ) -> Opening;
+    fn open(poly: &MultilinearPoly<F>, point: &[F], transcript: &mut Transcript) -> Opening;
 
     /// Check that a committed polynomial evaluates to value at point.
     fn verify(

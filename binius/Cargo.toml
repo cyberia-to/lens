@@ -10,5 +10,6 @@ keywords = ["binius", "polynomial-commitment", "zk", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
+cyb-lens-core = { path = "../core", features = ["kuro"] }
 kuro.workspace = true
+cyber-hemera.workspace = true

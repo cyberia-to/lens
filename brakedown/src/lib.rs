@@ -139,9 +139,7 @@ impl Lens<Goldilocks> for Brakedown {
 
         // Squeeze random evaluation point
         let num_vars = poly.num_vars;
-        let r_star: Vec<Goldilocks> = (0..num_vars)
-            .map(|_| transcript.squeeze_field())
-            .collect();
+        let r_star: Vec<Goldilocks> = (0..num_vars).map(|_| transcript.squeeze_field()).collect();
 
         Self::open(poly, &r_star, transcript)
     }
@@ -161,9 +159,7 @@ impl Lens<Goldilocks> for Brakedown {
 
         // Reconstruct random evaluation point
         let num_vars = points[0].0.len();
-        let r_star: Vec<Goldilocks> = (0..num_vars)
-            .map(|_| transcript.squeeze_field())
-            .collect();
+        let r_star: Vec<Goldilocks> = (0..num_vars).map(|_| transcript.squeeze_field()).collect();
 
         // Compute combined value: Σ α^i · y_i · eq(r_i, r*)
         let mut combined_value = Goldilocks::ZERO;
@@ -248,7 +244,13 @@ mod tests {
         let proof = Brakedown::open(&poly, &point, &mut pt);
 
         let mut vt = Transcript::new(b"test");
-        assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut vt));
+        assert!(Brakedown::verify(
+            &commitment,
+            &point,
+            value,
+            &proof,
+            &mut vt
+        ));
     }
 
     #[test]
@@ -271,7 +273,13 @@ mod tests {
         let proof = Brakedown::open(&poly, &point, &mut pt);
 
         let mut vt = Transcript::new(b"test");
-        assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut vt));
+        assert!(Brakedown::verify(
+            &commitment,
+            &point,
+            value,
+            &proof,
+            &mut vt
+        ));
     }
 
     #[test]
@@ -293,7 +301,13 @@ mod tests {
         let proof = Brakedown::open(&poly, &point, &mut pt);
 
         let mut vt = Transcript::new(b"test");
-        assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut vt));
+        assert!(Brakedown::verify(
+            &commitment,
+            &point,
+            value,
+            &proof,
+            &mut vt
+        ));
     }
 
     #[test]
@@ -310,7 +324,13 @@ mod tests {
         let proof = Brakedown::open(&poly, &point, &mut pt);
 
         let mut vt = Transcript::new(b"brakedown-test");
-        assert!(Brakedown::verify(&commitment, &point, value, &proof, &mut vt));
+        assert!(Brakedown::verify(
+            &commitment,
+            &point,
+            value,
+            &proof,
+            &mut vt
+        ));
     }
 
     #[test]
