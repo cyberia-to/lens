@@ -27,3 +27,10 @@ cyb-lens-binius = { path = "../binius" }
 cyb-lens-ikat = { path = "../ikat" }
 cyb-lens-assayer = { path = "../assayer" }
 cyb-lens-porphyry = { path = "../porphyry" }
+
+[dev-dependencies]
+nebu.workspace = true
+kuro.workspace = true
+trop.workspace = true
+genies.workspace = true
+cyber-hemera.workspace = true

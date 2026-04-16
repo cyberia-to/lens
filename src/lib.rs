@@ -18,3 +18,7 @@ pub use cyb_lens_binius as binius;
 pub use cyb_lens_brakedown as brakedown;
 pub use cyb_lens_ikat as ikat;
 pub use cyb_lens_porphyry as porphyry;
+
+#[cfg(test)]
+mod integration_tests;
+
