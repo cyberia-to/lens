@@ -21,4 +21,3 @@ pub use cyb_lens_porphyry as porphyry;
 
 #[cfg(test)]
 mod integration_tests;
-

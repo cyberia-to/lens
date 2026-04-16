@@ -90,20 +90,34 @@ mod brakedown_tests {
     }
 
     #[test]
-    fn roundtrip_1() { roundtrip::<_, brakedown::Brakedown>(&poly(1, 10), &pt(1, 20), b"b1"); }
+    fn roundtrip_1() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(1, 10), &pt(1, 20), b"b1");
+    }
     #[test]
-    fn roundtrip_2() { roundtrip::<_, brakedown::Brakedown>(&poly(2, 11), &pt(2, 21), b"b2"); }
+    fn roundtrip_2() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(2, 11), &pt(2, 21), b"b2");
+    }
     #[test]
-    fn roundtrip_4() { roundtrip::<_, brakedown::Brakedown>(&poly(4, 12), &pt(4, 22), b"b4"); }
+    fn roundtrip_4() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(4, 12), &pt(4, 22), b"b4");
+    }
     #[test]
-    fn roundtrip_8() { roundtrip::<_, brakedown::Brakedown>(&poly(8, 13), &pt(8, 23), b"b8"); }
+    fn roundtrip_8() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(8, 13), &pt(8, 23), b"b8");
+    }
     #[test]
-    fn roundtrip_10() { roundtrip::<_, brakedown::Brakedown>(&poly(10, 14), &pt(10, 24), b"b10"); }
+    fn roundtrip_10() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(10, 14), &pt(10, 24), b"b10");
+    }
 
     #[test]
-    fn sound_value() { soundness_wrong_value::<_, brakedown::Brakedown>(&poly(4, 30), &pt(4, 40), b"bsv"); }
+    fn sound_value() {
+        soundness_wrong_value::<_, brakedown::Brakedown>(&poly(4, 30), &pt(4, 40), b"bsv");
+    }
     #[test]
-    fn sound_commit() { soundness_wrong_commitment::<_, brakedown::Brakedown>(&poly(4, 50), &pt(4, 60), b"bsc"); }
+    fn sound_commit() {
+        soundness_wrong_commitment::<_, brakedown::Brakedown>(&poly(4, 50), &pt(4, 60), b"bsc");
+    }
 
     #[test]
     fn zero_poly() {
@@ -118,7 +132,13 @@ mod brakedown_tests {
         let p = poly(3, 80);
         for i in 0..8usize {
             let bpt: Vec<Goldilocks> = (0..3)
-                .map(|j| if (i >> j) & 1 == 1 { Goldilocks::ONE } else { Goldilocks::ZERO })
+                .map(|j| {
+                    if (i >> j) & 1 == 1 {
+                        Goldilocks::ONE
+                    } else {
+                        Goldilocks::ZERO
+                    }
+                })
                 .collect();
             assert_eq!(p.evaluate(&bpt), p.evals[i], "mismatch at {i}");
         }
@@ -180,7 +200,10 @@ mod porphyry_tests {
     #[test]
     fn roundtrip_2() {
         let p = MultilinearPoly::new(vec![
-            Fq::from_u64(1), Fq::from_u64(2), Fq::from_u64(3), Fq::from_u64(4),
+            Fq::from_u64(1),
+            Fq::from_u64(2),
+            Fq::from_u64(3),
+            Fq::from_u64(4),
         ]);
         roundtrip::<_, porphyry::Porphyry>(&p, &[Fq::ONE, Fq::ONE], b"po2");
     }
@@ -222,21 +245,61 @@ mod ikat_tests {
 
 mod assayer_tests {
     use super::*;
-    use assayer::{Assayer, DualCertificate, TropicalWitness};
+    use assayer::{Assayer, DualCertificate, Edge, TropicalWitness};
     use nebu::Goldilocks;
     use trop::Tropical;
 
-    #[test]
-    fn shortest_path() {
+    fn graph_3_2_4() -> (TropicalWitness, DualCertificate) {
+        // 0 →3→ 1 →2→ 2 →4→ 3, shortest 0→3 = 9
         let w = TropicalWitness {
-            assignment: vec![0, 1],
-            cost: Tropical::from_u64(5),
-            weights: vec![Tropical::from_u64(3), Tropical::from_u64(2), Tropical::from_u64(9)],
+            num_vertices: 4,
+            edges: vec![
+                Edge {
+                    from: 0,
+                    to: 1,
+                    weight: Tropical::from_u64(3),
+                },
+                Edge {
+                    from: 1,
+                    to: 2,
+                    weight: Tropical::from_u64(2),
+                },
+                Edge {
+                    from: 2,
+                    to: 3,
+                    weight: Tropical::from_u64(4),
+                },
+                Edge {
+                    from: 0,
+                    to: 2,
+                    weight: Tropical::from_u64(10),
+                },
+                Edge {
+                    from: 0,
+                    to: 3,
+                    weight: Tropical::from_u64(20),
+                },
+            ],
+            assignment: vec![0, 1, 2],
+            cost: Tropical::from_u64(9),
+            source: 0,
+            target: 3,
         };
         let c = DualCertificate {
-            dual_vars: vec![Goldilocks::new(0), Goldilocks::new(3), Goldilocks::new(5)],
-            dual_objective: Goldilocks::new(5),
+            dual_vars: vec![
+                Goldilocks::new(0),
+                Goldilocks::new(3),
+                Goldilocks::new(5),
+                Goldilocks::new(9),
+            ],
+            dual_objective: Goldilocks::new(9),
         };
+        (w, c)
+    }
+
+    #[test]
+    fn shortest_path() {
+        let (w, c) = graph_3_2_4();
         assert!(Assayer::verify_tropical(&w, &c));
 
         let (commitment, poly) = Assayer::commit_witness(&w, &c);
@@ -246,31 +309,42 @@ mod assayer_tests {
         let mut pt = Transcript::new(b"asp");
         let proof = Assayer::open_witness(&poly, &point, &mut pt);
         let mut vt = Transcript::new(b"asp");
-        assert!(Assayer::verify_witness(&commitment, &point, value, &proof, &mut vt));
+        assert!(Assayer::verify_witness(
+            &commitment,
+            &point,
+            value,
+            &proof,
+            &mut vt
+        ));
     }
 
     #[test]
     fn wrong_cost_rejected() {
-        let w = TropicalWitness {
-            assignment: vec![0, 2],
-            cost: Tropical::from_u64(999),
-            weights: vec![Tropical::from_u64(3), Tropical::from_u64(10), Tropical::from_u64(7)],
-        };
-        let c = DualCertificate {
-            dual_vars: vec![],
-            dual_objective: Goldilocks::new(999),
-        };
+        let (mut w, mut c) = graph_3_2_4();
+        w.cost = Tropical::from_u64(999);
+        c.dual_objective = Goldilocks::new(999);
         assert!(!Assayer::verify_tropical(&w, &c));
     }
 
     #[test]
     fn out_of_bounds_rejected() {
-        let w = TropicalWitness {
-            assignment: vec![0, 999],
-            cost: Tropical::from_u64(5),
-            weights: vec![Tropical::from_u64(5)],
-        };
-        let c = DualCertificate { dual_vars: vec![], dual_objective: Goldilocks::new(5) };
+        let (mut w, c) = graph_3_2_4();
+        w.assignment = vec![0, 999]; // edge 999 doesn't exist
+        assert!(!Assayer::verify_tropical(&w, &c));
+    }
+
+    #[test]
+    fn dual_feasibility_violation() {
+        let (w, mut c) = graph_3_2_4();
+        c.dual_vars[2] = Goldilocks::new(100); // violates d[2] ≤ d[1] + w(1→2) = 5
+        assert!(!Assayer::verify_tropical(&w, &c));
+    }
+
+    #[test]
+    fn broken_path_rejected() {
+        let (mut w, c) = graph_3_2_4();
+        w.assignment = vec![0, 2]; // 0→1 then 2→3, gap: 1≠2
+        w.cost = Tropical::from_u64(7);
         assert!(!Assayer::verify_tropical(&w, &c));
     }
 }
