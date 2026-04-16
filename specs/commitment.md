@@ -395,7 +395,7 @@ three structural optimizations:
 primary workloads: TFHE bootstrapping (blind rotation, key switching, gadget decomposition).
 
 cross-algebra: FHE bootstrapping spans F₂ (gadget decomp → Binius), R_q (blind rotation → Ikat),
-F_p (key switching → Brakedown). HyperNova folds across boundaries.
+F_p (key switching → Brakedown). composition across algebra boundaries is handled by [[zheng]].
 
 ### 5.4 Assayer (tropical semiring — trop)
 
@@ -450,57 +450,39 @@ ring signatures, verifiable random functions.
 
 recursion boundary: isogeny proofs verify in F_p circuits (hemera is F_p native).
 
-## 6. cross-algebra composition
+## 6. composition interface
 
-a single nox program may use multiple algebras. the commitment layer must compose
-proofs from different fields into one verifiable object.
+a single nox program may use multiple algebras. lens provides commitments
+per-algebra; [[zheng]] handles composition into a single verifiable object
+(HyperNova accumulator, CCS selectors, folding).
 
-### 6.1 HyperNova accumulator
+### 6.1 what lens guarantees to the composer
 
-all five constructions fold into a shared F_p accumulator:
+lens provides a uniform interface across all five constructions:
+- commitment is always 32 bytes (hemera hash)
+- opening protocol uses hemera Fiat-Shamir transcript
+- verification is a pure function: (commitment, point, value, proof) → bool
 
-```
-nox<F_p> sub-trace → Brakedown proof   ─┐
-nox<F₂>  sub-trace → Binius proof      ─┤
-jali<R_q> sub-trace → Ikat proof       ─┼─→ HyperNova fold → F_p accumulator
-genies<F_q> sub-trace → Porphyry proof ─┤
-trop witness → Assayer proof           ─┘
+this uniformity is what allows zheng to fold commitments from different
+algebras into one accumulator. lens does not know about folding — it only
+produces and verifies individual commitments.
 
-fold cost per boundary: ~766 F_p constraints + 1 hemera hash
-```
+### 6.2 recursion constraint: hemera cost per algebra
 
-### 6.2 universal CCS with selectors
+when zheng verifies a lens opening inside a circuit (for recursive composition),
+the cost depends on the algebra:
 
-heterogeneous folding via algebra selector columns:
+| algebra | hemera inside circuit | notes |
+|---------|----------------------|-------|
+| F_p (nebu) | ~736 F_p constraints | native — hemera is Goldilocks Poseidon2 |
+| F₂ (kuro) | ~142K binary constraints | simulating Goldilocks mul in bits |
+| R_q (jali) | ~736 F_p constraints | NTT slots are F_p elements |
+| (min,+) (trop) | ~736 F_p constraints | witness is committed via Brakedown/F_p |
+| F_q (genies) | prohibitive | simulating Goldilocks in 512-bit field |
 
-```rust
-struct UniversalCCS {
-    sel_fp:   Vec<bool>,  // 1 for Goldilocks rows
-    sel_f2:   Vec<bool>,  // 1 for binary rows
-    sel_ring: Vec<bool>,  // 1 for ring-structured rows
-    sel_fq:   Vec<bool>,  // 1 for isogeny rows
-    sel_trop: Vec<bool>,  // 1 for tropical witness-verify rows
-}
-```
-
-one accumulator covers all five algebras. the decider runs once in F_p.
-
-### 6.3 recursion boundary
-
-non-Goldilocks proofs cannot recurse in their native field (hemera is F_p native).
-verification always crosses to F_p:
-
-```
-native execution → native proof (hemera external for Merkle + Fiat-Shamir)
-                       ↓
-    verify in F_p circuit (hemera: ~736 F_p constraints)
-                       ↓
-    fold into F_p accumulator
-```
-
-hemera inside F₂: ~142K binary constraints (simulating Goldilocks mul in bits). unacceptable.
-hemera inside F_q: prohibitively expensive (simulating Goldilocks in 512-bit field).
-hemera inside F_p: ~736 constraints. the recursion boundary is always Goldilocks.
+consequence: non-Goldilocks openings verify in F_p circuits. the recursion
+boundary is always Goldilocks. this is a lens property that zheng relies on,
+but the folding protocol itself is specified in [[zheng/specs/recursion]].
 
 ## 7. three roles
 
@@ -509,8 +491,7 @@ with different polynomial content.
 
 ### 7.1 proof commitment (consumed by zheng)
 
-commit to a nox execution trace. SuperSpartan verifies constraints via sumcheck.
-HyperNova folds instances into the accumulator.
+commit to a nox execution trace encoded as a multilinear polynomial.
 
 ```
 trace: 16 registers × 2^ν rows → multilinear polynomial
@@ -518,8 +499,9 @@ commitment = Lens.commit(trace_poly)
 proof = Lens.open(trace_poly, challenge_point)
 ```
 
-zheng queries the commitment at random points derived from the Fiat-Shamir transcript.
-the opening proves the trace satisfies the constraint system.
+zheng queries the commitment at random points. lens produces the opening proof.
+the IOP protocol (SuperSpartan, sumcheck) that determines which points to query
+is specified in [[zheng]] — lens only commits and opens.
 
 ### 7.2 state commitment (consumed by bbg)
 
@@ -575,7 +557,7 @@ lens depends on:
 
 lens is consumed by:
 - nox: noun identity via Lens.commit
-- zheng: proof verification via Lens.commit/open/verify + SuperSpartan + sumcheck
+- zheng: proof verification via Lens.commit/open/verify (zheng adds SuperSpartan + sumcheck on top)
 - bbg: state authentication via Lens.commit
 
 ## 9. security parameters
@@ -606,5 +588,4 @@ no pairing assumptions, no discrete log.
 | Ikat (NTT-batched encoding) | specified, not implemented |
 | Assayer (witness-verify) | specified, not implemented |
 | Porphyry (deep-field encoding) | specified, not implemented |
-| HyperNova accumulator | specified, not implemented |
 | Transcript (Fiat-Shamir) | specified, not implemented |
