@@ -101,6 +101,7 @@ impl Lens<Fq> for Porphyry {
         Opening::Tensor {
             round_commitments,
             final_poly,
+            query_responses: vec![],
         }
     }
 
@@ -114,6 +115,7 @@ impl Lens<Fq> for Porphyry {
         let Opening::Tensor {
             round_commitments,
             final_poly,
+            ..
         } = proof
         else {
             return false;
@@ -186,7 +188,9 @@ impl Lens<Fq> for Porphyry {
     }
 }
 
-fn multilinear_eq_fq(r: &[Fq], x: &[Fq]) -> Fq {
+/// Multilinear equality polynomial over Fq.
+#[cfg(test)]
+fn _multilinear_eq_fq(r: &[Fq], x: &[Fq]) -> Fq {
     assert_eq!(r.len(), x.len());
     let mut result = Fq::ONE;
     for (&ri, &xi) in r.iter().zip(x.iter()) {

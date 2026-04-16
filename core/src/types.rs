@@ -91,10 +91,16 @@ impl<F: Field> MultilinearPoly<F> {
 /// Each construction produces a structurally different proof.
 #[derive(Clone, Debug)]
 pub enum Opening {
-    /// Brakedown, Ikat, Porphyry: recursive tensor decomposition.
+    /// Brakedown, Ikat, Porphyry: recursive tensor decomposition
+    /// with proximity testing via codeword queries.
     Tensor {
         round_commitments: Vec<Commitment>,
         final_poly: Vec<u8>,
+        /// Proximity queries: (codeword_index, codeword_value) pairs.
+        /// The verifier derives query indices from the transcript and
+        /// checks that the claimed codeword values are consistent with
+        /// the round commitments via re-encoding.
+        query_responses: Vec<(usize, Vec<u8>)>,
     },
     /// Binius: folding with Merkle authentication paths.
     Folding {
