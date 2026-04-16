@@ -5,8 +5,8 @@
 // ---
 //! R_q element type: polynomials in F_p[x]/(x^n+1).
 
-use nebu::Goldilocks;
 use crate::ntt;
+use nebu::Goldilocks;
 
 /// Maximum supported polynomial dimension.
 pub const MAX_N: usize = 4096;
@@ -26,7 +26,11 @@ pub struct RingElement {
 impl RingElement {
     /// Create the zero polynomial of dimension n.
     pub fn new(n: usize) -> Self {
-        assert!(n.is_power_of_two() && n <= MAX_N, "n must be a power of 2 <= {}", MAX_N);
+        assert!(
+            n.is_power_of_two() && n <= MAX_N,
+            "n must be a power of 2 <= {}",
+            MAX_N
+        );
         RingElement {
             coeffs: [Goldilocks::ZERO; MAX_N],
             n,
@@ -37,7 +41,11 @@ impl RingElement {
     /// Create a ring element from a coefficient slice.
     /// The slice length must equal n.
     pub fn from_coeffs(coeffs: &[Goldilocks], n: usize) -> Self {
-        assert!(n.is_power_of_two() && n <= MAX_N, "n must be a power of 2 <= {}", MAX_N);
+        assert!(
+            n.is_power_of_two() && n <= MAX_N,
+            "n must be a power of 2 <= {}",
+            MAX_N
+        );
         assert!(coeffs.len() == n, "coefficient slice length must equal n");
         let mut elem = RingElement::new(n);
         elem.coeffs[..n].copy_from_slice(coeffs);
@@ -90,7 +98,10 @@ impl RingElement {
     /// Computes: to_ntt -> pointwise_mul -> from_ntt.
     pub fn mul(&self, other: &Self) -> Self {
         assert_eq!(self.n, other.n, "dimension mismatch");
-        assert!(!self.is_ntt && !other.is_ntt, "operands must be in coefficient form");
+        assert!(
+            !self.is_ntt && !other.is_ntt,
+            "operands must be in coefficient form"
+        );
         let mut a = self.clone();
         let mut b = other.clone();
         ntt::to_ntt(&mut a);
@@ -185,7 +196,9 @@ impl core::fmt::Debug for RingElement {
         write!(f, "RingElement(n={}, ntt={}, [", self.n, self.is_ntt)?;
         let show = self.n.min(8);
         for i in 0..show {
-            if i > 0 { write!(f, ", ")?; }
+            if i > 0 {
+                write!(f, ", ")?;
+            }
             write!(f, "{}", self.coeffs[i])?;
         }
         if self.n > show {

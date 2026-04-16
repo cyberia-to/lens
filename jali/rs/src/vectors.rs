@@ -7,15 +7,17 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::encoding;
+    use crate::noise::NoiseBudget;
+    use crate::ntt;
+    use crate::ring::RingElement;
+    use crate::sample;
     use nebu::Goldilocks;
     use nebu::field::P;
-    use crate::ring::RingElement;
-    use crate::ntt;
-    use crate::noise::NoiseBudget;
-    use crate::sample;
-    use crate::encoding;
 
-    fn g(v: u64) -> Goldilocks { Goldilocks::new(v) }
+    fn g(v: u64) -> Goldilocks {
+        Goldilocks::new(v)
+    }
 
     // ── Ring: zero element ───────────────────────────────────────────
 
@@ -379,7 +381,12 @@ mod tests {
         assert!(!a.is_ntt);
 
         for i in 0..n {
-            assert_eq!(a.coeffs[i].as_u64(), orig_coeffs[i], "mismatch at index {}", i);
+            assert_eq!(
+                a.coeffs[i].as_u64(),
+                orig_coeffs[i],
+                "mismatch at index {}",
+                i
+            );
         }
     }
 
@@ -553,8 +560,12 @@ mod tests {
         let elem = sample::sample_ternary(12345, 1024);
         for i in 0..1024 {
             let v = elem.coeffs[i].as_u64();
-            assert!(v == 0 || v == 1 || v == P - 1,
-                "ternary sample out of range at index {}: {}", i, v);
+            assert!(
+                v == 0 || v == 1 || v == P - 1,
+                "ternary sample out of range at index {}: {}",
+                i,
+                v
+            );
         }
     }
 
@@ -575,7 +586,10 @@ mod tests {
     fn sample_ternary_different_seeds() {
         let a = sample::sample_ternary(1, 256);
         let b = sample::sample_ternary(2, 256);
-        assert!(!a.eq_ring(&b), "different seeds should produce different results");
+        assert!(
+            !a.eq_ring(&b),
+            "different seeds should produce different results"
+        );
     }
 
     // ── Sample: CBD ──────────────────────────────────────────────────
@@ -589,8 +603,12 @@ mod tests {
             // Value should be in {0, 1, ..., eta, p-1, p-2, ..., p-eta}
             let is_small_pos = v <= eta as u64;
             let is_small_neg = v >= P - eta as u64;
-            assert!(is_small_pos || is_small_neg,
-                "CBD sample out of range at index {}: 0x{:X}", i, v);
+            assert!(
+                is_small_pos || is_small_neg,
+                "CBD sample out of range at index {}: 0x{:X}",
+                i,
+                v
+            );
         }
     }
 
@@ -606,8 +624,12 @@ mod tests {
         let elem = sample::sample_cbd(111, 256, 1);
         for i in 0..256 {
             let v = elem.coeffs[i].as_u64();
-            assert!(v == 0 || v == 1 || v == P - 1,
-                "CBD(1) should give ternary, got 0x{:X} at {}", v, i);
+            assert!(
+                v == 0 || v == 1 || v == P - 1,
+                "CBD(1) should give ternary, got 0x{:X} at {}",
+                v,
+                i
+            );
         }
     }
 
@@ -674,8 +696,12 @@ mod tests {
         encoding::encode_ring(&a, &mut buf);
         let decoded = encoding::decode_ring(&buf, n);
         for i in 0..n {
-            assert_eq!(decoded.coeffs[i].as_u64(), a.coeffs[i].as_u64(),
-                "mismatch at index {}", i);
+            assert_eq!(
+                decoded.coeffs[i].as_u64(),
+                a.coeffs[i].as_u64(),
+                "mismatch at index {}",
+                i
+            );
         }
     }
 

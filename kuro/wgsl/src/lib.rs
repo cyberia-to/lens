@@ -109,19 +109,23 @@ impl GpuContext {
 
     /// Core dispatch: compile shader, create pipeline, run, read back results.
     fn run_shader(&self, source: &str, n_u32s: usize) -> Vec<u32> {
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("kuro_eval"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("kuro_eval"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("kuro_eval"),
-            layout: None,
-            module: &module,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("kuro_eval"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let size = (n_u32s * 4) as u64;
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -183,7 +187,10 @@ fn tower_lib_source() -> &'static str {
     // Find the marker: "// Compute shader: process arrays"
     // Then walk back to the preceding blank line to strip the whole block.
     if let Some(idx) = TOWER_WGSL.find("// Compute shader: process arrays") {
-        let block_start = TOWER_WGSL[..idx].rfind("\n\n").map(|i| i + 1).unwrap_or(idx);
+        let block_start = TOWER_WGSL[..idx]
+            .rfind("\n\n")
+            .map(|i| i + 1)
+            .unwrap_or(idx);
         &TOWER_WGSL[..block_start]
     } else {
         TOWER_WGSL
@@ -192,10 +199,7 @@ fn tower_lib_source() -> &'static str {
 
 /// Convert 4 x u32 (little-endian) to u128.
 fn u32s_to_u128(v: &[u32]) -> u128 {
-    (v[0] as u128)
-        | ((v[1] as u128) << 32)
-        | ((v[2] as u128) << 64)
-        | ((v[3] as u128) << 96)
+    (v[0] as u128) | ((v[1] as u128) << 32) | ((v[2] as u128) << 64) | ((v[3] as u128) << 96)
 }
 
 /// Convert u128 to [u32; 4] (little-endian).

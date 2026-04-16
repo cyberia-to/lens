@@ -10,9 +10,9 @@
 //! - MontCurve: 64 bytes (the A coefficient as an Fq element).
 //! - Ideal: 74 bytes, each exponent shifted by MAX_EXPONENT to make unsigned.
 
-use crate::fq::{Fq, PRIME};
+use crate::action::{Ideal, MAX_EXPONENT, NUM_PRIMES};
 use crate::curve::MontCurve;
-use crate::action::{Ideal, NUM_PRIMES, MAX_EXPONENT};
+use crate::fq::{Fq, PRIME};
 
 /// Encode an Fq element as 64 bytes (little-endian).
 pub fn encode_fq(a: &Fq) -> [u8; 64] {

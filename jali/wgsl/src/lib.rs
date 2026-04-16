@@ -96,26 +96,31 @@ impl GpuContext {
         assert_eq!(b.len(), n);
 
         let source = format!("{NEBU_FIELD}\n{FP_SHIM}\n{RING_WGSL}");
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ring_add"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("ring_add"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
         let lhs_buf = self.create_fp_buffer("lhs", a);
         let rhs_buf = self.create_fp_buffer("rhs", b);
         let out_buf = self.create_empty_fp_buffer("out", n);
         let params_buf = self.create_ring_params(n as u32);
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("ring_add"),
-            layout: None,
-            module: &module,
-            entry_point: Some("ring_add"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("ring_add"),
+                layout: None,
+                module: &module,
+                entry_point: Some("ring_add"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        let bind_group = self.create_ring_bind_group(&pipeline, &lhs_buf, &rhs_buf, &out_buf, &params_buf);
+        let bind_group =
+            self.create_ring_bind_group(&pipeline, &lhs_buf, &rhs_buf, &out_buf, &params_buf);
         let workgroups = (n as u32 + 255) / 256;
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -134,31 +139,41 @@ impl GpuContext {
     // ── Ring pointwise multiplication on GPU ───────────────────────
 
     /// GPU pointwise multiply in NTT domain: out[i] = a[i] * b[i].
-    pub fn run_ring_pointwise_mul(&self, a: &[(u32, u32)], b: &[(u32, u32)], n: usize) -> Vec<(u32, u32)> {
+    pub fn run_ring_pointwise_mul(
+        &self,
+        a: &[(u32, u32)],
+        b: &[(u32, u32)],
+        n: usize,
+    ) -> Vec<(u32, u32)> {
         assert_eq!(a.len(), n);
         assert_eq!(b.len(), n);
 
         let source = format!("{NEBU_FIELD}\n{FP_SHIM}\n{RING_WGSL}");
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ring_pointwise_mul"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("ring_pointwise_mul"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
         let lhs_buf = self.create_fp_buffer("lhs", a);
         let rhs_buf = self.create_fp_buffer("rhs", b);
         let out_buf = self.create_empty_fp_buffer("out", n);
         let params_buf = self.create_ring_params(n as u32);
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("ring_pointwise_mul"),
-            layout: None,
-            module: &module,
-            entry_point: Some("ring_pointwise_mul"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("ring_pointwise_mul"),
+                layout: None,
+                module: &module,
+                entry_point: Some("ring_pointwise_mul"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
-        let bind_group = self.create_ring_bind_group(&pipeline, &lhs_buf, &rhs_buf, &out_buf, &params_buf);
+        let bind_group =
+            self.create_ring_bind_group(&pipeline, &lhs_buf, &rhs_buf, &out_buf, &params_buf);
         let workgroups = (n as u32 + 255) / 256;
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -199,16 +214,20 @@ impl GpuContext {
 
         // ── Compile shader modules ─────────────────────────────────
         let ring_source = format!("{NEBU_FIELD}\n{FP_SHIM}\n{RING_WGSL}");
-        let ring_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ring_ops"),
-            source: wgpu::ShaderSource::Wgsl(ring_source.into()),
-        });
+        let ring_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("ring_ops"),
+                source: wgpu::ShaderSource::Wgsl(ring_source.into()),
+            });
 
         let ntt_source = format!("{NEBU_FIELD}\n{NEBU_NTT}\n{NEBU_NTT_KERNELS}");
-        let ntt_module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ntt_ops"),
-            source: wgpu::ShaderSource::Wgsl(ntt_source.into()),
-        });
+        let ntt_module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("ntt_ops"),
+                source: wgpu::ShaderSource::Wgsl(ntt_source.into()),
+            });
 
         // ── Create GPU buffers ─────────────────────────────────────
         let buf_a = self.create_fp_buffer("a", a);
@@ -224,30 +243,79 @@ impl GpuContext {
         let workgroups_half = ((n / 2) as u32 + 255) / 256;
 
         // ── Stage 1: twist(a, psi) → ta ────────────────────────────
-        self.dispatch_ring_op(&ring_module, "ring_twist",
-                              &buf_a, &buf_psi, &buf_ta, &params_buf, workgroups_n);
+        self.dispatch_ring_op(
+            &ring_module,
+            "ring_twist",
+            &buf_a,
+            &buf_psi,
+            &buf_ta,
+            &params_buf,
+            workgroups_n,
+        );
 
         // ── Stage 2: twist(b, psi) → tb ────────────────────────────
-        self.dispatch_ring_op(&ring_module, "ring_twist",
-                              &buf_b, &buf_psi, &buf_tb, &params_buf, workgroups_n);
+        self.dispatch_ring_op(
+            &ring_module,
+            "ring_twist",
+            &buf_b,
+            &buf_psi,
+            &buf_tb,
+            &params_buf,
+            workgroups_n,
+        );
 
         // ── Stage 3: NTT(ta) in-place ──────────────────────────────
-        self.dispatch_ntt_forward(&ntt_module, &buf_ta, n as u32, k, workgroups_n, workgroups_half);
+        self.dispatch_ntt_forward(
+            &ntt_module,
+            &buf_ta,
+            n as u32,
+            k,
+            workgroups_n,
+            workgroups_half,
+        );
 
         // ── Stage 4: NTT(tb) in-place ──────────────────────────────
-        self.dispatch_ntt_forward(&ntt_module, &buf_tb, n as u32, k, workgroups_n, workgroups_half);
+        self.dispatch_ntt_forward(
+            &ntt_module,
+            &buf_tb,
+            n as u32,
+            k,
+            workgroups_n,
+            workgroups_half,
+        );
 
         // ── Stage 5: pointwise_mul(ntt_a, ntt_b) → prod ────────────
-        self.dispatch_ring_op(&ring_module, "ring_pointwise_mul",
-                              &buf_ta, &buf_tb, &buf_prod, &params_buf, workgroups_n);
+        self.dispatch_ring_op(
+            &ring_module,
+            "ring_pointwise_mul",
+            &buf_ta,
+            &buf_tb,
+            &buf_prod,
+            &params_buf,
+            workgroups_n,
+        );
 
         // ── Stage 6: INTT(prod) in-place ────────────────────────────
-        self.dispatch_ntt_inverse(&ntt_module, &buf_prod, n as u32, k, workgroups_n, workgroups_half);
+        self.dispatch_ntt_inverse(
+            &ntt_module,
+            &buf_prod,
+            n as u32,
+            k,
+            workgroups_n,
+            workgroups_half,
+        );
 
         // ── Stage 7: untwist(prod, psi_inv) → result ────────────────
         // We reuse buf_ta as the output buffer for the final result.
-        self.dispatch_ring_op(&ring_module, "ring_untwist",
-                              &buf_prod, &buf_psi_inv, &buf_ta, &params_buf, workgroups_n);
+        self.dispatch_ring_op(
+            &ring_module,
+            "ring_untwist",
+            &buf_prod,
+            &buf_psi_inv,
+            &buf_ta,
+            &params_buf,
+            workgroups_n,
+        );
 
         // ── Read back result ────────────────────────────────────────
         self.read_fp_buffer(&buf_ta, n)
@@ -266,14 +334,16 @@ impl GpuContext {
         params: &wgpu::Buffer,
         workgroups: u32,
     ) {
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some(entry_point),
-            layout: None,
-            module,
-            entry_point: Some(entry_point),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry_point),
+                layout: None,
+                module,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let bind_group = self.create_ring_bind_group(&pipeline, lhs, rhs, out, params);
 
@@ -294,24 +364,30 @@ impl GpuContext {
         module: &wgpu::ShaderModule,
         data_buf: &wgpu::Buffer,
         entry_point: &str,
-        n: u32, k: u32, stage: u32,
+        n: u32,
+        k: u32,
+        stage: u32,
         workgroups: u32,
     ) {
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some(entry_point),
-            layout: None,
-            module,
-            entry_point: Some(entry_point),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry_point),
+                layout: None,
+                module,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let params = [n, k, stage, 0u32];
-        let params_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ntt_params"),
-            contents: bytemuck_cast_slice(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let params_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ntt_params"),
+                contents: bytemuck_cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         let bind_group_layout = pipeline.get_bind_group_layout(0);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -345,7 +421,8 @@ impl GpuContext {
         &self,
         module: &wgpu::ShaderModule,
         buf: &wgpu::Buffer,
-        n: u32, k: u32,
+        n: u32,
+        k: u32,
         workgroups_n: u32,
         workgroups_half: u32,
     ) {
@@ -360,7 +437,8 @@ impl GpuContext {
         &self,
         module: &wgpu::ShaderModule,
         buf: &wgpu::Buffer,
-        n: u32, k: u32,
+        n: u32,
+        k: u32,
         workgroups_n: u32,
         workgroups_half: u32,
     ) {
@@ -376,11 +454,12 @@ impl GpuContext {
     /// Create a read-only STORAGE buffer initialized with Fp data.
     fn create_fp_buffer(&self, label: &str, data: &[(u32, u32)]) -> wgpu::Buffer {
         let flat = flatten_fp(data);
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(label),
-            contents: bytemuck_cast_slice(&flat),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        })
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck_cast_slice(&flat),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            })
     }
 
     /// Create a read-write STORAGE buffer initialized with Fp data.
@@ -406,11 +485,12 @@ impl GpuContext {
     /// Create the uniform buffer for RingParams { n, _pad0, _pad1, _pad2 }.
     fn create_ring_params(&self, n: u32) -> wgpu::Buffer {
         let params = [n, 0u32, 0u32, 0u32];
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ring_params"),
-            contents: bytemuck_cast_slice(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        })
+        self.device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ring_params"),
+                contents: bytemuck_cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
     }
 
     /// Create a bind group for ring shaders: (lhs @0, rhs @1, out @2, params @3).
@@ -427,10 +507,22 @@ impl GpuContext {
             label: None,
             layout: &layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: lhs.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: rhs.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: out.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: params.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: lhs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: rhs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params.as_entire_binding(),
+                },
             ],
         })
     }
@@ -570,7 +662,5 @@ fn flatten_fp(data: &[(u32, u32)]) -> Vec<u32> {
 
 /// Safe cast of &[u32] to &[u8] without bytemuck dependency.
 fn bytemuck_cast_slice(data: &[u32]) -> &[u8] {
-    unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4)
-    }
+    unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) }
 }

@@ -11,7 +11,7 @@
 //! in the (min, +) semiring. Runs in O(n^3).
 
 use crate::element::Tropical;
-use crate::matrix::{TropMatrix, MAX_DIM};
+use crate::matrix::{MAX_DIM, TropMatrix};
 
 /// Compute the Kleene star of a tropical matrix.
 ///

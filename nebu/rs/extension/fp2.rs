@@ -21,8 +21,14 @@ pub struct Fp2 {
 }
 
 impl Fp2 {
-    pub const ZERO: Self = Self { re: Goldilocks::ZERO, im: Goldilocks::ZERO };
-    pub const ONE: Self = Self { re: Goldilocks::ONE, im: Goldilocks::ZERO };
+    pub const ZERO: Self = Self {
+        re: Goldilocks::ZERO,
+        im: Goldilocks::ZERO,
+    };
+    pub const ONE: Self = Self {
+        re: Goldilocks::ONE,
+        im: Goldilocks::ZERO,
+    };
 
     #[inline]
     pub const fn new(re: Goldilocks, im: Goldilocks) -> Self {
@@ -32,13 +38,19 @@ impl Fp2 {
     /// Embed a base field element as (a, 0).
     #[inline]
     pub const fn from_base(a: Goldilocks) -> Self {
-        Self { re: a, im: Goldilocks::ZERO }
+        Self {
+            re: a,
+            im: Goldilocks::ZERO,
+        }
     }
 
     /// Conjugate: (a, b) → (a, -b).
     #[inline]
     pub fn conj(self) -> Self {
-        Self { re: self.re, im: -self.im }
+        Self {
+            re: self.re,
+            im: -self.im,
+        }
     }
 
     /// Norm: a² - 7b² (in F_p).
@@ -75,7 +87,10 @@ impl Add for Fp2 {
     type Output = Self;
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self { re: self.re + rhs.re, im: self.im + rhs.im }
+        Self {
+            re: self.re + rhs.re,
+            im: self.im + rhs.im,
+        }
     }
 }
 
@@ -83,7 +98,10 @@ impl Sub for Fp2 {
     type Output = Self;
     #[inline]
     fn sub(self, rhs: Self) -> Self {
-        Self { re: self.re - rhs.re, im: self.im - rhs.im }
+        Self {
+            re: self.re - rhs.re,
+            im: self.im - rhs.im,
+        }
     }
 }
 
@@ -104,6 +122,9 @@ impl Neg for Fp2 {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self {
-        Self { re: -self.re, im: -self.im }
+        Self {
+            re: -self.re,
+            im: -self.im,
+        }
     }
 }

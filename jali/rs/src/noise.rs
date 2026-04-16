@@ -18,13 +18,21 @@ pub struct NoiseBudget {
 impl NoiseBudget {
     /// Create a fresh noise budget with an initial bound.
     pub fn fresh(initial_bound: u32) -> Self {
-        NoiseBudget { log_bound: initial_bound }
+        NoiseBudget {
+            log_bound: initial_bound,
+        }
     }
 
     /// Noise budget after addition: max(a, b) + 1 (noise roughly doubles).
     pub fn after_add(a: &NoiseBudget, b: &NoiseBudget) -> NoiseBudget {
-        let max_log = if a.log_bound > b.log_bound { a.log_bound } else { b.log_bound };
-        NoiseBudget { log_bound: max_log + 1 }
+        let max_log = if a.log_bound > b.log_bound {
+            a.log_bound
+        } else {
+            b.log_bound
+        };
+        NoiseBudget {
+            log_bound: max_log + 1,
+        }
     }
 
     /// Noise budget after multiplication.
@@ -41,7 +49,9 @@ impl NoiseBudget {
 
     /// Noise budget after bootstrapping resets to a fixed noise level.
     pub fn after_bootstrap(bootstrap_noise: u32) -> NoiseBudget {
-        NoiseBudget { log_bound: bootstrap_noise }
+        NoiseBudget {
+            log_bound: bootstrap_noise,
+        }
     }
 
     /// Check whether bootstrapping is needed.

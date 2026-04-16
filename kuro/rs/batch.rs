@@ -20,7 +20,9 @@ use crate::tower::F2_128;
 pub fn batch_inv_128(input: &[F2_128], output: &mut [F2_128]) {
     let n = input.len();
     assert!(n == output.len(), "length mismatch");
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
 
     // Step 1: running products (skip zeros)
     let mut running = F2_128::ONE;
@@ -34,7 +36,9 @@ pub fn batch_inv_128(input: &[F2_128], output: &mut [F2_128]) {
     }
 
     if running.is_zero() {
-        for elem in output.iter_mut().take(n) { *elem = F2_128::ZERO; }
+        for elem in output.iter_mut().take(n) {
+            *elem = F2_128::ZERO;
+        }
         return;
     }
 

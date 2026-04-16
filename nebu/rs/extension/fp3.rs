@@ -39,7 +39,11 @@ impl Fp3 {
     /// Embed a base field element as (a, 0, 0).
     #[inline]
     pub const fn from_base(a: Goldilocks) -> Self {
-        Self { c0: a, c1: Goldilocks::ZERO, c2: Goldilocks::ZERO }
+        Self {
+            c0: a,
+            c1: Goldilocks::ZERO,
+            c2: Goldilocks::ZERO,
+        }
     }
 
     /// Squaring using t³ = t + 1.
@@ -50,10 +54,10 @@ impl Fp3 {
 
         let s0 = a0.square();
         let s1 = a0 * a1;
-        let s1 = s1 + s1;                    // 2·a0·a1
-        let s2 = a1.square() + a0 * a2 + a0 * a2;  // a1² + 2·a0·a2
+        let s1 = s1 + s1; // 2·a0·a1
+        let s2 = a1.square() + a0 * a2 + a0 * a2; // a1² + 2·a0·a2
         let a1a2 = a1 * a2;
-        let s3 = a1a2 + a1a2;                // 2·a1·a2
+        let s3 = a1a2 + a1a2; // 2·a1·a2
         let s4 = a2.square();
 
         // reduce: t³ = t + 1, t⁴ = t² + t
@@ -80,9 +84,7 @@ impl Fp3 {
         let c0c1c2 = c0 * c1 * c2;
         let three = Goldilocks::new(3);
 
-        c0_3 + c1_3 + c2_3 - three * c0c1c2
-            + c0_2 * c2 + c0_2 * c2
-            + c0 * c2_2
+        c0_3 + c1_3 + c2_3 - three * c0c1c2 + c0_2 * c2 + c0_2 * c2 + c0 * c2_2
             - c1 * c2_2
             - c0 * c1_2
     }
@@ -108,7 +110,11 @@ impl Fp3 {
         let r1 = (c2_2 - c0 * c1) * n_inv;
         let r2 = (c1_2 - c0 * c2 - c2_2) * n_inv;
 
-        Self { c0: r0, c1: r1, c2: r2 }
+        Self {
+            c0: r0,
+            c1: r1,
+            c2: r2,
+        }
     }
 }
 
@@ -174,6 +180,10 @@ impl Neg for Fp3 {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self {
-        Self { c0: -self.c0, c1: -self.c1, c2: -self.c2 }
+        Self {
+            c0: -self.c0,
+            c1: -self.c1,
+            c2: -self.c2,
+        }
     }
 }

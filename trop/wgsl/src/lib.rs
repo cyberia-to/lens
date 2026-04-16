@@ -73,19 +73,23 @@ impl GpuContext {
             }}\n"
         );
 
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("eval_tropical"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("eval_tropical"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("eval_tropical"),
-            layout: None,
-            module: &module,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("eval_tropical"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -142,32 +146,40 @@ impl GpuContext {
         assert_eq!(a.len(), n * n, "matrix A size mismatch");
         assert_eq!(b.len(), n * n, "matrix B size mismatch");
 
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("tropical_matmul"),
-            source: wgpu::ShaderSource::Wgsl(TROPICAL_WGSL.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("tropical_matmul"),
+                source: wgpu::ShaderSource::Wgsl(TROPICAL_WGSL.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("tropical_matmul"),
-            layout: None,
-            module: &module,
-            entry_point: Some("tropical_matmul"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("tropical_matmul"),
+                layout: None,
+                module: &module,
+                entry_point: Some("tropical_matmul"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let mat_size = (n * n * 4) as u64;
 
-        let buf_a = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("matrix_a"),
-            contents: bytemuck_cast_slice(a),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let buf_b = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("matrix_b"),
-            contents: bytemuck_cast_slice(b),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let buf_a = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("matrix_a"),
+                contents: bytemuck_cast_slice(a),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let buf_b = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("matrix_b"),
+                contents: bytemuck_cast_slice(b),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let buf_c = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("matrix_c"),
             size: mat_size,
@@ -176,11 +188,13 @@ impl GpuContext {
         });
 
         let params = [n as u32];
-        let buf_params = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("params"),
-            contents: bytemuck_cast_slice(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let buf_params = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: bytemuck_cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
@@ -244,7 +258,5 @@ impl GpuContext {
 
 /// Safe cast of &[u32] to &[u8] without bytemuck dependency.
 fn bytemuck_cast_slice(data: &[u32]) -> &[u8] {
-    unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4)
-    }
+    unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) }
 }

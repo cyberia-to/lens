@@ -9,9 +9,9 @@
 //! NOT cryptographically secure — real deployments would use
 //! hemera-based extraction.
 
+use crate::ring::RingElement;
 use nebu::Goldilocks;
 use nebu::field::P;
-use crate::ring::RingElement;
 
 /// Simple xorshift64 PRNG state.
 struct Xorshift64 {
@@ -21,7 +21,11 @@ struct Xorshift64 {
 impl Xorshift64 {
     fn new(seed: u64) -> Self {
         // Ensure non-zero state
-        let state = if seed == 0 { 0xDEAD_BEEF_CAFE_BABE } else { seed };
+        let state = if seed == 0 {
+            0xDEAD_BEEF_CAFE_BABE
+        } else {
+            seed
+        };
         Xorshift64 { state }
     }
 

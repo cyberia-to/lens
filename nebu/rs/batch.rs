@@ -46,16 +46,28 @@ pub fn batch_inv_safe(a: &[Goldilocks], result: &mut [Goldilocks]) {
     }
 
     // Replace zeros with 1 in the prefix product
-    result[0] = if a[0].is_zero() { Goldilocks::ONE } else { a[0] };
+    result[0] = if a[0].is_zero() {
+        Goldilocks::ONE
+    } else {
+        a[0]
+    };
     for i in 1..n {
-        let ai = if a[i].is_zero() { Goldilocks::ONE } else { a[i] };
+        let ai = if a[i].is_zero() {
+            Goldilocks::ONE
+        } else {
+            a[i]
+        };
         result[i] = result[i - 1] * ai;
     }
 
     let mut inv_all = result[n - 1].inv();
 
     for i in (1..n).rev() {
-        let ai = if a[i].is_zero() { Goldilocks::ONE } else { a[i] };
+        let ai = if a[i].is_zero() {
+            Goldilocks::ONE
+        } else {
+            a[i]
+        };
         result[i] = if a[i].is_zero() {
             Goldilocks::ZERO
         } else {
@@ -63,5 +75,9 @@ pub fn batch_inv_safe(a: &[Goldilocks], result: &mut [Goldilocks]) {
         };
         inv_all *= ai;
     }
-    result[0] = if a[0].is_zero() { Goldilocks::ZERO } else { inv_all };
+    result[0] = if a[0].is_zero() {
+        Goldilocks::ZERO
+    } else {
+        inv_all
+    };
 }

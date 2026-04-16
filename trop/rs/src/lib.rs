@@ -11,17 +11,17 @@
 
 #![no_std]
 
-pub mod element;
-pub mod matrix;
-pub mod kleene;
-pub mod eigenvalue;
 pub mod determinant;
 pub mod dual;
+pub mod eigenvalue;
+pub mod element;
 pub mod encoding;
+pub mod kleene;
+pub mod matrix;
 
 #[cfg(test)]
 mod vectors;
 
 pub use element::Tropical;
-pub use matrix::TropMatrix;
 pub use kleene::kleene_star;
+pub use matrix::TropMatrix;

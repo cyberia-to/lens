@@ -9,8 +9,8 @@
 //! compares results. This is the bridge between the two independent
 //! implementations: rs/ (CPU) and wgsl/ (GPU).
 
-use nebu::field::Goldilocks;
 use nebu::Fp2;
+use nebu::field::Goldilocks;
 use nebu_wgsl::GpuContext;
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -61,9 +61,13 @@ fn gpu_add_matches_cpu() {
     ];
     for (a, b) in cases {
         let cpu = Goldilocks::new(a) + Goldilocks::new(b);
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_add({}u, {}u, {}u, {}u)", a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!(
+            "gl_add({}u, {}u, {}u, {}u)",
+            a as u32,
+            (a >> 32) as u32,
+            b as u32,
+            (b >> 32) as u32
+        ));
         assert_eq!(to_lohi(cpu), (lo, hi), "add({a:#x}, {b:#x})");
     }
 }
@@ -74,9 +78,13 @@ fn gpu_sub_matches_cpu() {
     let cases = [(5u64, 3u64), (0, 1), (1, 0xFFFFFFFF00000000)];
     for (a, b) in cases {
         let cpu = Goldilocks::new(a) - Goldilocks::new(b);
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_sub({}u, {}u, {}u, {}u)", a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!(
+            "gl_sub({}u, {}u, {}u, {}u)",
+            a as u32,
+            (a >> 32) as u32,
+            b as u32,
+            (b >> 32) as u32
+        ));
         assert_eq!(to_lohi(cpu), (lo, hi), "sub({a:#x}, {b:#x})");
     }
 }
@@ -92,9 +100,13 @@ fn gpu_mul_matches_cpu() {
     ];
     for (a, b) in cases {
         let cpu = Goldilocks::new(a) * Goldilocks::new(b);
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_mul({}u, {}u, {}u, {}u)", a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!(
+            "gl_mul({}u, {}u, {}u, {}u)",
+            a as u32,
+            (a >> 32) as u32,
+            b as u32,
+            (b >> 32) as u32
+        ));
         assert_eq!(to_lohi(cpu), (lo, hi), "mul({a:#x}, {b:#x})");
     }
 }
@@ -105,9 +117,7 @@ fn gpu_neg_matches_cpu() {
     let cases = [0u64, 1, 0xFFFFFFFF00000000, 0x2A];
     for a in cases {
         let cpu = -Goldilocks::new(a);
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_neg({}u, {}u)", a as u32, (a >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!("gl_neg({}u, {}u)", a as u32, (a >> 32) as u32));
         assert_eq!(to_lohi(cpu), (lo, hi), "neg({a:#x})");
     }
 }
@@ -118,9 +128,7 @@ fn gpu_pow7_matches_cpu() {
     let cases = [0u64, 1, 2, 7, 0xDEADBEEF];
     for a in cases {
         let cpu = Goldilocks::new(a).pow7();
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_pow7({}u, {}u)", a as u32, (a >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!("gl_pow7({}u, {}u)", a as u32, (a >> 32) as u32));
         assert_eq!(to_lohi(cpu), (lo, hi), "pow7({a:#x})");
     }
 }
@@ -131,9 +139,7 @@ fn gpu_inv_matches_cpu() {
     let cases = [1u64, 2, 0xFFFFFFFF00000000];
     for a in cases {
         let cpu = Goldilocks::new(a).inv();
-        let (lo, hi) = ctx.eval_field_op(
-            &format!("gl_inv({}u, {}u)", a as u32, (a >> 32) as u32)
-        );
+        let (lo, hi) = ctx.eval_field_op(&format!("gl_inv({}u, {}u)", a as u32, (a >> 32) as u32));
         assert_eq!(to_lohi(cpu), (lo, hi), "inv({a:#x})");
     }
 }
@@ -141,9 +147,7 @@ fn gpu_inv_matches_cpu() {
 #[test]
 fn gpu_inv_roundtrip() {
     let ctx = gpu();
-    let (lo, hi) = ctx.eval_field_op(
-        "gl_mul(2u, 0u, gl_inv(2u, 0u).x, gl_inv(2u, 0u).y)"
-    );
+    let (lo, hi) = ctx.eval_field_op("gl_mul(2u, 0u, gl_inv(2u, 0u).x, gl_inv(2u, 0u).y)");
     assert_eq!((lo, hi), (1, 0), "2 * inv(2) should be 1");
 }
 
@@ -209,7 +213,8 @@ fn gpu_ntt_roundtrip() {
 
     for i in 0..4 {
         assert_eq!(
-            gpu_data[i], to_lohi(cpu_data[i]),
+            gpu_data[i],
+            to_lohi(cpu_data[i]),
             "NTT mismatch at index {i}"
         );
     }
@@ -217,7 +222,8 @@ fn gpu_ntt_roundtrip() {
     ctx.run_intt(&mut gpu_data);
     for i in 0..4 {
         assert_eq!(
-            gpu_data[i], to_lohi(input[i]),
+            gpu_data[i],
+            to_lohi(input[i]),
             "INTT roundtrip mismatch at index {i}"
         );
     }

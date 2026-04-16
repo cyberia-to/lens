@@ -57,19 +57,23 @@ impl GpuContext {
     /// Returns a Vec of u32: 1 = pass, 0 = fail for each test.
     pub fn run_test_vectors(&self) -> Vec<u32> {
         let source = format!("{FIELD_WGSL}\n{EXTENSION_WGSL}\n{TEST_VECTORS_WGSL}");
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("test_vectors"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("test_vectors"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("test_vectors"),
-            layout: None,
-            module: &module,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("test_vectors"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let result_size = 65 * 4u64;
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -135,19 +139,23 @@ impl GpuContext {
             }}\n"
         );
 
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("eval"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("eval"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("eval"),
-            layout: None,
-            module: &module,
-            entry_point: Some("main"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("eval"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -207,24 +215,34 @@ impl GpuContext {
             }}\n"
         );
 
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("custom"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("custom"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None, layout: None, module: &module,
-            entry_point: Some("main"), compilation_options: Default::default(), cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let size = (n_u32s * 4) as u64;
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None, size,
+            label: None,
+            size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None, size,
+            label: None,
+            size,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -233,7 +251,8 @@ impl GpuContext {
             label: None,
             layout: &pipeline.get_bind_group_layout(0),
             entries: &[wgpu::BindGroupEntry {
-                binding: 0, resource: gpu_buf.as_entire_binding(),
+                binding: 0,
+                resource: gpu_buf.as_entire_binding(),
             }],
         });
 
@@ -278,10 +297,12 @@ impl GpuContext {
         let k = n.trailing_zeros();
 
         let source = format!("{FIELD_WGSL}\n{NTT_WGSL}\n{NTT_KERNELS_WGSL}");
-        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ntt"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("ntt"),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            });
 
         let mut flat: Vec<u32> = Vec::with_capacity(n * 2);
         for &(lo, hi) in data.iter() {
@@ -289,11 +310,13 @@ impl GpuContext {
             flat.push(hi);
         }
 
-        let data_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ntt_data"),
-            contents: bytemuck_cast_slice(&flat),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
+        let data_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ntt_data"),
+                contents: bytemuck_cast_slice(&flat),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            });
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
@@ -306,21 +329,56 @@ impl GpuContext {
         let workgroups_n = (n as u32 + 255) / 256;
 
         if forward {
-            self.dispatch_ntt_pass(&module, &data_buf, "bit_reverse_kernel",
-                                   n as u32, k, 0, workgroups_n);
+            self.dispatch_ntt_pass(
+                &module,
+                &data_buf,
+                "bit_reverse_kernel",
+                n as u32,
+                k,
+                0,
+                workgroups_n,
+            );
             for s in 0..k {
-                self.dispatch_ntt_pass(&module, &data_buf, "ntt_stage_kernel",
-                                       n as u32, k, s, workgroups);
+                self.dispatch_ntt_pass(
+                    &module,
+                    &data_buf,
+                    "ntt_stage_kernel",
+                    n as u32,
+                    k,
+                    s,
+                    workgroups,
+                );
             }
         } else {
             for s in (0..k).rev() {
-                self.dispatch_ntt_pass(&module, &data_buf, "intt_stage_kernel",
-                                       n as u32, k, s, workgroups);
+                self.dispatch_ntt_pass(
+                    &module,
+                    &data_buf,
+                    "intt_stage_kernel",
+                    n as u32,
+                    k,
+                    s,
+                    workgroups,
+                );
             }
-            self.dispatch_ntt_pass(&module, &data_buf, "bit_reverse_kernel",
-                                   n as u32, k, 0, workgroups_n);
-            self.dispatch_ntt_pass(&module, &data_buf, "intt_scale_kernel",
-                                   n as u32, k, 0, workgroups_n);
+            self.dispatch_ntt_pass(
+                &module,
+                &data_buf,
+                "bit_reverse_kernel",
+                n as u32,
+                k,
+                0,
+                workgroups_n,
+            );
+            self.dispatch_ntt_pass(
+                &module,
+                &data_buf,
+                "intt_scale_kernel",
+                n as u32,
+                k,
+                0,
+                workgroups_n,
+            );
         }
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -349,24 +407,30 @@ impl GpuContext {
         module: &wgpu::ShaderModule,
         data_buf: &wgpu::Buffer,
         entry_point: &str,
-        n: u32, k: u32, stage: u32,
+        n: u32,
+        k: u32,
+        stage: u32,
         workgroups: u32,
     ) {
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some(entry_point),
-            layout: None,
-            module,
-            entry_point: Some(entry_point),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry_point),
+                layout: None,
+                module,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let params = [n, k, stage, 0u32];
-        let params_buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ntt_params"),
-            contents: bytemuck_cast_slice(&params),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let params_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ntt_params"),
+                contents: bytemuck_cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         let bind_group_layout = pipeline.get_bind_group_layout(0);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -398,7 +462,5 @@ impl GpuContext {
 
 /// Safe cast of &[u32] to &[u8] without bytemuck dependency.
 fn bytemuck_cast_slice(data: &[u32]) -> &[u8] {
-    unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4)
-    }
+    unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 4) }
 }

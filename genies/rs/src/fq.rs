@@ -232,9 +232,7 @@ impl Fq {
     ///   7. while r >= q: r -= q                        (at most 2 times)
     fn barrett_reduce(t: &[u64; 16]) -> Fq {
         // Step 1: q1 = t >> 448 (t[7..15], up to 9 limbs)
-        let q1: [u64; 9] = [
-            t[7], t[8], t[9], t[10], t[11], t[12], t[13], t[14], t[15],
-        ];
+        let q1: [u64; 9] = [t[7], t[8], t[9], t[10], t[11], t[12], t[13], t[14], t[15]];
 
         // Step 2: q2 = q1 * mu (9 x 9 = up to 18 limbs)
         let mut q2 = [0u64; 18];
@@ -246,9 +244,7 @@ impl Fq {
         ];
 
         // Step 4: r1 = t mod 2^576 (low 9 limbs of t)
-        let r1: [u64; 9] = [
-            t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8],
-        ];
+        let r1: [u64; 9] = [t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8]];
 
         // Step 5: r2 = (q3 * q) mod 2^576
         // We only need the low 9 limbs of q3 * PRIME
@@ -256,8 +252,8 @@ impl Fq {
         Self::mul_n_m(&q3, &PRIME, &mut r2_full);
         // Take low 9 limbs
         let r2: [u64; 9] = [
-            r2_full[0], r2_full[1], r2_full[2], r2_full[3],
-            r2_full[4], r2_full[5], r2_full[6], r2_full[7], r2_full[8],
+            r2_full[0], r2_full[1], r2_full[2], r2_full[3], r2_full[4], r2_full[5], r2_full[6],
+            r2_full[7], r2_full[8],
         ];
 
         // Step 6: r = r1 - r2 (mod 2^576)
@@ -376,11 +372,7 @@ impl Fq {
             return 0;
         }
         let r = Self::pow_limbs(a, &PRIME_MINUS_1_HALF);
-        if r == Fq::ONE {
-            1
-        } else {
-            -1
-        }
+        if r == Fq::ONE { 1 } else { -1 }
     }
 
     /// Square root via a^((q+1)/4) for q ≡ 3 (mod 4).
@@ -399,11 +391,7 @@ impl Fq {
             0x65b48e8f740f89bf,
         ]);
         let r = Self::pow_limbs(a, &qp1_over4);
-        if Fq::square(&r) == *a {
-            Some(r)
-        } else {
-            None
-        }
+        if Fq::square(&r) == *a { Some(r) } else { None }
     }
 
     fn shr2_512(v: &[u64; 8]) -> [u64; 8] {

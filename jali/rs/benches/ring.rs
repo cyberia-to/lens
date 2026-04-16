@@ -5,9 +5,9 @@
 // ---
 //! Benchmarks for ring arithmetic.
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use jali::ring::RingElement;
+use criterion::{Criterion, criterion_group, criterion_main};
 use jali::ntt;
+use jali::ring::RingElement;
 use jali::sample;
 
 fn bench_ring_add(c: &mut Criterion) {
@@ -62,5 +62,12 @@ fn bench_ring_scalar_mul(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_ring_add, bench_ring_mul, bench_ntt_forward, bench_ntt_inverse, bench_ring_scalar_mul);
+criterion_group!(
+    benches,
+    bench_ring_add,
+    bench_ring_mul,
+    bench_ntt_forward,
+    bench_ntt_inverse,
+    bench_ring_scalar_mul
+);
 criterion_main!(benches);

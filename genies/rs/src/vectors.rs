@@ -9,10 +9,10 @@
 //! Values computed from the prime definition and verified against
 //! reference SageMath computations.
 
-use crate::fq::{Fq, PRIME};
+use crate::action::{Ideal, NUM_PRIMES, PRIMES};
 use crate::curve::{MontCurve, MontPoint};
-use crate::action::{Ideal, PRIMES, NUM_PRIMES};
 use crate::encoding;
+use crate::fq::{Fq, PRIME};
 use crate::isogeny;
 
 // ─── Fq constants ───────────────────────────────────────────────────────────
@@ -517,7 +517,10 @@ fn isogeny_preserves_supersingularity() {
         if e1.is_on_curve(&x) {
             let p = MontPoint::from_x(x);
             let result = p.ladder(&qp1, &e1.a);
-            assert!(result.is_inf(), "point on codomain does not have order dividing q+1");
+            assert!(
+                result.is_inf(),
+                "point on codomain does not have order dividing q+1"
+            );
             break;
         }
         test_x += 1;
@@ -568,7 +571,10 @@ fn action_inverse_returns_to_origin() {
     // e2 should be isomorphic to e0, i.e., same j-invariant
     let j0 = e0.j_invariant();
     let j2 = e2.j_invariant();
-    assert_eq!(j0, j2, "applying +1 then -1 should return to E_0 (same j-invariant)");
+    assert_eq!(
+        j0, j2,
+        "applying +1 then -1 should return to E_0 (same j-invariant)"
+    );
 }
 
 #[test]
@@ -577,13 +583,13 @@ fn dh_commutativity() {
     let e0 = MontCurve::e0();
 
     let mut exp_a = [0i8; NUM_PRIMES];
-    exp_a[0] = 1;  // ℓ=3
-    exp_a[1] = 1;  // ℓ=5
+    exp_a[0] = 1; // ℓ=3
+    exp_a[1] = 1; // ℓ=5
     let ideal_a = Ideal::from_exponents(&exp_a);
 
     let mut exp_b = [0i8; NUM_PRIMES];
-    exp_b[0] = 1;  // ℓ=3
-    exp_b[2] = 1;  // ℓ=7
+    exp_b[0] = 1; // ℓ=3
+    exp_b[2] = 1; // ℓ=7
     let ideal_b = Ideal::from_exponents(&exp_b);
 
     let ea = crate::action::action(&ideal_a, &e0);
@@ -593,7 +599,11 @@ fn dh_commutativity() {
     let ba = crate::action::dh(&ideal_a, &eb);
 
     // Same j-invariant
-    assert_eq!(ab.j_invariant(), ba.j_invariant(), "DH commutativity failed");
+    assert_eq!(
+        ab.j_invariant(),
+        ba.j_invariant(),
+        "DH commutativity failed"
+    );
 }
 
 // ─── Encoding tests ─────────────────────────────────────────────────────────

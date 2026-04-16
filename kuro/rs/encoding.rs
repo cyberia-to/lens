@@ -78,7 +78,11 @@ pub fn decode_32(el: F2_32) -> [u8; 4] {
 }
 
 /// Encode 1 byte as an F₂⁸ element.
-pub fn encode_8(byte: u8) -> F2_8 { F2_8(byte) }
+pub fn encode_8(byte: u8) -> F2_8 {
+    F2_8(byte)
+}
 
 /// Decode an F₂⁸ element to 1 byte.
-pub fn decode_8(el: F2_8) -> u8 { el.0 }
+pub fn decode_8(el: F2_8) -> u8 {
+    el.0
+}

@@ -11,14 +11,14 @@
 
 #![no_std]
 
-pub mod fq;
-pub mod curve;
-pub mod isogeny;
 pub mod action;
+pub mod curve;
 pub mod encoding;
+pub mod fq;
+pub mod isogeny;
 
 #[cfg(test)]
 mod vectors;
 
-pub use fq::Fq;
 pub use curve::{MontCurve, MontPoint};
+pub use fq::Fq;

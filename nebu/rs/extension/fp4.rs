@@ -10,8 +10,8 @@
 //!
 //! Tower decomposition: Fp4 = Fp2[v] / (v² - u) where u² = 7, v = w.
 
-use crate::field::Goldilocks;
 use super::fp2::Fp2;
+use crate::field::Goldilocks;
 use core::ops::{Add, Mul, Neg, Sub};
 
 const SEVEN: Goldilocks = Goldilocks::new(7);
@@ -50,13 +50,23 @@ impl Fp4 {
     /// Embed a base field element as (a, 0, 0, 0).
     #[inline]
     pub const fn from_base(a: Goldilocks) -> Self {
-        Self { c0: a, c1: Goldilocks::ZERO, c2: Goldilocks::ZERO, c3: Goldilocks::ZERO }
+        Self {
+            c0: a,
+            c1: Goldilocks::ZERO,
+            c2: Goldilocks::ZERO,
+            c3: Goldilocks::ZERO,
+        }
     }
 
     /// Embed an Fp2 element via tower: (re, im) → (re, 0, im, 0).
     #[inline]
     pub const fn from_fp2(x: Fp2) -> Self {
-        Self { c0: x.re, c1: Goldilocks::ZERO, c2: x.im, c3: Goldilocks::ZERO }
+        Self {
+            c0: x.re,
+            c1: Goldilocks::ZERO,
+            c2: x.im,
+            c3: Goldilocks::ZERO,
+        }
     }
 
     /// Extract tower components: A = (c0, c2), B = (c1, c3) in Fp2.
@@ -68,7 +78,12 @@ impl Fp4 {
     /// Tower conjugate: (A + Bv) → (A - Bv) = (c0, -c1, c2, -c3).
     #[inline]
     pub fn conj(self) -> Self {
-        Self { c0: self.c0, c1: -self.c1, c2: self.c2, c3: -self.c3 }
+        Self {
+            c0: self.c0,
+            c1: -self.c1,
+            c2: self.c2,
+            c3: -self.c3,
+        }
     }
 
     /// Squaring using w⁴ = 7.
@@ -121,7 +136,12 @@ impl Fp4 {
         // result = conj · n_inv = (A·n_inv, -B·n_inv)
         let r_a = a * n_inv;
         let r_b = -(b * n_inv);
-        Self { c0: r_a.re, c1: r_b.re, c2: r_a.im, c3: r_b.im }
+        Self {
+            c0: r_a.re,
+            c1: r_b.re,
+            c2: r_a.im,
+            c3: r_b.im,
+        }
     }
 
     /// Frobenius: σ(w) = 2⁴⁸·w.
@@ -138,7 +158,11 @@ impl Fp4 {
 
 impl core::fmt::Debug for Fp4 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Fp4({:?}, {:?}, {:?}, {:?})", self.c0, self.c1, self.c2, self.c3)
+        write!(
+            f,
+            "Fp4({:?}, {:?}, {:?}, {:?})",
+            self.c0, self.c1, self.c2, self.c3
+        )
     }
 }
 
@@ -204,6 +228,11 @@ impl Neg for Fp4 {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self {
-        Self { c0: -self.c0, c1: -self.c1, c2: -self.c2, c3: -self.c3 }
+        Self {
+            c0: -self.c0,
+            c1: -self.c1,
+            c2: -self.c2,
+            c3: -self.c3,
+        }
     }
 }

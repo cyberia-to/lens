@@ -12,7 +12,10 @@ use std::time::Instant;
 // ── Backend selection ────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq)]
-enum Backend { Cpu, Gpu }
+enum Backend {
+    Cpu,
+    Gpu,
+}
 
 struct Ctx {
     backend: Backend,
@@ -58,12 +61,15 @@ fn parse_backend_flag(args: &[String]) -> (Backend, Vec<String>) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 { print_usage(); std::process::exit(1); }
+    if args.len() < 2 {
+        print_usage();
+        std::process::exit(1);
+    }
     match args[1].as_str() {
-        "calc"                    => cmd_calc(&args[2..]),
-        "action"                  => cmd_action(&args[2..]),
-        "bench"                   => cmd_bench(&args[2..]),
-        "help" | "--help" | "-h"  => print_usage(),
+        "calc" => cmd_calc(&args[2..]),
+        "action" => cmd_action(&args[2..]),
+        "bench" => cmd_bench(&args[2..]),
+        "help" | "--help" | "-h" => print_usage(),
         other => {
             eprintln!("unknown command: {other}");
             print_usage();
@@ -73,7 +79,8 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("\
+    eprintln!(
+        "\
 \x1b[90m
      ██████╗ ███████╗███╗   ██╗██╗███████╗███████╗
     ██╔════╝ ██╔════╝████╗  ██║██║██╔════╝██╔════╝
@@ -100,17 +107,26 @@ fn print_usage() {
   --gpu         use GPU backend (wgpu compute shaders)
   --cpu         use CPU backend (default)
 \x1b[0m
-  -h, --help  Print this help");
+  -h, --help  Print this help"
+    );
 }
 
 // -- helpers ------------------------------------------------------------------
 
-fn die(msg: &str) -> ! { eprintln!("{msg}"); std::process::exit(1); }
+fn die(msg: &str) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(1);
+}
 
 /// Parse a 512-bit hex string (up to 128 hex chars) into [u64; 8] little-endian limbs.
 fn parse_fq(s: &str) -> Fq {
-    let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
-    if hex.len() > 128 { die(&format!("hex too long ({} chars, max 128): {s}", hex.len())); }
+    let hex = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
+    if hex.len() > 128 {
+        die(&format!("hex too long ({} chars, max 128): {s}", hex.len()));
+    }
     // pad to 128 chars on the left
     let padded = format!("{:0>128}", hex);
     let mut limbs = [0u64; 8];
@@ -147,74 +163,110 @@ fn parse_exponents(s: &str) -> Vec<i8> {
 
 fn print_timed(label: &str, val: &str, elapsed: std::time::Duration) {
     let us = elapsed.as_nanos() as f64 / 1000.0;
-    if us < 1000.0 { eprintln!("\x1b[90m[{us:.0}us]\x1b[0m"); }
-    else { eprintln!("\x1b[90m[{:.2}ms]\x1b[0m", us / 1000.0); }
+    if us < 1000.0 {
+        eprintln!("\x1b[90m[{us:.0}us]\x1b[0m");
+    } else {
+        eprintln!("\x1b[90m[{:.2}ms]\x1b[0m", us / 1000.0);
+    }
     println!("{label}{val}");
 }
 
 // -- commands -----------------------------------------------------------------
 
 fn cmd_calc(args: &[String]) {
-    if args.is_empty() { die("usage: genies calc <add|mul|inv> <args...> [--gpu|--cpu]"); }
+    if args.is_empty() {
+        die("usage: genies calc <add|mul|inv> <args...> [--gpu|--cpu]");
+    }
     let (backend, rest) = parse_backend_flag(args);
-    if rest.is_empty() { die("usage: genies calc <add|mul|inv> <args...> [--gpu|--cpu]"); }
+    if rest.is_empty() {
+        die("usage: genies calc <add|mul|inv> <args...> [--gpu|--cpu]");
+    }
     let ctx = Ctx::new(backend);
     let op = rest[0].as_str();
     let operands = &rest[1..];
 
     match op {
         "add" => {
-            if operands.len() < 2 { die("usage: genies calc add <a_hex> <b_hex>"); }
+            if operands.len() < 2 {
+                die("usage: genies calc add <a_hex> <b_hex>");
+            }
             let a = parse_fq(&operands[0]);
             let b = parse_fq(&operands[1]);
             let t = Instant::now();
             let r = if ctx.effective_backend() == Backend::Gpu {
-                let results = ctx.gpu.as_ref().unwrap().run_batch_add(&[(a.limbs, b.limbs)]);
+                let results = ctx
+                    .gpu
+                    .as_ref()
+                    .unwrap()
+                    .run_batch_add(&[(a.limbs, b.limbs)]);
                 Fq::from_limbs(results[0])
             } else {
                 Fq::add(&a, &b)
             };
-            let tag = if ctx.effective_backend() == Backend::Gpu { "[gpu] " } else { "" };
+            let tag = if ctx.effective_backend() == Backend::Gpu {
+                "[gpu] "
+            } else {
+                ""
+            };
             print_timed(&format!("{tag}F_q add: "), &fmt_fq(&r), t.elapsed());
         }
         "mul" => {
-            if operands.len() < 2 { die("usage: genies calc mul <a_hex> <b_hex>"); }
+            if operands.len() < 2 {
+                die("usage: genies calc mul <a_hex> <b_hex>");
+            }
             let a = parse_fq(&operands[0]);
             let b = parse_fq(&operands[1]);
             let t = Instant::now();
             let r = if ctx.effective_backend() == Backend::Gpu {
-                let results = ctx.gpu.as_ref().unwrap().run_batch_mul(&[(a.limbs, b.limbs)]);
+                let results = ctx
+                    .gpu
+                    .as_ref()
+                    .unwrap()
+                    .run_batch_mul(&[(a.limbs, b.limbs)]);
                 Fq::from_limbs(results[0])
             } else {
                 Fq::mul(&a, &b)
             };
-            let tag = if ctx.effective_backend() == Backend::Gpu { "[gpu] " } else { "" };
+            let tag = if ctx.effective_backend() == Backend::Gpu {
+                "[gpu] "
+            } else {
+                ""
+            };
             print_timed(&format!("{tag}F_q mul: "), &fmt_fq(&r), t.elapsed());
         }
         "inv" => {
-            if operands.is_empty() { die("usage: genies calc inv <a_hex>"); }
+            if operands.is_empty() {
+                die("usage: genies calc inv <a_hex>");
+            }
             let a = parse_fq(&operands[0]);
-            if a.is_zero() { die("error: inverse of zero is undefined"); }
+            if a.is_zero() {
+                die("error: inverse of zero is undefined");
+            }
             let t = Instant::now();
             let r = Fq::inv(&a);
             print_timed("F_q inv: ", &fmt_fq(&r), t.elapsed());
         }
-        other => { die(&format!("unknown calc op: {other}\nops: add mul inv")); }
+        other => {
+            die(&format!("unknown calc op: {other}\nops: add mul inv"));
+        }
     }
 }
 
 fn cmd_action(args: &[String]) {
-    if args.len() < 2 { die("usage: genies action <exponents> <A_hex>\n  exponents: comma-separated, e.g. 1,-1,0,2,..."); }
+    if args.len() < 2 {
+        die(
+            "usage: genies action <exponents> <A_hex>\n  exponents: comma-separated, e.g. 1,-1,0,2,...",
+        );
+    }
     let exponents = parse_exponents(&args[0]);
     let a_coeff = parse_fq(&args[1]);
 
     // The first 74 odd primes used in CSIDH-512
     const PRIMES: [u64; 74] = [
-        3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67,
-        71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139,
-        149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223,
-        227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293,
-        307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 587,
+        3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89,
+        97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181,
+        191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281,
+        283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 587,
     ];
 
     let n = exponents.len().min(PRIMES.len());
@@ -224,7 +276,9 @@ fn cmd_action(args: &[String]) {
     let current_a = curve.a;
     for i in 0..n {
         let e = exponents[i];
-        if e == 0 { continue; }
+        if e == 0 {
+            continue;
+        }
         let _l = PRIMES[i];
 
         let c = MontCurve::from_a(current_a);
@@ -235,7 +289,11 @@ fn cmd_action(args: &[String]) {
 
     print_timed("action result A: ", &fmt_fq(&current_a), t.elapsed());
     if n < exponents.len() {
-        eprintln!("warning: only first {} of {} exponents used (n=74 primes)", n, exponents.len());
+        eprintln!(
+            "warning: only first {} of {} exponents used (n=74 primes)",
+            n,
+            exponents.len()
+        );
     }
 }
 
@@ -244,13 +302,21 @@ fn cmd_bench(args: &[String]) {
     let iters: u64 = 10_000;
 
     // test values: arbitrary 512-bit elements
-    let a = parse_fq("0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b");
-    let b = parse_fq("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40");
+    let a = parse_fq(
+        "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    );
+    let b = parse_fq(
+        "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40",
+    );
 
     println!("genies bench -- {iters} iterations per operation\n");
     println!("  === CPU ===");
-    bench_op("F_q add   ", iters, || black_box(Fq::add(black_box(&a), black_box(&b))));
-    bench_op("F_q mul   ", iters, || black_box(Fq::mul(black_box(&a), black_box(&b))));
+    bench_op("F_q add   ", iters, || {
+        black_box(Fq::add(black_box(&a), black_box(&b)))
+    });
+    bench_op("F_q mul   ", iters, || {
+        black_box(Fq::mul(black_box(&a), black_box(&b)))
+    });
     bench_op("F_q inv   ", iters, || black_box(Fq::inv(black_box(&a))));
     println!();
 
@@ -294,16 +360,22 @@ fn cmd_bench(args: &[String]) {
             let _results = gpu.run_batch_mul(&pairs);
             let gpu_elapsed = t.elapsed();
             let gpu_ns_per = gpu_elapsed.as_nanos() as f64 / batch_size as f64;
-            println!("  batch_mul   {:>8.1} us total, {:>8.1} ns/op (amortized)",
-                     gpu_elapsed.as_nanos() as f64 / 1000.0, gpu_ns_per);
+            println!(
+                "  batch_mul   {:>8.1} us total, {:>8.1} ns/op (amortized)",
+                gpu_elapsed.as_nanos() as f64 / 1000.0,
+                gpu_ns_per
+            );
 
             // GPU batch add
             let t = Instant::now();
             let _results = gpu.run_batch_add(&pairs);
             let gpu_elapsed = t.elapsed();
             let gpu_ns_per = gpu_elapsed.as_nanos() as f64 / batch_size as f64;
-            println!("  batch_add   {:>8.1} us total, {:>8.1} ns/op (amortized)",
-                     gpu_elapsed.as_nanos() as f64 / 1000.0, gpu_ns_per);
+            println!(
+                "  batch_add   {:>8.1} us total, {:>8.1} ns/op (amortized)",
+                gpu_elapsed.as_nanos() as f64 / 1000.0,
+                gpu_ns_per
+            );
 
             // Compare: CPU batch mul
             println!();
@@ -316,8 +388,11 @@ fn cmd_bench(args: &[String]) {
             }
             let cpu_elapsed = t.elapsed();
             let cpu_ns_per = cpu_elapsed.as_nanos() as f64 / batch_size as f64;
-            println!("  batch_mul   {:>8.1} us total, {:>8.1} ns/op",
-                     cpu_elapsed.as_nanos() as f64 / 1000.0, cpu_ns_per);
+            println!(
+                "  batch_mul   {:>8.1} us total, {:>8.1} ns/op",
+                cpu_elapsed.as_nanos() as f64 / 1000.0,
+                cpu_ns_per
+            );
         } else {
             eprintln!("GPU unavailable, skipping GPU benchmarks");
         }
@@ -326,7 +401,9 @@ fn cmd_bench(args: &[String]) {
 
 fn bench_op<F: Fn() -> T, T>(label: &str, iters: u64, f: F) {
     let t = Instant::now();
-    for _ in 0..iters { f(); }
+    for _ in 0..iters {
+        f();
+    }
     let ns = t.elapsed().as_nanos() as f64 / iters as f64;
     if ns < 1000.0 {
         println!("  {label}  {ns:>8.1} ns/op");

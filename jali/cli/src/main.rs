@@ -8,12 +8,12 @@
 //! Supports GPU (wgpu) and CPU backends. GPU is default when available.
 //! Use --gpu or --cpu flags to force a backend.
 
-use nebu::Goldilocks;
-use jali::ring::RingElement;
-use jali::ntt;
-use jali::sample;
 use jali::encoding;
+use jali::ntt;
+use jali::ring::RingElement;
+use jali::sample;
 use jali_wgsl::GpuContext;
+use nebu::Goldilocks;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -126,7 +126,9 @@ fn print_usage() {
 fn parse_poly(s: &str, n: usize) -> RingElement {
     let mut elem = RingElement::new(n);
     for (i, tok) in s.split(',').enumerate() {
-        if i >= n { break; }
+        if i >= n {
+            break;
+        }
         let v: u64 = tok.trim().parse().unwrap_or(0);
         elem.coeffs[i] = Goldilocks::new(v);
     }
@@ -138,7 +140,9 @@ fn print_poly(elem: &RingElement) {
     let mut first = true;
     for i in 0..n {
         let v = elem.coeffs[i].as_u64();
-        if !first { print!(","); }
+        if !first {
+            print!(",");
+        }
         print!("{}", v);
         first = false;
     }
@@ -196,7 +200,10 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                 a.mul(&b)
             }
         }
-        _ => { eprintln!("error: unknown calc op '{}'", op); return; }
+        _ => {
+            eprintln!("error: unknown calc op '{}'", op);
+            return;
+        }
     };
 
     print_timed(backend, t.elapsed());
@@ -243,7 +250,9 @@ fn cmd_ntt(forced: Option<Backend>, args: &[String]) {
             print_timed(Backend::Cpu, t.elapsed());
             print_poly(&elem);
         }
-        _ => { eprintln!("error: unknown ntt direction '{}'", direction); }
+        _ => {
+            eprintln!("error: unknown ntt direction '{}'", direction);
+        }
     }
 }
 
@@ -272,7 +281,10 @@ fn cmd_sample(args: &[String]) {
             let eta: usize = args[3].parse().unwrap_or(2);
             sample::sample_cbd(seed, n, eta)
         }
-        _ => { eprintln!("error: unknown sample kind '{}'", kind); return; }
+        _ => {
+            eprintln!("error: unknown sample kind '{}'", kind);
+            return;
+        }
     };
     print_poly(&elem);
 }
@@ -280,8 +292,16 @@ fn cmd_sample(args: &[String]) {
 // ── bench ────────────────────────────────────────────────────────
 
 fn cmd_bench(forced: Option<Backend>, args: &[String]) {
-    let n: usize = if args.is_empty() { 1024 } else { args[0].parse().unwrap_or(1024) };
-    let iters: u64 = if args.len() < 2 { 1000 } else { args[1].parse().unwrap_or(1000) };
+    let n: usize = if args.is_empty() {
+        1024
+    } else {
+        args[0].parse().unwrap_or(1024)
+    };
+    let iters: u64 = if args.len() < 2 {
+        1000
+    } else {
+        args[1].parse().unwrap_or(1000)
+    };
 
     if !n.is_power_of_two() || n > 4096 {
         eprintln!("error: n must be a power of 2 <= 4096");
@@ -305,8 +325,12 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
         black_box(black_box(&a).add(black_box(&b)));
     }
     let elapsed = start.elapsed();
-    eprintln!("ring_add  n={}: {:.1} us/op ({} iters)",
-        n, elapsed.as_micros() as f64 / iters as f64, iters);
+    eprintln!(
+        "ring_add  n={}: {:.1} us/op ({} iters)",
+        n,
+        elapsed.as_micros() as f64 / iters as f64,
+        iters
+    );
 
     // Benchmark mul (CPU)
     let mul_iters = iters.min(100);
@@ -315,8 +339,12 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
         black_box(black_box(&a).mul(black_box(&b)));
     }
     let elapsed = start.elapsed();
-    eprintln!("ring_mul  n={}: {:.1} us/op ({} iters)",
-        n, elapsed.as_micros() as f64 / mul_iters as f64, mul_iters);
+    eprintln!(
+        "ring_mul  n={}: {:.1} us/op ({} iters)",
+        n,
+        elapsed.as_micros() as f64 / mul_iters as f64,
+        mul_iters
+    );
 
     // Benchmark NTT forward (CPU)
     let start = Instant::now();
@@ -325,8 +353,12 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
         ntt::to_ntt(black_box(&mut c));
     }
     let elapsed = start.elapsed();
-    eprintln!("ntt_fwd   n={}: {:.1} us/op ({} iters)",
-        n, elapsed.as_micros() as f64 / iters as f64, iters);
+    eprintln!(
+        "ntt_fwd   n={}: {:.1} us/op ({} iters)",
+        n,
+        elapsed.as_micros() as f64 / iters as f64,
+        iters
+    );
 
     // Benchmark encoding roundtrip (CPU)
     let mut buf = vec![0u8; n * 8];
@@ -336,8 +368,12 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
         black_box(encoding::decode_ring(black_box(&buf), n));
     }
     let elapsed = start.elapsed();
-    eprintln!("enc_rt    n={}: {:.1} us/op ({} iters)",
-        n, elapsed.as_micros() as f64 / iters as f64, iters);
+    eprintln!(
+        "enc_rt    n={}: {:.1} us/op ({} iters)",
+        n,
+        elapsed.as_micros() as f64 / iters as f64,
+        iters
+    );
 
     // ── GPU benchmarks ─────────────────────────────────────────
     if backend == Backend::Gpu {
@@ -353,8 +389,12 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
             black_box(ctx.gpu().run_ring_add(black_box(&ga), black_box(&gb), n));
         }
         let elapsed = start.elapsed();
-        eprintln!("ring_add  n={}: {:.1} us/op ({} iters)",
-            n, elapsed.as_micros() as f64 / iters as f64, iters);
+        eprintln!(
+            "ring_add  n={}: {:.1} us/op ({} iters)",
+            n,
+            elapsed.as_micros() as f64 / iters as f64,
+            iters
+        );
 
         // Benchmark ring_mul (GPU)
         let gpu_mul_iters = iters.min(100);
@@ -363,17 +403,28 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
             black_box(ctx.gpu().run_ring_mul(black_box(&ga), black_box(&gb), n));
         }
         let elapsed = start.elapsed();
-        eprintln!("ring_mul  n={}: {:.1} us/op ({} iters)",
-            n, elapsed.as_micros() as f64 / gpu_mul_iters as f64, gpu_mul_iters);
+        eprintln!(
+            "ring_mul  n={}: {:.1} us/op ({} iters)",
+            n,
+            elapsed.as_micros() as f64 / gpu_mul_iters as f64,
+            gpu_mul_iters
+        );
 
         // Benchmark pointwise_mul (GPU)
         let start = Instant::now();
         for _ in 0..iters {
-            black_box(ctx.gpu().run_ring_pointwise_mul(black_box(&ga), black_box(&gb), n));
+            black_box(
+                ctx.gpu()
+                    .run_ring_pointwise_mul(black_box(&ga), black_box(&gb), n),
+            );
         }
         let elapsed = start.elapsed();
-        eprintln!("pointwise n={}: {:.1} us/op ({} iters)",
-            n, elapsed.as_micros() as f64 / iters as f64, iters);
+        eprintln!(
+            "pointwise n={}: {:.1} us/op ({} iters)",
+            n,
+            elapsed.as_micros() as f64 / iters as f64,
+            iters
+        );
     }
 }
 

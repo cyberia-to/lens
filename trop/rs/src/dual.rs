@@ -55,21 +55,13 @@ impl MaxPlus {
     /// Extract the represented value. Returns `None` if -inf.
     #[inline]
     pub const fn to_val(self) -> Option<u64> {
-        if self.0 == 0 {
-            None
-        } else {
-            Some(self.0 - 1)
-        }
+        if self.0 == 0 { None } else { Some(self.0 - 1) }
     }
 
     /// Max-plus addition: max(a, b).
     #[inline]
     pub const fn add(self, other: MaxPlus) -> MaxPlus {
-        if self.0 >= other.0 {
-            self
-        } else {
-            other
-        }
+        if self.0 >= other.0 { self } else { other }
     }
 
     /// Max-plus multiplication: a + b (saturating), with -inf absorbing.

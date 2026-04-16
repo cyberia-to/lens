@@ -123,14 +123,8 @@ impl MontPoint {
     ///   X_{P+Q} = Z_{P-Q} * (U + V)^2
     ///   Z_{P+Q} = X_{P-Q} * (U - V)^2
     pub fn xadd(p: &MontPoint, q: &MontPoint, pmq: &MontPoint) -> MontPoint {
-        let u = Fq::mul(
-            &Fq::sub(&p.x, &p.z),
-            &Fq::add(&q.x, &q.z),
-        );
-        let v = Fq::mul(
-            &Fq::add(&p.x, &p.z),
-            &Fq::sub(&q.x, &q.z),
-        );
+        let u = Fq::mul(&Fq::sub(&p.x, &p.z), &Fq::add(&q.x, &q.z));
+        let v = Fq::mul(&Fq::add(&p.x, &p.z), &Fq::sub(&q.x, &q.z));
         let sum = Fq::add(&u, &v);
         let dif = Fq::sub(&u, &v);
         let new_x = Fq::mul(&pmq.z, &Fq::square(&sum));

@@ -12,18 +12,14 @@
 //!
 //! Uses Vélu's formulas in short Weierstrass form, converted to/from Montgomery.
 
-use crate::fq::Fq;
 use crate::curve::{MontCurve, MontPoint};
+use crate::fq::Fq;
 
 /// Maximum half-kernel size: (587 - 1) / 2 = 293.
 const MAX_HALF_KERNEL: usize = 293;
 
 /// Compute kernel multiples [1]K, [2]K, ..., [h]K where h = (ℓ-1)/2.
-fn kernel_multiples(
-    kernel: &MontPoint,
-    ell: u64,
-    a: &Fq,
-) -> ([MontPoint; MAX_HALF_KERNEL], usize) {
+fn kernel_multiples(kernel: &MontPoint, ell: u64, a: &Fq) -> ([MontPoint; MAX_HALF_KERNEL], usize) {
     let half = ((ell - 1) / 2) as usize;
 
     let two = Fq::from_u64(2);
@@ -99,7 +95,10 @@ pub fn isogeny_codomain(curve: &MontCurve, kernel: &MontPoint, ell: u64) -> Mont
 
         // g_x = 3*x_i^2 + 2*A*x_i + 1
         let xi2 = Fq::square(&xi);
-        let gx = Fq::add(&Fq::add(&Fq::mul(&three, &xi2), &Fq::mul(&Fq::mul(&two, &a), &xi)), &Fq::ONE);
+        let gx = Fq::add(
+            &Fq::add(&Fq::mul(&three, &xi2), &Fq::mul(&Fq::mul(&two, &a), &xi)),
+            &Fq::ONE,
+        );
 
         // t_i = 2*g_x (for order > 2 kernel points)
         let ti = Fq::mul(&two, &gx);
@@ -147,7 +146,10 @@ pub fn isogeny_codomain(curve: &MontCurve, kernel: &MontPoint, ell: u64) -> Mont
     while idx < half {
         let xi = Fq::mul(&points[idx].x, &Fq::inv(&points[idx].z));
         let xi2 = Fq::square(&xi);
-        let gx = Fq::add(&Fq::add(&Fq::mul(&three, &xi2), &Fq::mul(&Fq::mul(&two, &a), &xi)), &Fq::ONE);
+        let gx = Fq::add(
+            &Fq::add(&Fq::mul(&three, &xi2), &Fq::mul(&Fq::mul(&two, &a), &xi)),
+            &Fq::ONE,
+        );
         let ti = Fq::mul(&two, &gx);
         let xi3 = Fq::mul(&xi2, &xi);
         let ui = Fq::mul(&four, &Fq::add(&Fq::add(&xi3, &Fq::mul(&a, &xi2)), &xi));
@@ -202,7 +204,10 @@ pub fn isogeny_codomain(curve: &MontCurve, kernel: &MontPoint, ell: u64) -> Mont
     let x0 = x0_image;
     let x0_sq = Fq::square(&x0);
     let b_coeff = Fq::add(&Fq::mul(&three, &x0), &a); // 3*x0 + A
-    let c_coeff = Fq::add(&Fq::add(&Fq::mul(&three, &x0_sq), &Fq::mul(&Fq::mul(&two, &a), &x0)), &a4_new);
+    let c_coeff = Fq::add(
+        &Fq::add(&Fq::mul(&three, &x0_sq), &Fq::mul(&Fq::mul(&two, &a), &x0)),
+        &a4_new,
+    );
 
     // alpha = sqrt(c)
     let alpha = Fq::sqrt(&c_coeff);
@@ -253,12 +258,7 @@ pub fn isogeny_codomain(curve: &MontCurve, kernel: &MontPoint, ell: u64) -> Mont
 /// The projective evaluation formula:
 ///   phi(X_Q : Z_Q) = ( X_Q * prod((X_Q*Z_i - Z_Q*X_i)^2),
 ///                       Z_Q * prod((X_Q*X_i - Z_Q*Z_i)^2) )
-pub fn isogeny_eval(
-    kernel: &MontPoint,
-    ell: u64,
-    q_pt: &MontPoint,
-    a: &Fq,
-) -> MontPoint {
+pub fn isogeny_eval(kernel: &MontPoint, ell: u64, q_pt: &MontPoint, a: &Fq) -> MontPoint {
     let (points, half) = kernel_multiples(kernel, ell, a);
 
     let mut num = q_pt.x;

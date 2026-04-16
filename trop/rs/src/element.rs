@@ -58,11 +58,7 @@ impl Tropical {
     /// If either operand is INF, returns the other.
     #[inline]
     pub const fn add(self, other: Tropical) -> Tropical {
-        if self.0 <= other.0 {
-            self
-        } else {
-            other
-        }
+        if self.0 <= other.0 { self } else { other }
     }
 
     /// Tropical multiplication: a + b (saturating).

@@ -9,17 +9,16 @@
 //! The action iterates through the 74 small primes in q+1, applying ℓ-isogenies
 //! for each prime factor according to the exponent vector.
 
-use crate::fq::{Fq, PRIME};
 use crate::curve::{MontCurve, MontPoint};
+use crate::fq::{Fq, PRIME};
 use crate::isogeny;
 
 /// The 74 small odd primes dividing q+1.
 pub const PRIMES: [u64; 74] = [
-    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,
-    79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157,
-    163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241,
-    251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347,
-    349, 353, 359, 367, 373, 587,
+    3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+    101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193,
+    197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307,
+    311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 587,
 ];
 
 /// Number of primes.
@@ -46,7 +45,11 @@ impl Ideal {
     /// Construct from an exponent slice.
     pub fn from_exponents(e: &[i8]) -> Self {
         let mut exponents = [0i8; NUM_PRIMES];
-        let len = if e.len() < NUM_PRIMES { e.len() } else { NUM_PRIMES };
+        let len = if e.len() < NUM_PRIMES {
+            e.len()
+        } else {
+            NUM_PRIMES
+        };
         let mut i = 0;
         while i < len {
             exponents[i] = e[i];

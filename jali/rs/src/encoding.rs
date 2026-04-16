@@ -8,8 +8,8 @@
 //! Each coefficient is stored as 8 bytes (little-endian canonical u64).
 //! A ring element of dimension n serializes to n * 8 bytes.
 
-use nebu::Goldilocks;
 use crate::ring::RingElement;
+use nebu::Goldilocks;
 
 /// Encode a ring element into a byte buffer.
 ///

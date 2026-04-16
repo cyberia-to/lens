@@ -7,10 +7,10 @@
 //! Benchmarks for tropical semiring operations.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use trop::matrix::TropMatrix;
+use trop::determinant::determinant;
 use trop::element::Tropical;
 use trop::kleene::kleene_star;
-use trop::determinant::determinant;
+use trop::matrix::TropMatrix;
 
 fn bench_matmul(c: &mut Criterion) {
     for &n in &[4, 8, 16, 32] {
@@ -74,5 +74,11 @@ fn bench_power(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_matmul, bench_kleene_star, bench_determinant, bench_power);
+criterion_group!(
+    benches,
+    bench_matmul,
+    bench_kleene_star,
+    bench_determinant,
+    bench_power
+);
 criterion_main!(benches);

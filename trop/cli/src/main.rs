@@ -4,11 +4,11 @@
 //! Supports GPU (wgpu) and CPU backends. GPU is default when available.
 //! Use --gpu or --cpu flags to force a backend.
 
-use trop::{Tropical, TropMatrix, kleene_star};
-use trop_wgsl::GpuContext;
 use std::env;
 use std::hint::black_box;
 use std::time::Instant;
+use trop::{TropMatrix, Tropical, kleene_star};
+use trop_wgsl::GpuContext;
 
 // ── backend selection ─────────────────────────────────────────────
 
@@ -78,16 +78,19 @@ fn parse_backend_flag(args: &[String]) -> (Option<Backend>, Vec<String>) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 { print_usage(); std::process::exit(1); }
+    if args.len() < 2 {
+        print_usage();
+        std::process::exit(1);
+    }
     let cmd = args[1].clone();
     let (forced, rest) = parse_backend_flag(&args[2..]);
 
     match cmd.as_str() {
-        "calc"                    => cmd_calc(forced, &rest),
-        "matmul"                  => cmd_matmul(forced, &rest),
-        "kleene"                  => cmd_kleene(forced, &rest),
-        "bench"                   => cmd_bench(forced),
-        "help" | "--help" | "-h"  => print_usage(),
+        "calc" => cmd_calc(forced, &rest),
+        "matmul" => cmd_matmul(forced, &rest),
+        "kleene" => cmd_kleene(forced, &rest),
+        "bench" => cmd_bench(forced),
+        "help" | "--help" | "-h" => print_usage(),
         other => {
             eprintln!("unknown command: {other}");
             print_usage();
@@ -97,7 +100,8 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("\
+    eprintln!(
+        "\
 \x1b[90m
     ████████╗██████╗  ██████╗ ██████╗
     ╚══██╔══╝██╔══██╗██╔═══██╗██╔══██╗
@@ -126,42 +130,63 @@ fn print_usage() {
            --cpu  force CPU backend
            (default: GPU if available, else CPU)
 \x1b[0m
-  -h, --help  Print this help");
+  -h, --help  Print this help"
+    );
 }
 
 // -- argument helpers ---------------------------------------------------------
 
-fn die(msg: &str) -> ! { eprintln!("{msg}"); std::process::exit(1); }
+fn die(msg: &str) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(1);
+}
 
 fn parse_tropical(s: &str) -> Tropical {
     if s.eq_ignore_ascii_case("INF") || s == "+inf" || s == "inf" {
         return Tropical::INF;
     }
-    let v: u64 = s.parse().unwrap_or_else(|e| die(&format!("invalid number '{s}': {e}")));
+    let v: u64 = s
+        .parse()
+        .unwrap_or_else(|e| die(&format!("invalid number '{s}': {e}")));
     Tropical::from_u64(v)
 }
 
 fn parse_usize(s: &str) -> usize {
-    s.parse().unwrap_or_else(|e| die(&format!("invalid dimension '{s}': {e}")))
+    s.parse()
+        .unwrap_or_else(|e| die(&format!("invalid dimension '{s}': {e}")))
 }
 
 fn fmt_trop(t: Tropical) -> String {
-    if t.is_inf() { "INF".to_string() } else { t.as_u64().to_string() }
+    if t.is_inf() {
+        "INF".to_string()
+    } else {
+        t.as_u64().to_string()
+    }
 }
 
 fn print_matrix(m: &TropMatrix) {
     for i in 0..m.n {
-        let row: Vec<String> = (0..m.n).map(|j| {
-            let v = m.get(i, j);
-            if v.is_inf() { "INF".to_string() } else { v.as_u64().to_string() }
-        }).collect();
+        let row: Vec<String> = (0..m.n)
+            .map(|j| {
+                let v = m.get(i, j);
+                if v.is_inf() {
+                    "INF".to_string()
+                } else {
+                    v.as_u64().to_string()
+                }
+            })
+            .collect();
         println!("  [{}]", row.join(", "));
     }
 }
 
 fn parse_matrix(n: usize, entries: &[String]) -> TropMatrix {
     if entries.len() < n * n {
-        die(&format!("expected {} entries for {n}x{n} matrix, got {}", n * n, entries.len()));
+        die(&format!(
+            "expected {} entries for {n}x{n} matrix, got {}",
+            n * n,
+            entries.len()
+        ));
     }
     let mut m = TropMatrix::new(n);
     for i in 0..n {
@@ -193,7 +218,11 @@ fn matrix_to_gpu(m: &TropMatrix) -> Vec<u32> {
     for i in 0..n {
         for j in 0..n {
             let v = m.get(i, j).as_u64();
-            flat[i * n + j] = if v >= u32::MAX as u64 { u32::MAX } else { v as u32 };
+            flat[i * n + j] = if v >= u32::MAX as u64 {
+                u32::MAX
+            } else {
+                v as u32
+            };
         }
     }
     flat
@@ -228,22 +257,38 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
     let a = parse_tropical(&args[1]);
     let b = parse_tropical(&args[2]);
 
-    let a_u32 = if a.as_u64() >= u32::MAX as u64 { u32::MAX } else { a.as_u64() as u32 };
-    let b_u32 = if b.as_u64() >= u32::MAX as u64 { u32::MAX } else { b.as_u64() as u32 };
+    let a_u32 = if a.as_u64() >= u32::MAX as u64 {
+        u32::MAX
+    } else {
+        a.as_u64() as u32
+    };
+    let b_u32 = if b.as_u64() >= u32::MAX as u64 {
+        u32::MAX
+    } else {
+        b.as_u64() as u32
+    };
 
     let t = Instant::now();
     let result = match (backend, op) {
         (Backend::Gpu, "add") => {
-            let r = ctx.gpu().eval_tropical_op(
-                &format!("trop_add({}u, {}u)", a_u32, b_u32)
-            );
-            if r == u32::MAX { Tropical::INF } else { Tropical::from_u64(r as u64) }
+            let r = ctx
+                .gpu()
+                .eval_tropical_op(&format!("trop_add({}u, {}u)", a_u32, b_u32));
+            if r == u32::MAX {
+                Tropical::INF
+            } else {
+                Tropical::from_u64(r as u64)
+            }
         }
         (Backend::Gpu, "mul") => {
-            let r = ctx.gpu().eval_tropical_op(
-                &format!("trop_mul({}u, {}u)", a_u32, b_u32)
-            );
-            if r == u32::MAX { Tropical::INF } else { Tropical::from_u64(r as u64) }
+            let r = ctx
+                .gpu()
+                .eval_tropical_op(&format!("trop_mul({}u, {}u)", a_u32, b_u32));
+            if r == u32::MAX {
+                Tropical::INF
+            } else {
+                Tropical::from_u64(r as u64)
+            }
         }
         (Backend::Cpu, "add") => a.add(b),
         (Backend::Cpu, "mul") => a.mul(b),
@@ -252,20 +297,32 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
     let elapsed = t.elapsed();
 
     print_result(
-        &format!("{op}({}, {}) = {}", fmt_trop(a), fmt_trop(b), fmt_trop(result)),
+        &format!(
+            "{op}({}, {}) = {}",
+            fmt_trop(a),
+            fmt_trop(b),
+            fmt_trop(result)
+        ),
         backend,
         elapsed,
     );
 }
 
 fn cmd_matmul(forced: Option<Backend>, args: &[String]) {
-    if args.is_empty() { die("usage: trop matmul <n> <entries...>"); }
+    if args.is_empty() {
+        die("usage: trop matmul <n> <entries...>");
+    }
     let n = parse_usize(&args[0]);
-    if n == 0 { die("dimension must be > 0"); }
+    if n == 0 {
+        die("dimension must be > 0");
+    }
     let entries = &args[1..];
     let needed = 2 * n * n;
     if entries.len() < needed {
-        die(&format!("matmul: need {needed} entries (two {n}x{n} matrices), got {}", entries.len()));
+        die(&format!(
+            "matmul: need {needed} entries (two {n}x{n} matrices), got {}",
+            entries.len()
+        ));
     }
 
     let a = parse_matrix(n, &entries[..n * n]);
@@ -294,17 +351,28 @@ fn cmd_matmul(forced: Option<Backend>, args: &[String]) {
     print_matrix(&c);
 
     let us = elapsed.as_nanos() as f64 / 1000.0;
-    if us < 1000.0 { eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m"); }
-    else { eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0); }
+    if us < 1000.0 {
+        eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m");
+    } else {
+        eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0);
+    }
 }
 
 fn cmd_kleene(forced: Option<Backend>, args: &[String]) {
-    if args.is_empty() { die("usage: trop kleene <n> <entries...>"); }
+    if args.is_empty() {
+        die("usage: trop kleene <n> <entries...>");
+    }
     let n = parse_usize(&args[0]);
-    if n == 0 { die("dimension must be > 0"); }
+    if n == 0 {
+        die("dimension must be > 0");
+    }
     let entries = &args[1..];
     if entries.len() < n * n {
-        die(&format!("kleene: need {} entries ({n}x{n} matrix), got {}", n * n, entries.len()));
+        die(&format!(
+            "kleene: need {} entries ({n}x{n} matrix), got {}",
+            n * n,
+            entries.len()
+        ));
     }
 
     let a = parse_matrix(n, entries);
@@ -337,7 +405,11 @@ fn cmd_kleene(forced: Option<Backend>, args: &[String]) {
         }
 
         // Repeated squaring: ceil(log2(n)) iterations
-        let iters = if n <= 1 { 0 } else { (n as f64).log2().ceil() as usize };
+        let iters = if n <= 1 {
+            0
+        } else {
+            (n as f64).log2().ceil() as usize
+        };
         let mut gd = matrix_to_gpu(&d);
         for _ in 0..iters {
             gd = ctx.gpu().run_matmul(&gd, &gd, n);
@@ -352,8 +424,11 @@ fn cmd_kleene(forced: Option<Backend>, args: &[String]) {
     print_matrix(&star);
 
     let us = elapsed.as_nanos() as f64 / 1000.0;
-    if us < 1000.0 { eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m"); }
-    else { eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0); }
+    if us < 1000.0 {
+        eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m");
+    } else {
+        eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0);
+    }
 }
 
 fn cmd_bench(forced: Option<Backend>) {
@@ -395,25 +470,29 @@ fn cmd_bench(forced: Option<Backend>) {
         }
 
         let iters = match n {
-            4  => 100_000u64,
-            8  => 10_000,
+            4 => 100_000u64,
+            8 => 10_000,
             16 => 1_000,
             32 => 100,
-            _  => 10,
+            _ => 10,
         };
 
         let gpu_iters = match n {
-            4  => 10_000u64,
-            8  => 1_000,
+            4 => 10_000u64,
+            8 => 1_000,
             16 => 500,
             32 => 100,
-            _  => 10,
+            _ => 10,
         };
 
         let fmt_time = |ns: f64| -> String {
-            if ns < 1_000.0 { format!("{ns:>8.1} ns") }
-            else if ns < 1_000_000.0 { format!("{:>8.1} us", ns / 1_000.0) }
-            else { format!("{:>8.2} ms", ns / 1_000_000.0) }
+            if ns < 1_000.0 {
+                format!("{ns:>8.1} ns")
+            } else if ns < 1_000_000.0 {
+                format!("{:>8.1} us", ns / 1_000.0)
+            } else {
+                format!("{:>8.2} ms", ns / 1_000_000.0)
+            }
         };
 
         // CPU matmul
@@ -459,7 +538,11 @@ fn cmd_bench(forced: Option<Backend>) {
         // GPU Kleene (iterative matmul)
         let gpu_kleene = if run_gpu && has_gpu {
             let gpu = gpu_ctx.as_ref().unwrap();
-            let kleene_iters_log = if n <= 1 { 0 } else { (n as f64).log2().ceil() as usize };
+            let kleene_iters_log = if n <= 1 {
+                0
+            } else {
+                (n as f64).log2().ceil() as usize
+            };
             let mut d = TropMatrix::new(n);
             for i in 0..n {
                 for j in 0..n {
@@ -494,16 +577,23 @@ fn cmd_bench(forced: Option<Backend>) {
         match (cpu_matmul, gpu_matmul) {
             (Some(cpu), Some(gpu)) => {
                 let speedup = cpu / gpu;
-                println!("  {n:>2}x{n:<2}  matmul  cpu {}  gpu {}  ({speedup:.1}x)",
-                    fmt_time(cpu), fmt_time(gpu));
+                println!(
+                    "  {n:>2}x{n:<2}  matmul  cpu {}  gpu {}  ({speedup:.1}x)",
+                    fmt_time(cpu),
+                    fmt_time(gpu)
+                );
             }
             (Some(cpu), None) => {
-                println!("  {n:>2}x{n:<2}  matmul  cpu {}  ({iters} iters)",
-                    fmt_time(cpu));
+                println!(
+                    "  {n:>2}x{n:<2}  matmul  cpu {}  ({iters} iters)",
+                    fmt_time(cpu)
+                );
             }
             (None, Some(gpu)) => {
-                println!("  {n:>2}x{n:<2}  matmul  gpu {}  ({gpu_iters} iters)",
-                    fmt_time(gpu));
+                println!(
+                    "  {n:>2}x{n:<2}  matmul  gpu {}  ({gpu_iters} iters)",
+                    fmt_time(gpu)
+                );
             }
             _ => {}
         }
@@ -511,16 +601,23 @@ fn cmd_bench(forced: Option<Backend>) {
         match (cpu_kleene, gpu_kleene) {
             (Some(cpu), Some(gpu)) => {
                 let speedup = cpu / gpu;
-                println!("  {n:>2}x{n:<2}  kleene  cpu {}  gpu {}  ({speedup:.1}x)",
-                    fmt_time(cpu), fmt_time(gpu));
+                println!(
+                    "  {n:>2}x{n:<2}  kleene  cpu {}  gpu {}  ({speedup:.1}x)",
+                    fmt_time(cpu),
+                    fmt_time(gpu)
+                );
             }
             (Some(cpu), None) => {
-                println!("  {n:>2}x{n:<2}  kleene  cpu {}  ({iters} iters)",
-                    fmt_time(cpu));
+                println!(
+                    "  {n:>2}x{n:<2}  kleene  cpu {}  ({iters} iters)",
+                    fmt_time(cpu)
+                );
             }
             (None, Some(gpu)) => {
-                println!("  {n:>2}x{n:<2}  kleene  gpu {}  ({gpu_iters} iters)",
-                    fmt_time(gpu));
+                println!(
+                    "  {n:>2}x{n:<2}  kleene  gpu {}  ({gpu_iters} iters)",
+                    fmt_time(gpu)
+                );
             }
             _ => {}
         }

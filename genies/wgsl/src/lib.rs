@@ -78,11 +78,7 @@ impl GpuContext {
         self.run_batch_op("batch_fq_add", pairs)
     }
 
-    fn run_batch_op(
-        &self,
-        entry_point: &str,
-        pairs: &[([u64; 8], [u64; 8])],
-    ) -> Vec<[u64; 8]> {
+    fn run_batch_op(&self, entry_point: &str, pairs: &[([u64; 8], [u64; 8])]) -> Vec<[u64; 8]> {
         let n = pairs.len();
         if n == 0 {
             return vec![];
@@ -96,16 +92,16 @@ impl GpuContext {
                 source: wgpu::ShaderSource::Wgsl(source.into()),
             });
 
-        let pipeline =
-            self.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some(entry_point),
-                    layout: None,
-                    module: &module,
-                    entry_point: Some(entry_point),
-                    compilation_options: Default::default(),
-                    cache: None,
-                });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry_point),
+                layout: None,
+                module: &module,
+                entry_point: Some(entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         // Flatten inputs to u32 arrays
         let mut a_data: Vec<u32> = Vec::with_capacity(n * 16);
@@ -139,13 +135,13 @@ impl GpuContext {
         });
 
         let params = [n as u32, 0u32, 0u32, 0u32];
-        let params_buf =
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("params"),
-                    contents: bytemuck_cast_slice(&params),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
+        let params_buf = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: bytemuck_cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
@@ -220,16 +216,16 @@ impl GpuContext {
                 source: wgpu::ShaderSource::Wgsl(source.into()),
             });
 
-        let pipeline =
-            self.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some("eval"),
-                    layout: None,
-                    module: &module,
-                    entry_point: Some("main"),
-                    compilation_options: Default::default(),
-                    cache: None,
-                });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("eval"),
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let size = (n_u32s * 4) as u64;
         let gpu_buf = self.device.create_buffer(&wgpu::BufferDescriptor {

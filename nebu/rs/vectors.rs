@@ -7,20 +7,26 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::field::{Goldilocks, P};
-    use crate::extension::{Fp2, Fp3, Fp4};
-    use crate::sqrt;
     use crate::batch;
+    use crate::extension::{Fp2, Fp3, Fp4};
+    use crate::field::{Goldilocks, P};
+    use crate::sqrt;
 
-    fn g(v: u64) -> Goldilocks { Goldilocks::new(v) }
+    fn g(v: u64) -> Goldilocks {
+        Goldilocks::new(v)
+    }
 
     // ── Canonical reduction ─────────────────────────────────────────
 
     #[test]
-    fn canonical_zero() { assert_eq!(g(0).as_u64(), 0); }
+    fn canonical_zero() {
+        assert_eq!(g(0).as_u64(), 0);
+    }
 
     #[test]
-    fn canonical_one() { assert_eq!(g(1).as_u64(), 1); }
+    fn canonical_one() {
+        assert_eq!(g(1).as_u64(), 1);
+    }
 
     #[test]
     fn canonical_p_minus_one() {
@@ -28,10 +34,14 @@ mod tests {
     }
 
     #[test]
-    fn canonical_p_is_zero() { assert_eq!(g(P).as_u64(), 0); }
+    fn canonical_p_is_zero() {
+        assert_eq!(g(P).as_u64(), 0);
+    }
 
     #[test]
-    fn canonical_p_plus_one() { assert_eq!(g(P + 1).as_u64(), 1); }
+    fn canonical_p_plus_one() {
+        assert_eq!(g(P + 1).as_u64(), 1);
+    }
 
     #[test]
     fn canonical_max_u64() {
@@ -41,10 +51,14 @@ mod tests {
     // ── Addition ────────────────────────────────────────────────────
 
     #[test]
-    fn add_zero_zero() { assert_eq!((g(0) + g(0)).as_u64(), 0); }
+    fn add_zero_zero() {
+        assert_eq!((g(0) + g(0)).as_u64(), 0);
+    }
 
     #[test]
-    fn add_one_two() { assert_eq!((g(1) + g(2)).as_u64(), 3); }
+    fn add_one_two() {
+        assert_eq!((g(1) + g(2)).as_u64(), 3);
+    }
 
     #[test]
     fn add_p_minus_one_plus_one() {
@@ -53,23 +67,34 @@ mod tests {
 
     #[test]
     fn add_p_minus_one_twice() {
-        assert_eq!((g(0xFFFFFFFF00000000) + g(0xFFFFFFFF00000000)).as_u64(), 0xFFFFFFFEFFFFFFFF);
+        assert_eq!(
+            (g(0xFFFFFFFF00000000) + g(0xFFFFFFFF00000000)).as_u64(),
+            0xFFFFFFFEFFFFFFFF
+        );
     }
 
     #[test]
     fn add_u64_overflow() {
-        assert_eq!((g(0x8000000000000000) + g(0x8000000000000000)).as_u64(), 0x00000000FFFFFFFF);
+        assert_eq!(
+            (g(0x8000000000000000) + g(0x8000000000000000)).as_u64(),
+            0x00000000FFFFFFFF
+        );
     }
 
     #[test]
     fn add_epsilon_pair() {
-        assert_eq!((g(0x00000000FFFFFFFF) + g(0x00000000FFFFFFFF)).as_u64(), 0x00000001FFFFFFFE);
+        assert_eq!(
+            (g(0x00000000FFFFFFFF) + g(0x00000000FFFFFFFF)).as_u64(),
+            0x00000001FFFFFFFE
+        );
     }
 
     // ── Subtraction ─────────────────────────────────────────────────
 
     #[test]
-    fn sub_basic() { assert_eq!((g(5) - g(3)).as_u64(), 2); }
+    fn sub_basic() {
+        assert_eq!((g(5) - g(3)).as_u64(), 2);
+    }
 
     #[test]
     fn sub_zero_minus_one() {
@@ -77,7 +102,9 @@ mod tests {
     }
 
     #[test]
-    fn sub_zero_minus_zero() { assert_eq!((g(0) - g(0)).as_u64(), 0); }
+    fn sub_zero_minus_zero() {
+        assert_eq!((g(0) - g(0)).as_u64(), 0);
+    }
 
     #[test]
     fn sub_one_minus_p_minus_one() {
@@ -92,10 +119,14 @@ mod tests {
     // ── Multiplication ──────────────────────────────────────────────
 
     #[test]
-    fn mul_three_times_seven() { assert_eq!((g(3) * g(7)).as_u64(), 0x15); }
+    fn mul_three_times_seven() {
+        assert_eq!((g(3) * g(7)).as_u64(), 0x15);
+    }
 
     #[test]
-    fn mul_zero_times_any() { assert_eq!((g(0) * g(0x2A)).as_u64(), 0); }
+    fn mul_zero_times_any() {
+        assert_eq!((g(0) * g(0x2A)).as_u64(), 0);
+    }
 
     #[test]
     fn mul_one_times_p_minus_one() {
@@ -120,16 +151,24 @@ mod tests {
     // ── S-box (x^7) ────────────────────────────────────────────────
 
     #[test]
-    fn pow7_zero() { assert_eq!(g(0).pow7().as_u64(), 0); }
+    fn pow7_zero() {
+        assert_eq!(g(0).pow7().as_u64(), 0);
+    }
 
     #[test]
-    fn pow7_one() { assert_eq!(g(1).pow7().as_u64(), 1); }
+    fn pow7_one() {
+        assert_eq!(g(1).pow7().as_u64(), 1);
+    }
 
     #[test]
-    fn pow7_two() { assert_eq!(g(2).pow7().as_u64(), 0x80); }
+    fn pow7_two() {
+        assert_eq!(g(2).pow7().as_u64(), 0x80);
+    }
 
     #[test]
-    fn pow7_seven() { assert_eq!(g(7).pow7().as_u64(), 0x000C90F7); }
+    fn pow7_seven() {
+        assert_eq!(g(7).pow7().as_u64(), 0x000C90F7);
+    }
 
     #[test]
     fn pow7_p_minus_one() {
@@ -149,19 +188,29 @@ mod tests {
     // ── Negation ────────────────────────────────────────────────────
 
     #[test]
-    fn neg_zero() { assert_eq!((-g(0)).as_u64(), 0); }
+    fn neg_zero() {
+        assert_eq!((-g(0)).as_u64(), 0);
+    }
 
     #[test]
-    fn neg_one() { assert_eq!((-g(1)).as_u64(), 0xFFFFFFFF00000000); }
+    fn neg_one() {
+        assert_eq!((-g(1)).as_u64(), 0xFFFFFFFF00000000);
+    }
 
     #[test]
-    fn neg_p_minus_one() { assert_eq!((-g(0xFFFFFFFF00000000)).as_u64(), 1); }
+    fn neg_p_minus_one() {
+        assert_eq!((-g(0xFFFFFFFF00000000)).as_u64(), 1);
+    }
 
     #[test]
-    fn neg_42() { assert_eq!((-g(0x2A)).as_u64(), 0xFFFFFFFEFFFFFFD7); }
+    fn neg_42() {
+        assert_eq!((-g(0x2A)).as_u64(), 0xFFFFFFFEFFFFFFD7);
+    }
 
     #[test]
-    fn neg_half() { assert_eq!((-g(0x8000000000000000)).as_u64(), 0x7FFFFFFF00000001); }
+    fn neg_half() {
+        assert_eq!((-g(0x8000000000000000)).as_u64(), 0x7FFFFFFF00000001);
+    }
 
     // ── Primitive root ──────────────────────────────────────────────
 
@@ -176,24 +225,36 @@ mod tests {
     }
 
     #[test]
-    fn two_is_qr() { assert_eq!(g(2).exp((P - 1) / 2).as_u64(), 1); }
+    fn two_is_qr() {
+        assert_eq!(g(2).exp((P - 1) / 2).as_u64(), 1);
+    }
 
     #[test]
-    fn three_is_qr() { assert_eq!(g(3).exp((P - 1) / 2).as_u64(), 1); }
+    fn three_is_qr() {
+        assert_eq!(g(3).exp((P - 1) / 2).as_u64(), 1);
+    }
 
     #[test]
-    fn five_is_qr() { assert_eq!(g(5).exp((P - 1) / 2).as_u64(), 1); }
+    fn five_is_qr() {
+        assert_eq!(g(5).exp((P - 1) / 2).as_u64(), 1);
+    }
 
     #[test]
-    fn six_is_qr() { assert_eq!(g(6).exp((P - 1) / 2).as_u64(), 1); }
+    fn six_is_qr() {
+        assert_eq!(g(6).exp((P - 1) / 2).as_u64(), 1);
+    }
 
     // ── Inversion ───────────────────────────────────────────────────
 
     #[test]
-    fn inv_one() { assert_eq!(g(1).inv().as_u64(), 1); }
+    fn inv_one() {
+        assert_eq!(g(1).inv().as_u64(), 1);
+    }
 
     #[test]
-    fn inv_two() { assert_eq!(g(2).inv().as_u64(), 0x7FFFFFFF80000001); }
+    fn inv_two() {
+        assert_eq!(g(2).inv().as_u64(), 0x7FFFFFFF80000001);
+    }
 
     #[test]
     fn inv_p_minus_one() {
@@ -223,16 +284,24 @@ mod tests {
     // ── Square root ─────────────────────────────────────────────────
 
     #[test]
-    fn sqrt_zero() { assert_eq!(sqrt::sqrt(g(0)), Some(g(0))); }
+    fn sqrt_zero() {
+        assert_eq!(sqrt::sqrt(g(0)), Some(g(0)));
+    }
 
     #[test]
-    fn sqrt_one() { assert_eq!(sqrt::sqrt(g(1)), Some(g(1))); }
+    fn sqrt_one() {
+        assert_eq!(sqrt::sqrt(g(1)), Some(g(1)));
+    }
 
     #[test]
-    fn sqrt_four() { assert_eq!(sqrt::sqrt(g(4)), Some(g(2))); }
+    fn sqrt_four() {
+        assert_eq!(sqrt::sqrt(g(4)), Some(g(2)));
+    }
 
     #[test]
-    fn sqrt_nine() { assert_eq!(sqrt::sqrt(g(9)), Some(g(3))); }
+    fn sqrt_nine() {
+        assert_eq!(sqrt::sqrt(g(9)), Some(g(3)));
+    }
 
     #[test]
     fn sqrt_two() {
@@ -247,10 +316,14 @@ mod tests {
     }
 
     #[test]
-    fn legendre_zero() { assert_eq!(sqrt::legendre(g(0)).as_u64(), 0); }
+    fn legendre_zero() {
+        assert_eq!(sqrt::legendre(g(0)).as_u64(), 0);
+    }
 
     #[test]
-    fn legendre_qr() { assert_eq!(sqrt::legendre(g(4)).as_u64(), 1); }
+    fn legendre_qr() {
+        assert_eq!(sqrt::legendre(g(4)).as_u64(), 1);
+    }
 
     #[test]
     fn legendre_qnr() {
@@ -280,8 +353,8 @@ mod tests {
         let x = Fp2::new(g(2), g(3));
         let y = Fp2::new(g(4), g(5));
         let z = x * y;
-        assert_eq!(z.re.as_u64(), 0x71);  // 113
-        assert_eq!(z.im.as_u64(), 0x16);  // 22
+        assert_eq!(z.re.as_u64(), 0x71); // 113
+        assert_eq!(z.im.as_u64(), 0x16); // 22
     }
 
     #[test]
@@ -360,7 +433,7 @@ mod tests {
     #[test]
     fn fp3_norm_small() {
         let x = Fp3::new(g(1), g(0), g(0));
-        assert_eq!(x.norm().as_u64(), 1);  // norm(1) = 1
+        assert_eq!(x.norm().as_u64(), 1); // norm(1) = 1
     }
 
     // ── Quartic extension field ───────────────────────────────────────
@@ -401,7 +474,12 @@ mod tests {
 
     #[test]
     fn fp4_inv_large() {
-        let x = Fp4::new(g(0x123456789ABCDEF0), g(0xFEDCBA9876543210), g(0xAAAAAAAA), g(0x55555555));
+        let x = Fp4::new(
+            g(0x123456789ABCDEF0),
+            g(0xFEDCBA9876543210),
+            g(0xAAAAAAAA),
+            g(0x55555555),
+        );
         let xi = x.inv();
         let one = x * xi;
         assert_eq!(one.c0.as_u64(), 1);

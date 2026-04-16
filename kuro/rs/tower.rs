@@ -31,10 +31,14 @@ impl F2 {
     pub const ONE: Self = F2(1);
 
     #[inline(always)]
-    pub fn add(self, rhs: Self) -> Self { F2(self.0 ^ rhs.0) }
+    pub fn add(self, rhs: Self) -> Self {
+        F2(self.0 ^ rhs.0)
+    }
 
     #[inline(always)]
-    pub fn mul(self, rhs: Self) -> Self { F2(self.0 & rhs.0) }
+    pub fn mul(self, rhs: Self) -> Self {
+        F2(self.0 & rhs.0)
+    }
 
     #[inline(always)]
     pub fn inv(self) -> Self {
@@ -43,19 +47,29 @@ impl F2 {
     }
 
     #[inline(always)]
-    pub fn square(self) -> Self { self }
+    pub fn square(self) -> Self {
+        self
+    }
 
     #[inline(always)]
-    pub fn sqrt(self) -> Self { self }
+    pub fn sqrt(self) -> Self {
+        self
+    }
 
     #[inline(always)]
-    pub fn trace(self) -> Self { self }
+    pub fn trace(self) -> Self {
+        self
+    }
 
     #[inline(always)]
-    pub fn is_zero(self) -> bool { self.0 == 0 }
+    pub fn is_zero(self) -> bool {
+        self.0 == 0
+    }
 
     #[inline(always)]
-    pub fn from_u8(v: u8) -> Self { F2(v & 1) }
+    pub fn from_u8(v: u8) -> Self {
+        F2(v & 1)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +87,9 @@ impl F2_2 {
     pub const BITS: u32 = 2;
 
     #[inline(always)]
-    pub fn add(self, rhs: Self) -> Self { F2_2(self.0 ^ rhs.0) }
+    pub fn add(self, rhs: Self) -> Self {
+        F2_2(self.0 ^ rhs.0)
+    }
 
     #[inline(always)]
     pub fn mul(self, rhs: Self) -> Self {
@@ -101,11 +117,15 @@ impl F2_2 {
 
     pub fn frobenius(self, k: u32) -> Self {
         let mut r = self;
-        for _ in 0..k { r = r.square(); }
+        for _ in 0..k {
+            r = r.square();
+        }
         r
     }
 
-    pub fn sqrt(self) -> Self { self.frobenius(1) }
+    pub fn sqrt(self) -> Self {
+        self.frobenius(1)
+    }
 
     pub fn trace(self) -> F2 {
         F2((self.0 >> 1) & 1)
@@ -117,11 +137,15 @@ impl F2_2 {
     }
 
     pub fn exp(self, mut e: u128) -> Self {
-        if e == 0 { return Self::ONE; }
+        if e == 0 {
+            return Self::ONE;
+        }
         let mut base = self;
         let mut result = Self::ONE;
         while e > 0 {
-            if e & 1 == 1 { result = result.mul(base); }
+            if e & 1 == 1 {
+                result = result.mul(base);
+            }
             base = base.square();
             e >>= 1;
         }
@@ -129,7 +153,9 @@ impl F2_2 {
     }
 
     #[inline(always)]
-    pub fn is_zero(self) -> bool { self.0 == 0 }
+    pub fn is_zero(self) -> bool {
+        self.0 == 0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +182,14 @@ macro_rules! tower_level {
             const ALPHA: $half = $half($alpha);
 
             #[inline(always)]
-            fn lo(self) -> $half { $half((self.0 & $lo_mask) as _) }
+            fn lo(self) -> $half {
+                $half((self.0 & $lo_mask) as _)
+            }
 
             #[inline(always)]
-            fn hi(self) -> $half { $half((self.0 >> $half_bits) as _) }
+            fn hi(self) -> $half {
+                $half((self.0 >> $half_bits) as _)
+            }
 
             #[inline(always)]
             fn pack(lo: $half, hi: $half) -> Self {
@@ -201,7 +231,9 @@ macro_rules! tower_level {
             /// Frobenius: a^(2^k). Optimized for small k.
             pub fn frobenius(self, k: u32) -> Self {
                 let mut r = self;
-                for _ in 0..k { r = r.square(); }
+                for _ in 0..k {
+                    r = r.square();
+                }
                 r
             }
 
@@ -239,8 +271,7 @@ macro_rules! tower_level {
                 let a_lo = self.lo();
                 let a_hi = self.hi();
 
-                let delta = a_lo.mul(a_lo.add(a_hi))
-                    .add(a_hi.square().mul(Self::ALPHA));
+                let delta = a_lo.mul(a_lo.add(a_hi)).add(a_hi.square().mul(Self::ALPHA));
                 let delta_inv = delta.inv();
 
                 let c_lo = delta_inv.mul(a_lo.add(a_hi));
@@ -250,11 +281,15 @@ macro_rules! tower_level {
             }
 
             pub fn exp(self, mut e: u128) -> Self {
-                if e == 0 { return Self::ONE; }
+                if e == 0 {
+                    return Self::ONE;
+                }
                 let mut base = self;
                 let mut result = Self::ONE;
                 while e > 0 {
-                    if e & 1 == 1 { result = result.mul(base); }
+                    if e & 1 == 1 {
+                        result = result.mul(base);
+                    }
                     base = base.square();
                     e >>= 1;
                 }
@@ -262,7 +297,9 @@ macro_rules! tower_level {
             }
 
             #[inline(always)]
-            pub fn is_zero(self) -> bool { self.0 == 0 }
+            pub fn is_zero(self) -> bool {
+                self.0 == 0
+            }
         }
     };
 }
@@ -270,9 +307,25 @@ macro_rules! tower_level {
 // Wiedemann tower: α_k = product of all previous generators.
 // The constant at each level is 1 << (half_bits - 1) in the sub-field representation.
 //                                                      lo_mask              alpha
-tower_level!(F2_4,   u8,    4,  F2_2,   2,  0x03u8,              0x02);  // α = x₀
-tower_level!(F2_8,   u8,    8,  F2_4,   4,  0x0Fu8,              0x08);  // α = x₀·x₁
-tower_level!(F2_16,  u16,  16,  F2_8,   8,  0x00FFu16,           0x80);  // α = x₀·x₁·x₂
-tower_level!(F2_32,  u32,  32,  F2_16, 16,  0x0000_FFFFu32,      0x8000);  // α = x₀···x₃
-tower_level!(F2_64,  u64,  64,  F2_32, 32,  0x0000_0000_FFFF_FFFFu64, 0x8000_0000);  // α = x₀···x₄
-tower_level!(F2_128, u128, 128, F2_64, 64,  0x0000_0000_0000_0000_FFFF_FFFF_FFFF_FFFFu128, 0x8000_0000_0000_0000);  // α = x₀···x₅
+tower_level!(F2_4, u8, 4, F2_2, 2, 0x03u8, 0x02); // α = x₀
+tower_level!(F2_8, u8, 8, F2_4, 4, 0x0Fu8, 0x08); // α = x₀·x₁
+tower_level!(F2_16, u16, 16, F2_8, 8, 0x00FFu16, 0x80); // α = x₀·x₁·x₂
+tower_level!(F2_32, u32, 32, F2_16, 16, 0x0000_FFFFu32, 0x8000); // α = x₀···x₃
+tower_level!(
+    F2_64,
+    u64,
+    64,
+    F2_32,
+    32,
+    0x0000_0000_FFFF_FFFFu64,
+    0x8000_0000
+); // α = x₀···x₄
+tower_level!(
+    F2_128,
+    u128,
+    128,
+    F2_64,
+    64,
+    0x0000_0000_0000_0000_FFFF_FFFF_FFFF_FFFFu128,
+    0x8000_0000_0000_0000
+); // α = x₀···x₅

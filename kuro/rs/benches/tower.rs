@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use kuro::{F2_8, F2_16, F2_32, F2_64, F2_128, Packed128};
 
 fn bench_add(c: &mut Criterion) {
@@ -35,16 +35,12 @@ fn bench_mul_32(c: &mut Criterion) {
 
 fn bench_inv_128(c: &mut Criterion) {
     let a = F2_128(0xDEADBEEFCAFEBABE_1234567890ABCDEF);
-    c.bench_function("F2_128::inv", |bench| {
-        bench.iter(|| black_box(a).inv())
-    });
+    c.bench_function("F2_128::inv", |bench| bench.iter(|| black_box(a).inv()));
 }
 
 fn bench_inv_64(c: &mut Criterion) {
     let a = F2_64(0xDEADBEEFCAFEBABE);
-    c.bench_function("F2_64::inv", |bench| {
-        bench.iter(|| black_box(a).inv())
-    });
+    c.bench_function("F2_64::inv", |bench| bench.iter(|| black_box(a).inv()));
 }
 
 fn bench_square_128(c: &mut Criterion) {

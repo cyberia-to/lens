@@ -17,7 +17,7 @@
 //! in a rational form, then produce the floor as a Tropical value.
 
 use crate::element::Tropical;
-use crate::matrix::{TropMatrix, MAX_DIM};
+use crate::matrix::{MAX_DIM, TropMatrix};
 
 /// Compute the tropical eigenvalue (minimum mean cycle weight).
 ///

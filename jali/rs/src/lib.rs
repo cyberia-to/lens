@@ -8,14 +8,14 @@
 
 #![no_std]
 
-pub mod ring;
-pub mod ntt;
-pub mod noise;
-pub mod sample;
 pub mod encoding;
+pub mod noise;
+pub mod ntt;
+pub mod ring;
+pub mod sample;
 
 #[cfg(test)]
 mod vectors;
 
-pub use ring::RingElement;
 pub use noise::NoiseBudget;
+pub use ring::RingElement;

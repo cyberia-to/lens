@@ -7,19 +7,19 @@
 //! Test vectors for the tropical semiring library.
 
 #[cfg(test)]
-use crate::element::Tropical;
-#[cfg(test)]
-use crate::matrix::TropMatrix;
-#[cfg(test)]
-use crate::kleene::kleene_star;
-#[cfg(test)]
-use crate::eigenvalue::eigenvalue;
-#[cfg(test)]
 use crate::determinant::determinant;
 #[cfg(test)]
 use crate::dual::MaxPlus;
 #[cfg(test)]
-use crate::encoding::{encode_element, decode_element, encode_matrix, decode_matrix};
+use crate::eigenvalue::eigenvalue;
+#[cfg(test)]
+use crate::element::Tropical;
+#[cfg(test)]
+use crate::encoding::{decode_element, decode_matrix, encode_element, encode_matrix};
+#[cfg(test)]
+use crate::kleene::kleene_star;
+#[cfg(test)]
+use crate::matrix::TropMatrix;
 
 // ============================================================
 // Element tests
@@ -382,7 +382,7 @@ fn kleene_star_triangle() {
     // 0 --(1)--> 1 --(2)--> 2 --(3)--> 0
     let m = TropMatrix::from_weights(3, &[(0, 1, 1), (1, 2, 2), (2, 0, 3)]);
     let star = kleene_star(&m);
-    assert_eq!(star.get(0, 0), Tropical::ONE);     // self-loop: 0
+    assert_eq!(star.get(0, 0), Tropical::ONE); // self-loop: 0
     assert_eq!(star.get(0, 1), Tropical::from_u64(1)); // 0 -> 1: weight 1
     assert_eq!(star.get(0, 2), Tropical::from_u64(3)); // 0 -> 1 -> 2: weight 3
     assert_eq!(star.get(1, 0), Tropical::from_u64(5)); // 1 -> 2 -> 0: weight 5
@@ -394,9 +394,7 @@ fn kleene_star_shortest_path_diamond() {
     // 0 --(1)--> 1 --(1)--> 3
     // 0 --(2)--> 2 --(1)--> 3
     // Shortest 0->3: via 1, cost = 2
-    let m = TropMatrix::from_weights(4, &[
-        (0, 1, 1), (0, 2, 2), (1, 3, 1), (2, 3, 1),
-    ]);
+    let m = TropMatrix::from_weights(4, &[(0, 1, 1), (0, 2, 2), (1, 3, 1), (2, 3, 1)]);
     let star = kleene_star(&m);
     assert_eq!(star.get(0, 3), Tropical::from_u64(2));
     assert_eq!(star.get(0, 2), Tropical::from_u64(2));
@@ -415,9 +413,17 @@ fn kleene_star_disconnected() {
 #[test]
 fn kleene_star_complete_graph() {
     // K3 with weights: 0->1=2, 0->2=4, 1->0=3, 1->2=1, 2->0=5, 2->1=6
-    let m = TropMatrix::from_weights(3, &[
-        (0, 1, 2), (0, 2, 4), (1, 0, 3), (1, 2, 1), (2, 0, 5), (2, 1, 6),
-    ]);
+    let m = TropMatrix::from_weights(
+        3,
+        &[
+            (0, 1, 2),
+            (0, 2, 4),
+            (1, 0, 3),
+            (1, 2, 1),
+            (2, 0, 5),
+            (2, 1, 6),
+        ],
+    );
     let star = kleene_star(&m);
     assert_eq!(star.get(0, 0), Tropical::ONE);
     assert_eq!(star.get(0, 1), Tropical::from_u64(2));
@@ -482,9 +488,7 @@ fn eigenvalue_multiple_cycles() {
     // 0->1->0 weight 2+4=6 length 2, mean=3
     // 0->1->2->0 weight 2+1+3=6 length 3, mean=2
     // Minimum mean cycle weight = 2
-    let m = TropMatrix::from_weights(3, &[
-        (0, 1, 2), (1, 0, 4), (1, 2, 1), (2, 0, 3),
-    ]);
+    let m = TropMatrix::from_weights(3, &[(0, 1, 2), (1, 0, 4), (1, 2, 1), (2, 0, 3)]);
     assert_eq!(eigenvalue(&m), Tropical::from_u64(2));
 }
 
@@ -715,9 +719,7 @@ fn integration_shortest_path_4node() {
     // 0->1=1, 1->3=2 => total=3
     // 0->2=4, 2->3=1 => total=5
     // Shortest = 3 (both paths)
-    let m = TropMatrix::from_weights(4, &[
-        (0, 1, 1), (1, 3, 2), (0, 2, 4), (2, 3, 1), (1, 2, 1),
-    ]);
+    let m = TropMatrix::from_weights(4, &[(0, 1, 1), (1, 3, 2), (0, 2, 4), (2, 3, 1), (1, 2, 1)]);
     let star = kleene_star(&m);
     assert_eq!(star.get(0, 3), Tropical::from_u64(3));
 }
@@ -725,9 +727,7 @@ fn integration_shortest_path_4node() {
 #[test]
 fn integration_power_vs_manual() {
     // Verify A^3 via power matches A*A*A
-    let m = TropMatrix::from_weights(3, &[
-        (0, 1, 2), (1, 2, 3), (2, 0, 1),
-    ]);
+    let m = TropMatrix::from_weights(3, &[(0, 1, 2), (1, 2, 3), (2, 0, 1)]);
     let cube_power = m.power(3);
     let cube_manual = m.mul(&m).mul(&m);
     for i in 0..3 {
@@ -740,9 +740,7 @@ fn integration_power_vs_manual() {
 #[test]
 fn integration_kleene_star_via_powers() {
     // For a 3-node graph, A* = I + A + A^2
-    let m = TropMatrix::from_weights(3, &[
-        (0, 1, 2), (1, 2, 3),
-    ]);
+    let m = TropMatrix::from_weights(3, &[(0, 1, 2), (1, 2, 3)]);
     let star = kleene_star(&m);
     let id = TropMatrix::identity(3);
     let a1 = m.clone();

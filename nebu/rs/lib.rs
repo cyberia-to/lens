@@ -7,15 +7,15 @@
 
 #![no_std]
 
-pub mod field;
+pub mod batch;
 pub mod encoding;
+pub mod extension;
+pub mod field;
 pub mod ntt;
 pub mod sqrt;
-pub mod batch;
-pub mod extension;
 
 #[cfg(test)]
 mod vectors;
 
-pub use field::Goldilocks;
 pub use extension::{Fp2, Fp3, Fp4};
+pub use field::Goldilocks;

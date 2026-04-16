@@ -78,16 +78,19 @@ fn parse_backend_flag(args: &[String]) -> (Option<Backend>, Vec<String>) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 { print_usage(); std::process::exit(1); }
+    if args.len() < 2 {
+        print_usage();
+        std::process::exit(1);
+    }
     let cmd = args[1].clone();
     let (forced, rest) = parse_backend_flag(&args[2..]);
 
     match cmd.as_str() {
-        "calc"                    => cmd_calc(forced, &rest),
-        "encode"                  => cmd_encode(&rest),
-        "decode"                  => cmd_decode(&rest),
-        "bench"                   => cmd_bench(forced, &rest),
-        "help" | "--help" | "-h"  => print_usage(),
+        "calc" => cmd_calc(forced, &rest),
+        "encode" => cmd_encode(&rest),
+        "decode" => cmd_decode(&rest),
+        "bench" => cmd_bench(forced, &rest),
+        "help" | "--help" | "-h" => print_usage(),
         other => {
             eprintln!("unknown command: {other}");
             print_usage();
@@ -97,7 +100,8 @@ fn main() {
 }
 
 fn print_usage() {
-    eprintln!("\
+    eprintln!(
+        "\
 \x1b[90m
     ██╗  ██╗██╗   ██╗██████╗  ██████╗
     ██║ ██╔╝██║   ██║██╔══██╗██╔═══██╗
@@ -128,26 +132,34 @@ fn print_usage() {
            --cpu  force CPU backend
            (default: GPU if available, else CPU)
 \x1b[0m
-  -h, --help  Print this help");
+  -h, --help  Print this help"
+    );
 }
 
 // -- argument helpers ---------------------------------------------------------
 
-fn die(msg: &str) -> ! { eprintln!("{msg}"); std::process::exit(1); }
+fn die(msg: &str) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(1);
+}
 
 fn parse_u128(s: &str) -> u128 {
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u128::from_str_radix(hex, 16).unwrap_or_else(|e| die(&format!("invalid hex '{s}': {e}")))
     } else {
-        s.parse::<u128>().unwrap_or_else(|e| die(&format!("invalid number '{s}': {e}")))
+        s.parse::<u128>()
+            .unwrap_or_else(|e| die(&format!("invalid number '{s}': {e}")))
     }
 }
 
 fn parse_level(args: &[String]) -> u32 {
     for i in 0..args.len() {
         if args[i] == "--level" {
-            if i + 1 >= args.len() { die("--level requires a value (2, 4, 8, 16, 32, 64, 128)"); }
-            let lvl: u32 = args[i + 1].parse()
+            if i + 1 >= args.len() {
+                die("--level requires a value (2, 4, 8, 16, 32, 64, 128)");
+            }
+            let lvl: u32 = args[i + 1]
+                .parse()
                 .unwrap_or_else(|e| die(&format!("invalid level '{}': {e}", args[i + 1])));
             return match lvl {
                 2 | 4 | 8 | 16 | 32 | 64 | 128 => lvl,
@@ -163,15 +175,23 @@ fn positional(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut skip = false;
     for a in args {
-        if skip { skip = false; continue; }
-        if a == "--level" { skip = true; continue; }
+        if skip {
+            skip = false;
+            continue;
+        }
+        if a == "--level" {
+            skip = true;
+            continue;
+        }
         out.push(a.clone());
     }
     out
 }
 
 fn need(args: &[String], n: usize, usage: &str) {
-    if args.len() < n { die(&format!("usage: kuro calc {usage}")); }
+    if args.len() < n {
+        die(&format!("usage: kuro calc {usage}"));
+    }
 }
 
 fn fmt_hex(v: u128, bits: u32) -> String {
@@ -180,8 +200,11 @@ fn fmt_hex(v: u128, bits: u32) -> String {
 
 fn print_timed(label: &str, val: &str, backend: Backend, elapsed: std::time::Duration) {
     let us = elapsed.as_nanos() as f64 / 1000.0;
-    if us < 1000.0 { eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m"); }
-    else { eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0); }
+    if us < 1000.0 {
+        eprintln!("\x1b[90m[{backend} {us:.0}us]\x1b[0m");
+    } else {
+        eprintln!("\x1b[90m[{backend} {:.2}ms]\x1b[0m", us / 1000.0);
+    }
     println!("{label}{val}");
 }
 
@@ -196,14 +219,14 @@ fn wgsl_f2_128(v: u128) -> String {
 /// WGSL function name for a binary op at the given level.
 fn wgsl_binop_name(op: &str, level: u32) -> String {
     match level {
-        2   => format!("f2_2_{op}"),
-        4   => format!("f2_4_{op}"),
-        8   => format!("f2_8_{op}"),
-        16  => format!("f2_16_{op}"),
-        32  => format!("f2_32_{op}"),
-        64  => format!("f2_64_{op}"),
+        2 => format!("f2_2_{op}"),
+        4 => format!("f2_4_{op}"),
+        8 => format!("f2_8_{op}"),
+        16 => format!("f2_16_{op}"),
+        32 => format!("f2_32_{op}"),
+        64 => format!("f2_64_{op}"),
         128 => format!("f2_128_{op}"),
-        _   => unreachable!(),
+        _ => unreachable!(),
     }
 }
 
@@ -287,18 +310,22 @@ fn tower_unary(op: &str, a: u128, level: u32) -> u128 {
         ($ty:ident, $val:expr) => {{
             let x = $ty($val as _);
             match op {
-                "square"    => x.square().0 as u128,
-                "inv"       => x.inv().0 as u128,
+                "square" => x.square().0 as u128,
+                "inv" => x.inv().0 as u128,
                 "frobenius" => x.frobenius(1).0 as u128,
                 _ => unreachable!(),
             }
         }};
     }
     match level {
-        2   => run!(F2_2,   a),  4   => run!(F2_4,   a),
-        8   => run!(F2_8,   a),  16  => run!(F2_16,  a),
-        32  => run!(F2_32,  a),  64  => run!(F2_64,  a),
-        128 => run!(F2_128, a),  _   => unreachable!(),
+        2 => run!(F2_2, a),
+        4 => run!(F2_4, a),
+        8 => run!(F2_8, a),
+        16 => run!(F2_16, a),
+        32 => run!(F2_32, a),
+        64 => run!(F2_64, a),
+        128 => run!(F2_128, a),
+        _ => unreachable!(),
     }
 }
 
@@ -306,21 +333,31 @@ fn tower_binop(op: &str, a: u128, b: u128, level: u32) -> u128 {
     macro_rules! run {
         ($ty:ident, $a:expr, $b:expr) => {{
             let (x, y) = ($ty($a as _), $ty($b as _));
-            match op { "add" => x.add(y).0 as u128, "mul" => x.mul(y).0 as u128, _ => unreachable!() }
+            match op {
+                "add" => x.add(y).0 as u128,
+                "mul" => x.mul(y).0 as u128,
+                _ => unreachable!(),
+            }
         }};
     }
     match level {
-        2   => run!(F2_2,   a, b),  4   => run!(F2_4,   a, b),
-        8   => run!(F2_8,   a, b),  16  => run!(F2_16,  a, b),
-        32  => run!(F2_32,  a, b),  64  => run!(F2_64,  a, b),
-        128 => run!(F2_128, a, b),  _   => unreachable!(),
+        2 => run!(F2_2, a, b),
+        4 => run!(F2_4, a, b),
+        8 => run!(F2_8, a, b),
+        16 => run!(F2_16, a, b),
+        32 => run!(F2_32, a, b),
+        64 => run!(F2_64, a, b),
+        128 => run!(F2_128, a, b),
+        _ => unreachable!(),
     }
 }
 
 // -- commands ----------------------------------------------------------------
 
 fn cmd_calc(forced: Option<Backend>, args: &[String]) {
-    if args.is_empty() { die("usage: kuro calc <op> <args...> [--level N]"); }
+    if args.is_empty() {
+        die("usage: kuro calc <op> <args...> [--level N]");
+    }
     let op = args[0].as_str();
     let rest = &args[1..];
     let level = parse_level(rest);
@@ -339,12 +376,19 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 tower_binop(op, a, b, level)
             };
-            print_timed(&format!("F2^{level} {op}: "), &fmt_hex(r, level), backend, t.elapsed());
+            print_timed(
+                &format!("F2^{level} {op}: "),
+                &fmt_hex(r, level),
+                backend,
+                t.elapsed(),
+            );
         }
         "square" | "inv" | "frobenius" => {
             need(&pos, 1, &format!("{op} <a> [--level N]"));
             let a = parse_u128(&pos[0]);
-            if op == "inv" && a == 0 { die("error: inverse of zero is undefined"); }
+            if op == "inv" && a == 0 {
+                die("error: inverse of zero is undefined");
+            }
             let t = Instant::now();
             let r = if backend == Backend::Gpu {
                 gpu_unary(&ctx, op, a, level)
@@ -356,37 +400,65 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 backend
             };
-            print_timed(&format!("F2^{level} {op}: "), &fmt_hex(r, level), actual_backend, t.elapsed());
+            print_timed(
+                &format!("F2^{level} {op}: "),
+                &fmt_hex(r, level),
+                actual_backend,
+                t.elapsed(),
+            );
         }
-        other => { die(&format!("unknown calc op: {other}\nops: add mul square inv frobenius")); }
+        other => {
+            die(&format!(
+                "unknown calc op: {other}\nops: add mul square inv frobenius"
+            ));
+        }
     }
 }
 
 fn cmd_encode(args: &[String]) {
-    if args.is_empty() { die("usage: kuro encode <hex_bytes>\n  hex_bytes: even-length hex string"); }
-    let input = args[0].strip_prefix("0x")
+    if args.is_empty() {
+        die("usage: kuro encode <hex_bytes>\n  hex_bytes: even-length hex string");
+    }
+    let input = args[0]
+        .strip_prefix("0x")
         .or_else(|| args[0].strip_prefix("0X"))
         .unwrap_or(&args[0]);
-    if input.len() % 2 != 0 { die("error: hex string must have even length"); }
-    let bytes: Vec<u8> = (0..input.len()).step_by(2).map(|i| {
-        u8::from_str_radix(&input[i..i + 2], 16)
-            .unwrap_or_else(|e| die(&format!("invalid hex byte '{}': {e}", &input[i..i + 2])))
-    }).collect();
+    if input.len() % 2 != 0 {
+        die("error: hex string must have even length");
+    }
+    let bytes: Vec<u8> = (0..input.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&input[i..i + 2], 16)
+                .unwrap_or_else(|e| die(&format!("invalid hex byte '{}': {e}", &input[i..i + 2])))
+        })
+        .collect();
 
     println!("input: {} ({} bytes)", input.to_lowercase(), bytes.len());
     for (i, chunk) in bytes.chunks(16).enumerate() {
         let mut val: u128 = 0;
-        for (j, &b) in chunk.iter().enumerate() { val |= (b as u128) << (j * 8); }
-        println!("  tower[{i}]: 0x{:032X}  ({} bytes packed)", val, chunk.len());
+        for (j, &b) in chunk.iter().enumerate() {
+            val |= (b as u128) << (j * 8);
+        }
+        println!(
+            "  tower[{i}]: 0x{:032X}  ({} bytes packed)",
+            val,
+            chunk.len()
+        );
     }
 }
 
 fn cmd_decode(args: &[String]) {
-    if args.is_empty() { die("usage: kuro decode <hex_element>"); }
+    if args.is_empty() {
+        die("usage: kuro decode <hex_element>");
+    }
     let val = parse_u128(&args[0]);
     let mut bytes = [0u8; 16];
     let mut v = val;
-    for b in bytes.iter_mut() { *b = (v & 0xFF) as u8; v >>= 8; }
+    for b in bytes.iter_mut() {
+        *b = (v & 0xFF) as u8;
+        v >>= 8;
+    }
     let len = bytes.iter().rposition(|&b| b != 0).map_or(1, |i| i + 1);
     let hex: String = bytes[..len].iter().map(|b| format!("{b:02x}")).collect();
     println!("element: 0x{:032X}", val);
@@ -394,8 +466,12 @@ fn cmd_decode(args: &[String]) {
 }
 
 fn cmd_bench(forced: Option<Backend>, args: &[String]) {
-    let iters: u64 = if args.is_empty() { 100_000 } else {
-        args[0].parse().unwrap_or_else(|e| die(&format!("invalid iteration count '{}': {e}", args[0])))
+    let iters: u64 = if args.is_empty() {
+        100_000
+    } else {
+        args[0]
+            .parse()
+            .unwrap_or_else(|e| die(&format!("invalid iteration count '{}': {e}", args[0])))
     };
 
     let ctx = Ctx::new(forced);
@@ -411,21 +487,49 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
 
     if backend == Backend::Gpu {
         bench_op("F2^128 add   (gpu)", iters, || {
-            black_box(gpu_binop(&ctx, "add", black_box(a128v), black_box(b128v), 128));
+            black_box(gpu_binop(
+                &ctx,
+                "add",
+                black_box(a128v),
+                black_box(b128v),
+                128,
+            ));
         });
         bench_op("F2^128 mul   (gpu)", iters, || {
-            black_box(gpu_binop(&ctx, "mul", black_box(a128v), black_box(b128v), 128));
+            black_box(gpu_binop(
+                &ctx,
+                "mul",
+                black_box(a128v),
+                black_box(b128v),
+                128,
+            ));
         });
         bench_op("F2^128 square(gpu)", iters, || {
-            black_box(gpu_binop(&ctx, "mul", black_box(a128v), black_box(a128v), 128));
+            black_box(gpu_binop(
+                &ctx,
+                "mul",
+                black_box(a128v),
+                black_box(a128v),
+                128,
+            ));
         });
     }
 
-    bench_op("F2^128 add   (cpu)", iters, || black_box(black_box(a128).add(black_box(b128))));
-    bench_op("F2^128 mul   (cpu)", iters, || black_box(black_box(a128).mul(black_box(b128))));
-    bench_op("F2^128 square(cpu)", iters, || black_box(black_box(a128).square()));
-    bench_op("F2^128 inv   (cpu)", iters, || black_box(black_box(a128).inv()));
-    bench_op("F2^128 frob  (cpu)", iters, || black_box(black_box(a128).frobenius(1)));
+    bench_op("F2^128 add   (cpu)", iters, || {
+        black_box(black_box(a128).add(black_box(b128)))
+    });
+    bench_op("F2^128 mul   (cpu)", iters, || {
+        black_box(black_box(a128).mul(black_box(b128)))
+    });
+    bench_op("F2^128 square(cpu)", iters, || {
+        black_box(black_box(a128).square())
+    });
+    bench_op("F2^128 inv   (cpu)", iters, || {
+        black_box(black_box(a128).inv())
+    });
+    bench_op("F2^128 frob  (cpu)", iters, || {
+        black_box(black_box(a128).frobenius(1))
+    });
     println!();
 
     let a64 = F2_64(0xDEAD_BEEF_CAFE_BABE);
@@ -435,23 +539,47 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
 
     if backend == Backend::Gpu {
         bench_op("F2^64  add   (gpu)", iters, || {
-            black_box(gpu_binop(&ctx, "add", black_box(a64v as u128), black_box(b64v as u128), 64));
+            black_box(gpu_binop(
+                &ctx,
+                "add",
+                black_box(a64v as u128),
+                black_box(b64v as u128),
+                64,
+            ));
         });
         bench_op("F2^64  mul   (gpu)", iters, || {
-            black_box(gpu_binop(&ctx, "mul", black_box(a64v as u128), black_box(b64v as u128), 64));
+            black_box(gpu_binop(
+                &ctx,
+                "mul",
+                black_box(a64v as u128),
+                black_box(b64v as u128),
+                64,
+            ));
         });
     }
 
-    bench_op("F2^64  add   (cpu)", iters, || black_box(black_box(a64).add(black_box(b64))));
-    bench_op("F2^64  mul   (cpu)", iters, || black_box(black_box(a64).mul(black_box(b64))));
-    bench_op("F2^64  inv   (cpu)", iters, || black_box(black_box(a64).inv()));
+    bench_op("F2^64  add   (cpu)", iters, || {
+        black_box(black_box(a64).add(black_box(b64)))
+    });
+    bench_op("F2^64  mul   (cpu)", iters, || {
+        black_box(black_box(a64).mul(black_box(b64)))
+    });
+    bench_op("F2^64  inv   (cpu)", iters, || {
+        black_box(black_box(a64).inv())
+    });
     println!();
 
     let a32 = F2_32(0xDEAD_BEEF);
     let b32 = F2_32(0x0123_4567);
-    bench_op("F2^32  add   (cpu)", iters, || black_box(black_box(a32).add(black_box(b32))));
-    bench_op("F2^32  mul   (cpu)", iters, || black_box(black_box(a32).mul(black_box(b32))));
-    bench_op("F2^32  inv   (cpu)", iters, || black_box(black_box(a32).inv()));
+    bench_op("F2^32  add   (cpu)", iters, || {
+        black_box(black_box(a32).add(black_box(b32)))
+    });
+    bench_op("F2^32  mul   (cpu)", iters, || {
+        black_box(black_box(a32).mul(black_box(b32)))
+    });
+    bench_op("F2^32  inv   (cpu)", iters, || {
+        black_box(black_box(a32).inv())
+    });
     println!();
 
     let pa = Packed128(0xFFFF_FFFF_0000_0000_AAAA_AAAA_5555_5555);
@@ -461,18 +589,29 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
 
     if backend == Backend::Gpu {
         bench_op("Packed ip    (gpu)", iters, || {
-            black_box(ctx.gpu().run_packed_inner_product(black_box(pav), black_box(pbv)));
+            black_box(
+                ctx.gpu()
+                    .run_packed_inner_product(black_box(pav), black_box(pbv)),
+            );
         });
     }
 
-    bench_op("Packed add   (cpu)", iters, || black_box(black_box(pa).add(black_box(pb))));
-    bench_op("Packed mul   (cpu)", iters, || black_box(black_box(pa).mul(black_box(pb))));
-    bench_op("Packed pop   (cpu)", iters, || black_box(black_box(pa).popcount()));
+    bench_op("Packed add   (cpu)", iters, || {
+        black_box(black_box(pa).add(black_box(pb)))
+    });
+    bench_op("Packed mul   (cpu)", iters, || {
+        black_box(black_box(pa).mul(black_box(pb)))
+    });
+    bench_op("Packed pop   (cpu)", iters, || {
+        black_box(black_box(pa).popcount())
+    });
 }
 
 fn bench_op<F: Fn() -> T, T>(label: &str, iters: u64, f: F) {
     let t = Instant::now();
-    for _ in 0..iters { f(); }
+    for _ in 0..iters {
+        f();
+    }
     let ns = t.elapsed().as_nanos() as f64 / iters as f64;
     println!("  {label}  {ns:>8.1} ns/op");
 }

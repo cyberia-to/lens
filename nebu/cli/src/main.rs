@@ -319,9 +319,15 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             let e = parse_u64(&args[2]);
             let t = Instant::now();
             let r = if backend == Backend::Gpu {
-                gpu_field_op(&ctx, &format!(
-                    "gl_exp({}, {}u, {}u)", wgsl_args1(a), e as u32, (e >> 32) as u32
-                ))
+                gpu_field_op(
+                    &ctx,
+                    &format!(
+                        "gl_exp({}, {}u, {}u)",
+                        wgsl_args1(a),
+                        e as u32,
+                        (e >> 32) as u32
+                    ),
+                )
             } else {
                 a.exp(e)
             };
@@ -370,8 +376,10 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                          let re = gl_canon(z.x, z.y);\n\
                          let im = gl_canon(z.z, z.w);\n\
                          out[0] = re.x; out[1] = re.y; out[2] = im.x; out[3] = im.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im),
-                        wgsl_args1(y.re), wgsl_args1(y.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im),
+                        wgsl_args1(y.re),
+                        wgsl_args1(y.im)
                     ),
                     4,
                 );
@@ -379,7 +387,11 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 x + y
             };
-            print_result(&format!("{} {}", fmt_field(r.re), fmt_field(r.im)), backend, t.elapsed());
+            print_result(
+                &format!("{} {}", fmt_field(r.re), fmt_field(r.im)),
+                backend,
+                t.elapsed(),
+            );
         }
         "fp2-sub" => {
             need_args(args, 5, "fp2-sub <re1> <im1> <re2> <im2>");
@@ -393,8 +405,10 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                          let re = gl_canon(z.x, z.y);\n\
                          let im = gl_canon(z.z, z.w);\n\
                          out[0] = re.x; out[1] = re.y; out[2] = im.x; out[3] = im.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im),
-                        wgsl_args1(y.re), wgsl_args1(y.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im),
+                        wgsl_args1(y.re),
+                        wgsl_args1(y.im)
                     ),
                     4,
                 );
@@ -402,7 +416,11 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 x - y
             };
-            print_result(&format!("{} {}", fmt_field(r.re), fmt_field(r.im)), backend, t.elapsed());
+            print_result(
+                &format!("{} {}", fmt_field(r.re), fmt_field(r.im)),
+                backend,
+                t.elapsed(),
+            );
         }
         "fp2-mul" => {
             need_args(args, 5, "fp2-mul <re1> <im1> <re2> <im2>");
@@ -416,8 +434,10 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                          let re = gl_canon(z.x, z.y);\n\
                          let im = gl_canon(z.z, z.w);\n\
                          out[0] = re.x; out[1] = re.y; out[2] = im.x; out[3] = im.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im),
-                        wgsl_args1(y.re), wgsl_args1(y.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im),
+                        wgsl_args1(y.re),
+                        wgsl_args1(y.im)
                     ),
                     4,
                 );
@@ -425,7 +445,11 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 x * y
             };
-            print_result(&format!("{} {}", fmt_field(r.re), fmt_field(r.im)), backend, t.elapsed());
+            print_result(
+                &format!("{} {}", fmt_field(r.re), fmt_field(r.im)),
+                backend,
+                t.elapsed(),
+            );
         }
         "fp2-inv" => {
             need_args(args, 3, "fp2-inv <re> <im>");
@@ -438,7 +462,8 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                          let re = gl_canon(z.x, z.y);\n\
                          let im = gl_canon(z.z, z.w);\n\
                          out[0] = re.x; out[1] = re.y; out[2] = im.x; out[3] = im.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im)
                     ),
                     4,
                 );
@@ -446,7 +471,11 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 x.inv()
             };
-            print_result(&format!("{} {}", fmt_field(r.re), fmt_field(r.im)), backend, t.elapsed());
+            print_result(
+                &format!("{} {}", fmt_field(r.re), fmt_field(r.im)),
+                backend,
+                t.elapsed(),
+            );
         }
         "fp2-conj" => {
             need_args(args, 3, "fp2-conj <re> <im>");
@@ -459,7 +488,8 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                          let re = gl_canon(z.x, z.y);\n\
                          let im = gl_canon(z.z, z.w);\n\
                          out[0] = re.x; out[1] = re.y; out[2] = im.x; out[3] = im.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im)
                     ),
                     4,
                 );
@@ -467,7 +497,11 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
             } else {
                 x.conj()
             };
-            print_result(&format!("{} {}", fmt_field(r.re), fmt_field(r.im)), backend, t.elapsed());
+            print_result(
+                &format!("{} {}", fmt_field(r.re), fmt_field(r.im)),
+                backend,
+                t.elapsed(),
+            );
         }
         "fp2-norm" => {
             need_args(args, 3, "fp2-norm <re> <im>");
@@ -479,7 +513,8 @@ fn cmd_calc(forced: Option<Backend>, args: &[String]) {
                         "let z = fp2_norm(fp2_new({}, {}));\n\
                          let c = gl_canon(z.x, z.y);\n\
                          out[0] = c.x; out[1] = c.y;",
-                        wgsl_args1(x.re), wgsl_args1(x.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im)
                     ),
                     2,
                 );
@@ -557,7 +592,10 @@ fn cmd_ntt(forced: Option<Backend>, args: &[String]) {
     let results = if backend == Backend::Gpu {
         let mut gpu_data: Vec<(u32, u32)> = data.iter().map(|g| to_lohi(*g)).collect();
         ctx.gpu().run_ntt(&mut gpu_data);
-        gpu_data.iter().map(|&(lo, hi)| from_lohi(lo, hi)).collect::<Vec<_>>()
+        gpu_data
+            .iter()
+            .map(|&(lo, hi)| from_lohi(lo, hi))
+            .collect::<Vec<_>>()
     } else {
         let mut cpu_data = data;
         ntt::ntt(&mut cpu_data);
@@ -587,7 +625,10 @@ fn cmd_intt(forced: Option<Backend>, args: &[String]) {
     let results = if backend == Backend::Gpu {
         let mut gpu_data: Vec<(u32, u32)> = data.iter().map(|g| to_lohi(*g)).collect();
         ctx.gpu().run_intt(&mut gpu_data);
-        gpu_data.iter().map(|&(lo, hi)| from_lohi(lo, hi)).collect::<Vec<_>>()
+        gpu_data
+            .iter()
+            .map(|&(lo, hi)| from_lohi(lo, hi))
+            .collect::<Vec<_>>()
     } else {
         let mut cpu_data = data;
         ntt::intt(&mut cpu_data);
@@ -618,85 +659,110 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
     if op == "all" || op == "add" {
         if backend == Backend::Gpu {
             bench_op("add", iters, || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_add({})", wgsl_args2(a, b))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_add({})", wgsl_args2(a, b))),
+                );
             });
         } else {
-            bench_op("add", iters, || { black_box(black_box(a) + black_box(b)); });
+            bench_op("add", iters, || {
+                black_box(black_box(a) + black_box(b));
+            });
         }
     }
     if op == "all" || op == "sub" {
         if backend == Backend::Gpu {
             bench_op("sub", iters, || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_sub({})", wgsl_args2(a, b))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_sub({})", wgsl_args2(a, b))),
+                );
             });
         } else {
-            bench_op("sub", iters, || { black_box(black_box(a) - black_box(b)); });
+            bench_op("sub", iters, || {
+                black_box(black_box(a) - black_box(b));
+            });
         }
     }
     if op == "all" || op == "mul" {
         if backend == Backend::Gpu {
             bench_op("mul", iters, || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_mul({})", wgsl_args2(a, b))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_mul({})", wgsl_args2(a, b))),
+                );
             });
         } else {
-            bench_op("mul", iters, || { black_box(black_box(a) * black_box(b)); });
+            bench_op("mul", iters, || {
+                black_box(black_box(a) * black_box(b));
+            });
         }
     }
     if op == "all" || op == "square" {
         if backend == Backend::Gpu {
             bench_op("square", iters, || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_square({})", wgsl_args1(a))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_square({})", wgsl_args1(a))),
+                );
             });
         } else {
-            bench_op("square", iters, || { black_box(black_box(a).square()); });
+            bench_op("square", iters, || {
+                black_box(black_box(a).square());
+            });
         }
     }
     if op == "all" || op == "pow7" {
         if backend == Backend::Gpu {
             bench_op("pow7", iters, || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_pow7({})", wgsl_args1(a))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_pow7({})", wgsl_args1(a))),
+                );
             });
         } else {
-            bench_op("pow7", iters, || { black_box(black_box(a).pow7()); });
+            bench_op("pow7", iters, || {
+                black_box(black_box(a).pow7());
+            });
         }
     }
     if op == "all" || op == "inv" {
         let inv_iters = iters.min(100_000);
         if backend == Backend::Gpu {
             bench_op("inv", inv_iters.min(1000), || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_inv({})", wgsl_args1(a))
-                ));
+                black_box(
+                    ctx.gpu()
+                        .eval_field_op(&format!("gl_inv({})", wgsl_args1(a))),
+                );
             });
         } else {
-            bench_op("inv", inv_iters, || { black_box(black_box(a).inv()); });
+            bench_op("inv", inv_iters, || {
+                black_box(black_box(a).inv());
+            });
         }
     }
     if op == "all" || op == "sqrt" {
         let sqrt_iters = iters.min(10_000);
         // sqrt on GPU can timeout — use CPU for bench
-        bench_op("sqrt", sqrt_iters, || { black_box(sqrt::sqrt(black_box(a))); });
+        bench_op("sqrt", sqrt_iters, || {
+            black_box(sqrt::sqrt(black_box(a)));
+        });
     }
     if op == "all" || op == "exp" {
         let exp_iters = iters.min(100_000);
         if backend == Backend::Gpu {
             bench_op("exp", exp_iters.min(1000), || {
-                black_box(ctx.gpu().eval_field_op(
-                    &format!("gl_exp({}, {}u, {}u)", wgsl_args1(a), (P - 2) as u32, ((P - 2) >> 32) as u32)
-                ));
+                black_box(ctx.gpu().eval_field_op(&format!(
+                    "gl_exp({}, {}u, {}u)",
+                    wgsl_args1(a),
+                    (P - 2) as u32,
+                    ((P - 2) >> 32) as u32
+                )));
             });
         } else {
-            bench_op("exp", exp_iters, || { black_box(black_box(a).exp(P - 2)); });
+            bench_op("exp", exp_iters, || {
+                black_box(black_box(a).exp(P - 2));
+            });
         }
     }
     if op == "all" || op == "batch-inv" {
@@ -733,14 +799,18 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
                     &format!(
                         "let z = fp2_mul(fp2_new({}, {}), fp2_new({}, {}));\n\
                          out[0] = z.x; out[1] = z.y; out[2] = z.z; out[3] = z.w;",
-                        wgsl_args1(x.re), wgsl_args1(x.im),
-                        wgsl_args1(y.re), wgsl_args1(y.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im),
+                        wgsl_args1(y.re),
+                        wgsl_args1(y.im)
                     ),
                     4,
                 ));
             });
         } else {
-            bench_op("fp2-mul", iters, || { black_box(black_box(x) * black_box(y)); });
+            bench_op("fp2-mul", iters, || {
+                black_box(black_box(x) * black_box(y));
+            });
         }
     }
     if op == "all" || op == "fp2-inv" {
@@ -751,14 +821,17 @@ fn cmd_bench(forced: Option<Backend>, args: &[String]) {
                     &format!(
                         "let z = fp2_inv(fp2_new({}, {}));\n\
                          out[0] = z.x; out[1] = z.y; out[2] = z.z; out[3] = z.w;",
-                        wgsl_args1(x.re), wgsl_args1(x.im)
+                        wgsl_args1(x.re),
+                        wgsl_args1(x.im)
                     ),
                     4,
                 ));
             });
         } else {
             let inv_iters = iters.min(100_000);
-            bench_op("fp2-inv", inv_iters, || { black_box(black_box(x).inv()); });
+            bench_op("fp2-inv", inv_iters, || {
+                black_box(black_box(x).inv());
+            });
         }
     }
 }
@@ -778,16 +851,25 @@ fn bench_op<F: FnMut()>(name: &str, iters: u64, mut f: F) {
     if ns_per_op < 1000.0 {
         println!("{name:>20}  {ns_per_op:8.1} ns/op  ({iters} iters)");
     } else if ns_per_op < 1_000_000.0 {
-        println!("{name:>20}  {:8.1} us/op  ({iters} iters)", ns_per_op / 1000.0);
+        println!(
+            "{name:>20}  {:8.1} us/op  ({iters} iters)",
+            ns_per_op / 1000.0
+        );
     } else {
-        println!("{name:>20}  {:8.1} ms/op  ({iters} iters)", ns_per_op / 1_000_000.0);
+        println!(
+            "{name:>20}  {:8.1} ms/op  ({iters} iters)",
+            ns_per_op / 1_000_000.0
+        );
     }
 }
 
 // ── hex helpers ────────────────────────────────────────────────────
 
 fn decode_hex(s: &str) -> Vec<u8> {
-    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let s = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     if s.len() % 2 != 0 {
         eprintln!("hex string must have even length");
         std::process::exit(1);

@@ -14,14 +14,14 @@
 #![no_std]
 #![allow(clippy::should_implement_trait)]
 
-pub mod tower;
-pub mod packed;
-pub mod inv;
 pub mod batch;
 pub mod encoding;
+pub mod inv;
+pub mod packed;
+pub mod tower;
 
 #[cfg(test)]
 mod vectors;
 
-pub use tower::{F2, F2_2, F2_4, F2_8, F2_16, F2_32, F2_64, F2_128};
 pub use packed::Packed128;
+pub use tower::{F2, F2_2, F2_4, F2_8, F2_16, F2_32, F2_64, F2_128};

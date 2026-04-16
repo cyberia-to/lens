@@ -17,19 +17,27 @@ impl Packed128 {
 
     /// Vectorized addition: 128 parallel XOR operations.
     #[inline(always)]
-    pub fn add(self, rhs: Self) -> Self { Packed128(self.0 ^ rhs.0) }
+    pub fn add(self, rhs: Self) -> Self {
+        Packed128(self.0 ^ rhs.0)
+    }
 
     /// Vectorized multiplication: 128 parallel AND operations.
     #[inline(always)]
-    pub fn mul(self, rhs: Self) -> Self { Packed128(self.0 & rhs.0) }
+    pub fn mul(self, rhs: Self) -> Self {
+        Packed128(self.0 & rhs.0)
+    }
 
     /// Vectorized NOT: 128 parallel complement operations.
     #[inline(always)]
-    pub fn not(self) -> Self { Packed128(!self.0) }
+    pub fn not(self) -> Self {
+        Packed128(!self.0)
+    }
 
     /// Popcount: number of 1-elements in the packed vector.
     #[inline(always)]
-    pub fn popcount(self) -> u32 { self.0.count_ones() }
+    pub fn popcount(self) -> u32 {
+        self.0.count_ones()
+    }
 
     /// Inner product: popcount(a AND b).
     /// The binary matrix-vector multiply kernel.
@@ -40,31 +48,45 @@ impl Packed128 {
 
     /// Shift left by n positions.
     #[inline(always)]
-    pub fn shl(self, n: u32) -> Self { Packed128(self.0 << n) }
+    pub fn shl(self, n: u32) -> Self {
+        Packed128(self.0 << n)
+    }
 
     /// Shift right by n positions.
     #[inline(always)]
-    pub fn shr(self, n: u32) -> Self { Packed128(self.0 >> n) }
+    pub fn shr(self, n: u32) -> Self {
+        Packed128(self.0 >> n)
+    }
 
     /// Get a single bit at position i.
     #[inline(always)]
-    pub fn get_bit(self, i: u32) -> u8 { ((self.0 >> i) & 1) as u8 }
+    pub fn get_bit(self, i: u32) -> u8 {
+        ((self.0 >> i) & 1) as u8
+    }
 
     /// Set a single bit at position i.
     #[inline(always)]
-    pub fn set_bit(self, i: u32) -> Self { Packed128(self.0 | (1u128 << i)) }
+    pub fn set_bit(self, i: u32) -> Self {
+        Packed128(self.0 | (1u128 << i))
+    }
 
     /// Clear a single bit at position i.
     #[inline(always)]
-    pub fn clear_bit(self, i: u32) -> Self { Packed128(self.0 & !(1u128 << i)) }
+    pub fn clear_bit(self, i: u32) -> Self {
+        Packed128(self.0 & !(1u128 << i))
+    }
 
     /// Reinterpret as F₂¹²⁸ tower element.
     #[inline(always)]
-    pub fn as_tower(self) -> F2_128 { F2_128(self.0) }
+    pub fn as_tower(self) -> F2_128 {
+        F2_128(self.0)
+    }
 
     /// Create from an F₂¹²⁸ tower element.
     #[inline(always)]
-    pub fn from_tower(t: F2_128) -> Self { Packed128(t.0) }
+    pub fn from_tower(t: F2_128) -> Self {
+        Packed128(t.0)
+    }
 
     /// Hamming distance between two packed vectors.
     #[inline(always)]
