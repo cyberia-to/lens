@@ -12,28 +12,38 @@ with the cyber stack.
 
 ## 1. types
 
-### 1.1 field element
+### 1.1 scalar types
 
-each algebra defines its own scalar type. the commitment layer is generic over it.
+each algebra defines its own scalar type. two trait levels:
 
 ```rust
-/// marker trait — any algebra's scalar satisfies this
-trait Field: Copy + Eq + Add + Mul + Sub + Neg {
+/// any algebra's scalar — sufficient for commitment
+trait Algebra: Copy + Eq {
     const ZERO: Self;
     const ONE: Self;
+    fn add(self, rhs: Self) -> Self;
+    fn mul(self, rhs: Self) -> Self;
+}
+
+/// field scalars — adds subtraction and inversion
+trait Field: Algebra + Sub + Neg {
     fn inv(self) -> Self;
 }
 ```
 
+four algebras satisfy `Field`. the tropical semiring satisfies only `Algebra`
+(no additive inverse — see §5.4). the Lens trait is generic over `Algebra`,
+not `Field`, so that Assayer can participate.
+
 concrete implementations:
 
-| type | crate | size | identity |
-|------|-------|------|----------|
-| `Goldilocks` | nebu | 8 bytes | F_p, p = 2^64 - 2^32 + 1 |
-| `F2_128` | kuro | 16 bytes | F₂ tower, char 2 |
-| `RingElement` | jali | n × 8 bytes | R_q = F_p[x]/(x^n+1) |
-| `Tropical` | trop | 8 bytes | (min, +) semiring (not a field — see §5.4) |
-| `Fq` | genies | 64 bytes | F_q, q = CSIDH-512 prime |
+| type | crate | size | trait | identity |
+|------|-------|------|-------|----------|
+| `Goldilocks` | nebu | 8 bytes | Field | F_p, p = 2^64 - 2^32 + 1 |
+| `F2_128` | kuro | 16 bytes | Field | F₂ tower, char 2 |
+| `RingElement` | jali | 32 KiB (fixed MAX_N=4096 array, n active) | Field | R_q = F_p[x]/(x^n+1) |
+| `Tropical` | trop | 8 bytes | Algebra | (min, +) semiring |
+| `Fq` | genies | 64 bytes | Field | F_q, q = CSIDH-512 prime |
 
 ### 1.2 multilinear polynomial
 
@@ -75,15 +85,29 @@ a proof that a committed polynomial evaluates to a claimed value at a given poin
 structure varies by construction.
 
 ```rust
-struct Opening {
-    /// intermediate commitments from recursive tensor reduction
-    round_commitments: Vec<Commitment>,
-    /// final polynomial (small enough to send directly)
-    final_poly: Vec<u8>,
-    /// Fiat-Shamir transcript state for verification
-    transcript: Vec<u8>,
+enum Opening {
+    /// Brakedown, Porphyry: recursive tensor decomposition
+    Tensor {
+        round_commitments: Vec<Commitment>,
+        final_poly: Vec<u8>,
+    },
+    /// Binius: folding with Merkle authentication paths
+    Folding {
+        round_commitments: Vec<Commitment>,
+        merkle_paths: Vec<Vec<[u8; 32]>>,
+        final_value: Vec<u8>,
+    },
+    /// Assayer: tropical witness + dual certificate, committed via Brakedown
+    Witness {
+        witness_commitment: Commitment,
+        witness_opening: Box<Opening>,  // Tensor variant for the witness poly
+        certificate: Vec<u8>,           // LP dual feasibility data
+    },
 }
 ```
+
+the enum reflects that different constructions produce structurally different proofs.
+the Commitment type (§1.3) is uniform across all variants — always 32 bytes.
 
 ### 1.5 transcript
 
@@ -108,7 +132,7 @@ in the protocol.
 ## 2. the lens trait
 
 ```rust
-trait Lens<F: Field> {
+trait Lens<F: Algebra> {
     /// commit to a multilinear polynomial.
     /// returns a 32-byte hemera digest.
     /// cost: O(N) field operations where N = 2^num_vars.
@@ -175,7 +199,7 @@ not discrete log or factoring. no pairing-based or elliptic-curve assumptions.
 | commit | O(N) field ops | 32 bytes | — |
 | open | O(N) field ops | O(log N + λ) elements | O(log N + λ) field ops |
 | verify | — | — | O(log N + λ) field ops |
-| batch_open (m points) | O(N + m) | O(log N + λ) | O(log N + λ + m) |
+| batch_open (m points) | O(N + m·ν) | O(log N + λ) | O(log N + λ + m·ν) |
 
 where N = 2^ν (evaluation table size), λ = 128 (security parameter).
 
@@ -273,7 +297,12 @@ field-agnostic. the commitment format is identical to Brakedown.
 
 ### 4.1 recursive tensor decomposition
 
-all constructions except Assayer use the same opening structure:
+Brakedown, Ikat, and Porphyry use the same opening structure (expander-graph
+encoding + tensor reduction). Binius uses a structurally similar protocol
+(recursive halving) but with binary-specific folding and Merkle authentication
+paths — see [[binary-tower]] for details. Assayer uses witness-verify (§3.4).
+
+the generic tensor decomposition protocol (Brakedown/Ikat/Porphyry):
 
 ```
 OPEN(f, r = (r₁, ..., r_ν)):
@@ -320,18 +349,32 @@ verifier cost: d hash checks + final evaluation = O(log log N × hash_cost + λ 
 
 ### 4.3 batch opening
 
-multiple openings amortized into one proof:
+multiple openings amortized into one proof via random linear combination:
 
 ```
 BATCH_OPEN(f, [(r₁, y₁), ..., (r_m, y_m)]):
     α = transcript.squeeze_field()
-    // random linear combination
-    combined = Σ_{i=1}^{m} α^i · (f - y_i) / (X - r_i)
+
+    // reduce m opening claims to 1 via random evaluation
+    // claim: f(r_i) = y_i for all i
+    // combined claim: g(r*) = Σ α^i · y_i
+    //   where g = Σ α^i · eq(r_i, ·) · f(·)
+    //   and eq(r, x) = Π_j (r_j x_j + (1-r_j)(1-x_j))  (multilinear equality)
+
     r* = transcript.squeeze_field()
-    return OPEN(combined, r*)
+    combined_value = Σ_{i=1}^{m} α^i · y_i · eq(r_i, r*)
+    return OPEN(f, r*), combined_value
 ```
 
-cost: one recursive opening regardless of m. critical for:
+the verifier checks a single opening at r* and reconstructs the combined
+claim from the individual points and values. no polynomial division required —
+the reduction uses the multilinear equality polynomial eq(r, ·) which is
+computable in O(ν) per point.
+
+prover cost: O(N) for the single opening + O(m · ν) for combining claims.
+when m << N, this is dominated by O(N).
+
+critical for:
 - nox trace verification (thousands of constraint checks → 1 proof)
 - bbg state queries (N entries → 1 proof)
 - DAS (20 random samples → 1 proof)
