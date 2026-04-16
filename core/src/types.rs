@@ -1,7 +1,7 @@
 //! Core types for polynomial commitment.
 
-// Re-export algebraic trait hierarchy from cyb-algebra
-pub use cyb_algebra::{Field, Ring, Semiring};
+// Re-export algebraic trait hierarchy from strata-core
+pub use strata_core::{Field, Ring, Semiring};
 
 use cyber_hemera::Hash;
 

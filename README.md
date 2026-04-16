@@ -68,7 +68,7 @@ has no subtraction, so the optimization witness is packed as Goldilocks elements
 
 ## the trait
 
-from [cyb-lens-core](core/) (depends on [cyb-algebra](https://github.com/cyberia-to/algebra) for the Field trait):
+from [cyb-lens-core](core/) (depends on [strata-core](https://github.com/cyberia-to/strata) for the Field trait):
 
 ```rust
 pub trait Lens<F: Field> {
@@ -189,7 +189,7 @@ lens/
 └── specs/          commitment layer spec
 ```
 
-algebraic backends live in [algebra](https://github.com/cyberia-to/algebra)
+algebraic backends live in [algebra](https://github.com/cyberia-to/strata)
 (352 tests: nebu, kuro, jali, trop, genies).
 
 ## 74 tests

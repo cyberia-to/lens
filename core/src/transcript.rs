@@ -5,7 +5,7 @@
 
 use cyber_hemera::{Hash, Hasher};
 
-use cyb_algebra_proof::Reduce;
+use strata_proof::Reduce;
 
 /// Fiat-Shamir transcript for non-interactive proofs.
 ///

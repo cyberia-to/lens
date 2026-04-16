@@ -11,6 +11,6 @@ categories = ["cryptography"]
 readme = "../README.md"
 
 [dependencies]
-cyb-algebra.workspace = true
-cyb-algebra-proof = { path = "../../algebra/proof" }
+strata-core.workspace = true
+strata-proof = { path = "../../algebra/proof" }
 cyber-hemera.workspace = true
