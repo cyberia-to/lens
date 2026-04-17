@@ -19,13 +19,13 @@ repository = "https://github.com/cyberia-to/lens"
 rust-version = "1.89"
 
 [workspace.dependencies]
-# algebra crates (from ../algebra/ for dev, crates.io versions for publish)
-strata-core = { path = "../algebra/core" }
-nebu = { version = "0.1.0", path = "../algebra/nebu/rs", package = "cyb-nebu" }
-kuro = { version = "0.1.0", path = "../algebra/kuro/rs", package = "cyb-kuro" }
-jali = { version = "0.1.0", path = "../algebra/jali/rs", package = "cyb-jali" }
-trop = { version = "0.1.0", path = "../algebra/trop/rs", package = "cyb-trop" }
-genies = { version = "0.1.0", path = "../algebra/genies/rs", package = "cyb-genies" }
+# algebra crates (from ../strata/ for dev, crates.io versions for publish)
+strata-core = { path = "../strata/core" }
+nebu = { version = "0.1.0", path = "../strata/nebu/rs", package = "cyb-nebu" }
+kuro = { version = "0.1.0", path = "../strata/kuro/rs", package = "cyb-kuro" }
+jali = { version = "0.1.0", path = "../strata/jali/rs", package = "cyb-jali" }
+trop = { version = "0.1.0", path = "../strata/trop/rs", package = "cyb-trop" }
+genies = { version = "0.1.0", path = "../strata/genies/rs", package = "cyb-genies" }
 
 # external
 cyber-hemera = "0.2"

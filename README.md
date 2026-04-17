@@ -189,7 +189,7 @@ lens/
 └── specs/          commitment layer spec
 ```
 
-algebraic backends live in [algebra](https://github.com/cyberia-to/strata)
+algebraic backends live in [strata](https://github.com/cyberia-to/strata)
 (352 tests: nebu, kuro, jali, trop, genies).
 
 ## 74 tests
