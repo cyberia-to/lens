@@ -192,7 +192,7 @@ lens/
 algebraic backends live in [strata](https://github.com/cyberia-to/strata)
 (352 tests: nebu, kuro, jali, trop, genies).
 
-## 74 tests
+## 76 tests
 
 ```bash
 cargo test --workspace
