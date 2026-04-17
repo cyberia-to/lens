@@ -59,9 +59,9 @@ impl<F: Field> MultilinearPoly<F> {
             let mut basis = F::ONE;
             for (j, &r_j) in point.iter().enumerate() {
                 let bit = if (i >> j) & 1 == 1 { r_j } else { F::ONE - r_j };
-                basis = basis * bit;
+                basis *= bit;
             }
-            result = result + val * basis;
+            result += val * basis;
         }
         result
     }
