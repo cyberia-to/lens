@@ -109,6 +109,14 @@ mod brakedown_tests {
     fn roundtrip_10() {
         roundtrip::<_, brakedown::Brakedown>(&poly(10, 14), &pt(10, 24), b"b10");
     }
+    #[test]
+    fn roundtrip_12() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(12, 15), &pt(12, 25), b"b12");
+    }
+    #[test]
+    fn roundtrip_14() {
+        roundtrip::<_, brakedown::Brakedown>(&poly(14, 16), &pt(14, 26), b"b14");
+    }
 
     #[test]
     fn sound_value() {
