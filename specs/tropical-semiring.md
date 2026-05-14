@@ -103,8 +103,8 @@ tropical cost: O(|S|² × |O|) trop operations
 
 ```
 problem:  source distribution μ, target distribution ν, cost matrix C
-witness:  transport plan π[i,j] (how much mass moves from i to j)
-cost:     Σ π[i,j] × C[i,j]
+witness:  transport plan φ*[i,j] (how much mass moves from i to j)
+cost:     Σ φ*[i,j] × C[i,j]
 certificate: Kantorovich dual potentials (f, g) satisfying
              f[i] + g[j] ≤ C[i,j] ∀i,j (dual feasibility)
              Σf[i]μ[i] + Σg[j]ν[j] = cost (strong duality)

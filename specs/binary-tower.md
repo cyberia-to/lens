@@ -87,7 +87,7 @@ binary wins for bitwise. Goldilocks wins for arithmetic. the prover chooses base
 
 two workloads dominate the binary regime:
 - **quantized AI inference**: BitNet-style 1-bit models. matrix-vector multiply = XOR + popcount. a 4096x4096 layer = ~16M binary constraints (vs ~512M F_p constraints)
-- **tri-kernel SpMV**: quantized axon weights for π iteration over the cybergraph. each of 5-8 iterations is a massive binary workload
+- **tri-kernel SpMV**: quantized axon weights for φ* iteration over the cybergraph. each of 5-8 iterations is a massive binary workload
 
 ## cross-algebra composition
 
