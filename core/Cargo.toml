@@ -14,3 +14,4 @@ readme = "../README.md"
 strata-core.workspace = true
 strata-proof = { path = "../../strata/proof" }
 cyber-hemera.workspace = true
+nebu.workspace = true
