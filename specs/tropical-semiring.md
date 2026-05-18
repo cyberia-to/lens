@@ -56,7 +56,7 @@ check 3 — optimality (dual certificate):
   cost: O(|problem|) F_p constraints (dual feasibility checks)
 ```
 
-the prover does the hard work (tropical optimization). the verifier checks three simple properties in F_p. this is the hint (Layer 2) pattern: non-deterministic witness, deterministic verification.
+the prover does the hard work (tropical optimization). the verifier checks three simple properties in F_p. this is the call (Layer 2, pattern 16) pattern: non-deterministic witness, deterministic verification.
 
 ## per-workload specifications
 

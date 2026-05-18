@@ -28,6 +28,6 @@ trop = { version = "0.1.0", path = "../strata/trop/rs", package = "cyb-trop" }
 genies = { version = "0.1.0", path = "../strata/genies/rs", package = "cyb-genies" }
 
 # external
-cyber-hemera = "0.2"
+cyber-hemera = { version = "0.3", path = "../hemera/rs" }
 acpu = "0.2"
 criterion = "0.5"

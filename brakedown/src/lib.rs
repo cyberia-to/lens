@@ -134,24 +134,25 @@ impl Lens<Goldilocks> for Brakedown {
         }
 
         let mut query_idx = 0;
+        // current_n tracks the polynomial size at each round:
+        // round 0 has 2^num_vars evals, each round halves it via tensor_reduce.
+        let mut current_n = 1usize << point.len();
         for rc in round_commitments {
             transcript.absorb(rc.as_bytes());
+            let codeword_len = expander::EXPANSION * current_n;
 
-            // Verify that query responses are at the correct indices
-            // (derived from the same transcript state)
             for _ in 0..NUM_QUERIES {
                 let challenge = transcript.squeeze();
                 let expected_idx =
                     (u64::from_le_bytes(challenge.as_bytes()[..8].try_into().unwrap()) as usize)
-                        % (EXPANSION_M_PLACEHOLDER); // verifier doesn't know m exactly
-
-                // Check query index matches Fiat-Shamir derivation
-                // (modular reduction may differ slightly due to m varying per round,
-                // but the index must be deterministic from the transcript)
+                        % codeword_len;
                 let (qidx, _qval) = &query_responses[query_idx];
-                let _ = (expected_idx, qidx); // transcript consistency ensured by absorption
+                if *qidx != expected_idx {
+                    return false;
+                }
                 query_idx += 1;
             }
+            current_n >>= 1;
         }
 
         // Check 3: final value matches claimed evaluation
@@ -203,10 +204,6 @@ impl Lens<Goldilocks> for Brakedown {
         Self::verify(commitment, &r_star, final_elements[0], proof, transcript)
     }
 }
-
-/// Placeholder for codeword size in verifier (derived from round).
-/// The verifier computes this from the polynomial size at each round.
-const EXPANSION_M_PLACEHOLDER: usize = 1024;
 
 /// Multilinear equality polynomial.
 pub fn multilinear_eq(r: &[Goldilocks], x: &[Goldilocks]) -> Goldilocks {
