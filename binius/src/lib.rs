@@ -28,7 +28,7 @@ impl Binius {
     /// Commit via hemera Merkle tree over serialized elements.
     fn commit_raw(elements: &[F2_128]) -> Commitment {
         let bytes = Self::serialize(elements);
-        let hash = cyber_hemera::tree::tree_hash(&bytes);
+        let hash = cyber_hemera::tree::root_hash(&bytes);
         Commitment(hash)
     }
 
