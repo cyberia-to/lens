@@ -1,0 +1,24 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "lens-cli"
+version.workspace = true
+edition.workspace = true
+license-file = "../LICENSE"
+description = "command-line tool for the lens polynomial commitment layer"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["polynomial-commitment", "cli", "zk", "crypto"]
+categories = ["cryptography", "command-line-utilities"]
+
+[[bin]]
+name = "lens"
+path = "src/main.rs"
+
+[dependencies]
+cyber-lens = { path = "../src" }
+nebu.workspace = true
+cyber-hemera.workspace = true

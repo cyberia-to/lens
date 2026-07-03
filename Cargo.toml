@@ -9,6 +9,7 @@ members = [
     "core",
     "brakedown", "binius", "ikat", "assayer", "porphyry",
     "src",
+    "cli",
 ]
 
 [workspace.package]
