@@ -1,63 +1,78 @@
-//! Unit tests for the cli's field-level helpers and the commit → open →
-//! verify roundtrip through the real constructions.
+//! Unit tests: the commit → open → verify roundtrip through every
+//! construction, the artifact codec, and field parsing.
 
-use super::*;
+use genies::Fq;
+use kuro::F2_128;
+use lens::binius::Binius;
+use lens::brakedown::Brakedown;
+use lens::ikat::Ikat;
+use lens::porphyry::Porphyry;
+use lens::{Lens, Transcript};
+use nebu::Goldilocks;
 
-fn roundtrip(algo: Algo, data: &[u8]) {
-    let poly = poly_from_bytes(data);
-    let commitment = commit_with(algo, &poly);
-    let point = derive_point(&commitment, poly.num_vars);
+use crate::algo::Algo;
+use crate::artifact;
+use crate::commands::{derive_point, poly_from_bytes};
+use crate::field::CliField;
+
+/// Commit, open at a derived point, roundtrip the artifact, and verify.
+fn roundtrip<F: CliField + std::fmt::Debug, L: Lens<F>>(algo: Algo, data: &[u8]) {
+    let poly = poly_from_bytes::<F>(data);
+    let commitment = L::commit(&poly);
+    let point = derive_point::<F>(&commitment, poly.num_vars);
     let value = poly.evaluate(&point);
 
     let mut ot = Transcript::new(algo.domain());
-    let opening = open_with(algo, &poly, &point, &mut ot);
+    let opening = L::open(&poly, &point, &mut ot);
 
-    // artifact codec roundtrip
-    let bytes = artifact::encode(algo.tag(), &point, value, &opening).unwrap();
-    let art = artifact::decode(&bytes).unwrap();
-    assert_eq!(art.point, point);
-    assert_eq!(art.value, value);
+    let points = vec![(point.clone(), value)];
+    let bytes = artifact::encode::<F>(algo.tag(), poly.num_vars, false, &points, &opening).unwrap();
+    let art = artifact::decode::<F>(&bytes).unwrap();
+    assert_eq!(art.points.len(), 1);
+    assert!(!art.batch);
+    assert_eq!(art.points[0].0, point);
+    assert_eq!(art.points[0].1, value);
 
+    let (pt, val) = &art.points[0];
     let mut vt = Transcript::new(algo.domain());
-    assert!(verify_with(
-        algo,
-        &commitment,
-        &art.point,
-        art.value,
-        &art.opening,
-        &mut vt
-    ));
+    assert!(L::verify(&commitment, pt, *val, &art.opening, &mut vt));
 }
 
 #[test]
-fn brakedown_roundtrip_verifies() {
-    roundtrip(
-        Algo::Brakedown,
-        b"the quick brown fox jumps over the lazy dog",
-    );
+fn brakedown_roundtrip() {
+    roundtrip::<Goldilocks, Brakedown>(Algo::Brakedown, b"the quick brown fox");
 }
 
 #[test]
-fn ikat_roundtrip_verifies() {
-    roundtrip(Algo::Ikat, b"hello lens");
+fn ikat_roundtrip() {
+    roundtrip::<Goldilocks, Ikat>(Algo::Ikat, b"hello lens");
 }
 
 #[test]
-fn empty_file_commits_and_verifies() {
-    roundtrip(Algo::Brakedown, b"");
+fn binius_roundtrip() {
+    roundtrip::<F2_128, Binius>(Algo::Binius, b"binary tower field element commitment");
+}
+
+#[test]
+fn porphyry_roundtrip() {
+    roundtrip::<Fq, Porphyry>(Algo::Porphyry, b"isogeny field over a 512-bit prime");
+}
+
+#[test]
+fn empty_file_roundtrips() {
+    roundtrip::<Goldilocks, Brakedown>(Algo::Brakedown, b"");
 }
 
 #[test]
 fn wrong_value_rejected() {
-    let poly = poly_from_bytes(b"data");
-    let commitment = commit_with(Algo::Brakedown, &poly);
-    let point = derive_point(&commitment, poly.num_vars);
+    let poly = poly_from_bytes::<Goldilocks>(b"data");
+    let commitment = Brakedown::commit(&poly);
+    let point = derive_point::<Goldilocks>(&commitment, poly.num_vars);
     let value = poly.evaluate(&point);
     let mut ot = Transcript::new(Algo::Brakedown.domain());
-    let opening = open_with(Algo::Brakedown, &poly, &point, &mut ot);
+    let opening = Brakedown::open(&poly, &point, &mut ot);
     let mut vt = Transcript::new(Algo::Brakedown.domain());
-    assert!(!verify_with(
-        Algo::Brakedown,
+    assert!(!Brakedown::verify(
         &commitment,
         &point,
         value + Goldilocks::ONE,
@@ -68,24 +83,28 @@ fn wrong_value_rejected() {
 
 #[test]
 fn tampered_artifact_magic_rejected() {
-    let mut bytes = artifact::encode(
+    let poly = poly_from_bytes::<Goldilocks>(b"data");
+    let commitment = Brakedown::commit(&poly);
+    let point = derive_point::<Goldilocks>(&commitment, poly.num_vars);
+    let value = poly.evaluate(&point);
+    let mut ot = Transcript::new(Algo::Brakedown.domain());
+    let opening = Brakedown::open(&poly, &point, &mut ot);
+    let mut bytes = artifact::encode::<Goldilocks>(
         Algo::Brakedown.tag(),
-        &[],
-        Goldilocks::new(7),
-        &Opening::Tensor {
-            round_commitments: vec![],
-            final_poly: Goldilocks::new(7).as_u64().to_le_bytes().to_vec(),
-            query_responses: vec![],
-        },
+        poly.num_vars,
+        false,
+        &[(point, value)],
+        &opening,
     )
     .unwrap();
     bytes[0] ^= 0xFF;
-    assert!(artifact::decode(&bytes).is_err());
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
 }
 
 #[test]
-fn goldilocks_parsing_rejects_noncanonical() {
-    assert!(parse_goldilocks("0xffffffffffffffff").is_err());
-    assert!(parse_goldilocks("18446744069414584321").is_err()); // p
-    assert_eq!(parse_goldilocks("42").unwrap(), Goldilocks::new(42));
+fn field_parsing() {
+    assert!(Goldilocks::parse("0xffffffffffffffff").is_err()); // ≥ p
+    assert_eq!(Goldilocks::parse("42").unwrap(), Goldilocks::new(42));
+    assert!(F2_128::parse("0x1").unwrap() == F2_128(1));
+    assert!(Fq::parse("0x2a").unwrap() == Fq::from_u64(42));
 }

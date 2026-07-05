@@ -255,9 +255,9 @@ consumed as a library.
 
 ## status
 
-core implemented. `commit`, `open`, `verify`, `eval`, `check` (§1–§5) plus
-`params` and `vectors` (§9) are wired over the two Goldilocks constructions —
-Brakedown (default) and Ikat — in the `cli/` crate. the wide-field
-constructions (`binius` over F₂¹²⁸, `porphyry` over F_q), `assayer` (§8), and
-batch (§10) are specified and report honestly as not yet wired. no GPU backend
-yet — CPU only.
+implemented. all commands are wired in the `cli/` crate: `commit`, `open`,
+`verify`, `eval`, `check` (§1–§5) over every `Lens` construction — Brakedown
+(default) and Ikat over Goldilocks, Binius over F₂¹²⁸, Porphyry over F_q —
+through a field-generic command path; `assayer`/`assayer-verify` (§8);
+`open-batch` and batch verification (§10); `params` and `vectors` (§9). no GPU
+backend yet — CPU only.
