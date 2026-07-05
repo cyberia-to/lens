@@ -255,8 +255,19 @@ fn next<'a>(args: &'a [String], i: &mut usize, flag: &str) -> Result<&'a str, St
 
 fn print_usage() {
     eprintln!(
-        "\x1b[36m  lens\x1b[0m — polynomial commitment tool
-
+        "\
+\x1b[31m
+    ██╗     ███████╗███╗   ██╗███████╗
+\x1b[33m    ██║     ██╔════╝████╗  ██║██╔════╝
+\x1b[32m    ██║     █████╗  ██╔██╗ ██║███████╗
+\x1b[36m    ██║     ██╔══╝  ██║╚██╗██║╚════██║
+\x1b[34m    ███████╗███████╗██║ ╚████║███████║
+\x1b[35m    ╚══════╝╚══════╝╚═╝  ╚═══╝╚══════╝
+\x1b[0m\x1b[37m    the commitment for superintelligence\x1b[0m
+\x1b[90m
+    polynomial commitment · commit · open · verify without the polynomial
+    Brakedown F_p · Ikat R_q · Binius F₂¹²⁸ · Porphyry F_q · Assayer (min,+)
+\x1b[0m
   lens commit <file>                    commit a file, print 32-byte root
   lens open   <file> <point...> [-o f]  open at a point, write proof
   lens verify <commitment> <proof>      verify an opening (no file)
@@ -267,9 +278,13 @@ fn print_usage() {
   lens vectors                          print test vectors (JSON)
   lens assayer <problem.json> [-o f]    solve tropical problem, emit witness
   lens assayer-verify <commit> <proof>  verify tropical witness
-
-\x1b[90m  flags:  --algo brakedown|ikat|binius|porphyry   (default: brakedown)
-          --vars N                                 synthetic 2^N polynomial (check)
-          -o <file>                                write proof to file\x1b[0m"
+\x1b[90m
+  algos:    brakedown  ikat  binius  porphyry   (default: brakedown)
+  points:   decimal or hex (0x prefix), one field element per coordinate
+  flags:    --algo <name>   select construction
+            --vars N        synthetic 2^N polynomial (check)
+            -o <file>       write proof to file
+\x1b[0m
+  -h, --help  Print this help"
     );
 }
