@@ -6,10 +6,10 @@ license-file = "../LICENSE"
 description = "Porphyry polynomial commitment — Brakedown over deep field F_q"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["porphyry", "polynomial-commitment", "isogeny", "crypto"]
+keywords = ["porphyry", "pcs", "isogeny", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
+cyb-lens-core = { version = "0.1.1", path = "../core" }
 genies.workspace = true
 cyber-hemera.workspace = true

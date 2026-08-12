@@ -6,10 +6,10 @@ license-file = "../LICENSE"
 description = "Brakedown polynomial commitment — expander-graph codes over Goldilocks"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["brakedown", "polynomial-commitment", "zk", "crypto"]
+keywords = ["brakedown", "pcs", "zk", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
+cyb-lens-core = { version = "0.1.1", path = "../core" }
 nebu.workspace = true
 cyber-hemera.workspace = true

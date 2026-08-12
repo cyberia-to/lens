@@ -6,11 +6,11 @@ license-file = "../LICENSE"
 description = "Ikat polynomial commitment — NTT-batched Brakedown over R_q"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["ikat", "polynomial-commitment", "fhe", "crypto"]
+keywords = ["ikat", "pcs", "fhe", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
-cyb-lens-brakedown = { path = "../brakedown" }
+cyb-lens-core = { version = "0.1.1", path = "../core" }
+cyb-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
 jali.workspace = true
 nebu.workspace = true

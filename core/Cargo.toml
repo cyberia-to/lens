@@ -6,12 +6,12 @@ license-file = "../LICENSE"
 description = "Lens trait, types, and transcript for polynomial commitment"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["polynomial-commitment", "zk", "crypto", "pcs"]
+keywords = ["pcs", "zk", "crypto", "pcs"]
 categories = ["cryptography"]
 readme = "../README.md"
 
 [dependencies]
 strata-core.workspace = true
-strata-proof = { path = "../../strata/proof" }
+strata-proof.workspace = true
 cyber-hemera.workspace = true
 nebu.workspace = true

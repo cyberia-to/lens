@@ -6,11 +6,11 @@ license-file = "../LICENSE"
 description = "Assayer — tropical witness-verify commitment via Brakedown delegation"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["tropical", "witness-verify", "optimization", "crypto"]
+keywords = ["tropical", "witness", "optimization", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
-cyb-lens-brakedown = { path = "../brakedown" }
+cyb-lens-core = { version = "0.1.1", path = "../core" }
+cyb-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
 nebu.workspace = true
 trop.workspace = true

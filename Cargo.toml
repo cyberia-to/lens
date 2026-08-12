@@ -13,20 +13,21 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license-file = "LICENSE"
 repository = "https://github.com/cyberia-to/lens"
 rust-version = "1.89"
 
 [workspace.dependencies]
-# algebra crates (from ../strata/ for dev, crates.io versions for publish)
-strata-core = { path = "../strata/core" }
-nebu = { version = "0.1.0", path = "../strata/nebu/rs", package = "cyb-nebu" }
-kuro = { version = "0.1.0", path = "../strata/kuro/rs", package = "cyb-kuro" }
-jali = { version = "0.1.0", path = "../strata/jali/rs", package = "cyb-jali" }
-trop = { version = "0.1.0", path = "../strata/trop/rs", package = "cyb-trop" }
-genies = { version = "0.1.0", path = "../strata/genies/rs", package = "cyb-genies" }
+# algebra crates — version+path for crates.io publish
+strata-core = { version = "0.1.0", path = "../strata/core" }
+strata-proof = { version = "0.1.0", path = "../strata/proof" }
+nebu = { version = "0.1.0", path = "../strata/nebu/rs", package = "strata-nebu" }
+kuro = { version = "0.1.0", path = "../strata/kuro/rs", package = "strata-kuro" }
+jali = { version = "0.1.0", path = "../strata/jali/rs", package = "strata-jali" }
+trop = { version = "0.1.0", path = "../strata/trop/rs", package = "strata-trop" }
+genies = { version = "0.1.0", path = "../strata/genies/rs", package = "strata-genies" }
 
 # external
 cyber-hemera = { version = "0.3", path = "../hemera/rs" }
