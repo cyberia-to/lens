@@ -4,14 +4,14 @@
 # crystal-domain: comp
 # ---
 [package]
-name = "cyber-lens"
+name = "cyb-lens"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
 description = "polynomial commitment: five lenses for five algebras"
 repository.workspace = true
 rust-version.workspace = true
-keywords = ["polynomial-commitment", "zk", "crypto", "pcs"]
+keywords = ["pcs", "zk", "crypto", "pcs"]
 categories = ["cryptography"]
 readme = "../README.md"
 exclude = ["../specs/", "../CLAUDE.md"]
@@ -21,12 +21,12 @@ name = "lens"
 path = "lib.rs"
 
 [dependencies]
-cyb-lens-core = { path = "../core" }
-cyb-lens-brakedown = { path = "../brakedown" }
-cyb-lens-binius = { path = "../binius" }
-cyb-lens-ikat = { path = "../ikat" }
-cyb-lens-assayer = { path = "../assayer" }
-cyb-lens-porphyry = { path = "../porphyry" }
+cyb-lens-core = { version = "0.1.0", path = "../core" }
+cyb-lens-brakedown = { version = "0.1.0", path = "../brakedown" }
+cyb-lens-binius = { version = "0.1.0", path = "../binius" }
+cyb-lens-ikat = { version = "0.1.0", path = "../ikat" }
+cyb-lens-assayer = { version = "0.1.0", path = "../assayer" }
+cyb-lens-porphyry = { version = "0.1.0", path = "../porphyry" }
 
 [dev-dependencies]
 nebu.workspace = true
