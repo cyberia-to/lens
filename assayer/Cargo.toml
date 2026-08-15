@@ -1,5 +1,5 @@
 [package]
-name = "cyb-lens-assayer"
+name = "cyber-lens-assayer"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
@@ -10,7 +10,7 @@ keywords = ["tropical", "witness", "optimization", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { version = "0.1.1", path = "../core" }
-cyb-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
+cyber-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
 nebu.workspace = true
 trop.workspace = true

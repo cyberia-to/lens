@@ -6,7 +6,7 @@
 //! This is the multilinear extension evaluated at one variable set to r,
 //! reducing ν variables to ν-1 variables.
 
-use cyb_lens_core::Field;
+use cyber_lens_core::Field;
 
 /// Halve an evaluation table using challenge r.
 ///

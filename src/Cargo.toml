@@ -4,7 +4,7 @@
 # crystal-domain: comp
 # ---
 [package]
-name = "cyb-lens"
+name = "cyber-lens"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
@@ -21,12 +21,12 @@ name = "lens"
 path = "lib.rs"
 
 [dependencies]
-cyb-lens-core = { version = "0.1.1", path = "../core" }
-cyb-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
-cyb-lens-binius = { version = "0.1.1", path = "../binius" }
-cyb-lens-ikat = { version = "0.1.1", path = "../ikat" }
-cyb-lens-assayer = { version = "0.1.1", path = "../assayer" }
-cyb-lens-porphyry = { version = "0.1.1", path = "../porphyry" }
+cyber-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
+cyber-lens-binius = { version = "0.1.1", path = "../binius" }
+cyber-lens-ikat = { version = "0.1.1", path = "../ikat" }
+cyber-lens-assayer = { version = "0.1.1", path = "../assayer" }
+cyber-lens-porphyry = { version = "0.1.1", path = "../porphyry" }
 
 [dev-dependencies]
 nebu.workspace = true

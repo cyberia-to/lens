@@ -19,7 +19,7 @@ name = "lens"
 path = "src/main.rs"
 
 [dependencies]
-cyb-lens = { path = "../src" }
+cyber-lens = { path = "../src" }
 nebu.workspace = true
 kuro.workspace = true
 genies.workspace = true

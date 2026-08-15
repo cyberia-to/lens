@@ -1,5 +1,5 @@
 [package]
-name = "cyb-lens-brakedown"
+name = "cyber-lens-brakedown"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
@@ -10,6 +10,6 @@ keywords = ["brakedown", "pcs", "zk", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-core = { version = "0.1.1", path = "../core" }
 nebu.workspace = true
 cyber-hemera.workspace = true

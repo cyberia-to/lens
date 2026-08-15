@@ -1,5 +1,5 @@
 [package]
-name = "cyb-lens-ikat"
+name = "cyber-lens-ikat"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
@@ -10,7 +10,7 @@ keywords = ["ikat", "pcs", "fhe", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { version = "0.1.1", path = "../core" }
-cyb-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
+cyber-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
 jali.workspace = true
 nebu.workspace = true

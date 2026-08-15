@@ -9,7 +9,7 @@
 //!
 //! See specs/binary-tower.md for the full specification.
 
-pub use cyb_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
+pub use cyber_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
 
 use kuro::F2_128;
 

@@ -8,7 +8,7 @@
 mod expander;
 mod tensor;
 
-pub use cyb_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
+pub use cyber_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
 pub use expander::Expander;
 pub use tensor::{evaluate_small, tensor_reduce};
 

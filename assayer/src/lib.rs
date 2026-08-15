@@ -12,10 +12,10 @@
 //!
 //! See specs/tropical-semiring.md for the full specification.
 
-pub use cyb_lens_core::{Commitment, Opening, Transcript};
+pub use cyber_lens_core::{Commitment, Opening, Transcript};
 
-use cyb_lens_brakedown::Brakedown;
-use cyb_lens_core::{Lens, MultilinearPoly};
+use cyber_lens_brakedown::Brakedown;
+use cyber_lens_core::{Lens, MultilinearPoly};
 use nebu::Goldilocks;
 use trop::Tropical;
 

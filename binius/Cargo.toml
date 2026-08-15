@@ -1,5 +1,5 @@
 [package]
-name = "cyb-lens-binius"
+name = "cyber-lens-binius"
 version.workspace = true
 edition.workspace = true
 license-file = "../LICENSE"
@@ -10,6 +10,6 @@ keywords = ["binius", "pcs", "zk", "crypto"]
 categories = ["cryptography"]
 
 [dependencies]
-cyb-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-core = { version = "0.1.1", path = "../core" }
 kuro.workspace = true
 cyber-hemera.workspace = true

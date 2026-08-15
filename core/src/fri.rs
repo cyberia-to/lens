@@ -38,7 +38,7 @@ use nebu::Goldilocks;
 ///
 /// ```
 /// use nebu::Goldilocks;
-/// use cyb_lens_core::fri::fri_fold;
+/// use cyber_lens_core::fri::fri_fold;
 ///
 /// let a = Goldilocks::new(3);
 /// let b = Goldilocks::new(7);
