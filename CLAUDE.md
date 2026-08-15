@@ -44,11 +44,11 @@ isogeny-curves/      Porphyry     (expander codes over deep field F_q, impl: gen
 
 | crate | path | crates.io | algebra |
 |-------|------|-----------|---------|
-| nebu | `nebu/rs/` | cyb-nebu | F_p scalar + extensions |
-| kuro | `kuro/rs/` | cyb-kuro | F₂ binary tower |
-| jali | `jali/rs/` | cyb-jali | R_q polynomial ring |
-| trop | `trop/rs/` | cyb-trop | (min,+) tropical semiring |
-| genies | `genies/rs/` | cyb-genies | F_q isogeny group action |
+| nebu | `strata/nebu/rs/` | strata-nebu | F_p scalar + extensions |
+| kuro | `strata/kuro/rs/` | strata-kuro | F₂ binary tower |
+| jali | `strata/jali/rs/` | strata-jali | R_q polynomial ring |
+| trop | `strata/trop/rs/` | strata-trop | (min,+) tropical semiring |
+| genies | `strata/genies/rs/` | strata-genies | F_q isogeny group action |
 
 each also has `wgsl/` (GPU backend) and `cli/` (command-line tool) subcrates.
 

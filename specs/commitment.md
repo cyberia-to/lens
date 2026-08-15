@@ -448,11 +448,11 @@ all security reduces to hemera collision resistance.
 
 | component | crate | status |
 |-----------|-------|--------|
-| nebu (F_p arithmetic) | cyb-nebu | implemented, 73 tests |
-| kuro (F₂ arithmetic) | cyb-kuro | implemented, 77 tests |
-| jali (R_q arithmetic) | cyb-jali | implemented, 70 tests |
-| trop (tropical arithmetic) | cyb-trop | implemented, 77 tests |
-| genies (F_q arithmetic) | cyb-genies | implemented, 55 tests |
+| nebu (F_p arithmetic) | strata-nebu | implemented, 154 tests |
+| kuro (F₂ arithmetic) | strata-kuro | implemented, 87 tests |
+| jali (R_q arithmetic) | strata-jali | implemented, 70 tests |
+| trop (tropical arithmetic) | strata-trop | implemented, 87 tests |
+| genies (F_q arithmetic) | strata-genies | implemented, 74 tests |
 | Lens trait + types | cyb-lens-core | specified, not implemented |
 | Brakedown | cyb-lens-brakedown | specified, not implemented |
 | Binius | cyb-lens-binius | specified, not implemented |
