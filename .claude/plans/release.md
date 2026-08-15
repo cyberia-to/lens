@@ -462,11 +462,11 @@ After strata publishes, update `lens/Cargo.toml` workspace deps:
 [patch.crates-io]
 strata-core = { path = "../strata/core" }
 strata-proof = { path = "../strata/proof" }
-cyb-nebu = { path = "../strata/nebu/rs" }
-cyb-kuro = { path = "../strata/kuro/rs" }
-cyb-jali = { path = "../strata/jali/rs" }
-cyb-trop = { path = "../strata/trop/rs" }
-cyb-genies = { path = "../strata/genies/rs" }
+strata-nebu = { path = "../strata/nebu/rs" }
+strata-kuro = { path = "../strata/kuro/rs" }
+strata-jali = { path = "../strata/jali/rs" }
+strata-trop = { path = "../strata/trop/rs" }
+strata-genies = { path = "../strata/genies/rs" }
 ```
 
 `cargo publish` strips `[patch.crates-io]` — published crates reference registry versions.
