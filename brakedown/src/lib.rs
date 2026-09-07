@@ -34,15 +34,35 @@ impl Brakedown {
 
     /// Commit to raw field elements via Margulis expander encoding + hemera hash.
     pub fn commit_raw(elements: &[Goldilocks]) -> Commitment {
-        let expander = Expander::new(elements.len());
-        let codeword = expander.encode(elements);
-        let hash = cyber_hemera::hash(&Self::serialize(&codeword));
-        Commitment(hash)
+        Self::commit_raw_with_codeword(elements).0
     }
 
-    /// Encode elements via expander graph.
+    /// The commit AND the codeword it hashed. `open` needs both every
+    /// round; computing the codeword twice was the single largest waste
+    /// in a proof (the encode is half of Brakedown's non-hash cost).
+    fn commit_raw_with_codeword(elements: &[Goldilocks]) -> (Commitment, Vec<Goldilocks>) {
+        let codeword = Self::encode(elements);
+        let hash = cyber_hemera::hash(&Self::serialize(&codeword));
+        (Commitment(hash), codeword)
+    }
+
+    /// Encode elements via expander graph. Expanders are memoized per
+    /// length and thread: construction runs a prime search, and a proof
+    /// asks for the same handful of sizes hundreds of times.
     fn encode(elements: &[Goldilocks]) -> Vec<Goldilocks> {
-        let expander = Expander::new(elements.len());
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+        thread_local! {
+            static EXPANDERS: RefCell<HashMap<usize, Rc<Expander>>> =
+                RefCell::new(HashMap::new());
+        }
+        let expander = EXPANDERS.with(|m| {
+            m.borrow_mut()
+                .entry(elements.len())
+                .or_insert_with(|| Rc::new(Expander::new(elements.len())))
+                .clone()
+        });
         expander.encode(elements)
     }
 }
@@ -69,14 +89,11 @@ impl Lens<Goldilocks> for Brakedown {
 
         // Reduce one variable at a time, committing intermediate states
         for &r_i in point {
-            // Commit current polynomial
-            let rc = Self::commit_raw(&current);
+            // Commit current polynomial — keeping the codeword the commit
+            // just encoded; the proximity queries read from it directly.
+            let (rc, codeword) = Self::commit_raw_with_codeword(&current);
             round_commitments.push(rc);
             transcript.absorb(rc.as_bytes());
-
-            // Proximity testing: encode current polynomial and provide
-            // query responses at Fiat-Shamir-derived positions.
-            let codeword = Self::encode(&current);
             for _ in 0..NUM_QUERIES {
                 let challenge = transcript.squeeze();
                 let idx = (u64::from_le_bytes(challenge.as_bytes()[..8].try_into().unwrap())
