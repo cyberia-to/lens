@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: isogeny lens, Porphyry, genies lens
+alias: isogeny lens, Porphyry, genies lens, isogeny-pcs
 ---
 # isogeny lens (Porphyry)
 

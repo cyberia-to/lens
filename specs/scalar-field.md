@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: expander lens, Brakedown, recursive Brakedown, linear-code lens
+alias: expander lens, Brakedown, recursive Brakedown, linear-code lens, expander-pcs
 ---
 # scalar field lens (Brakedown)
 

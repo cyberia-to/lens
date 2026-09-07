@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: ring lens, Ikat, jali lens
+alias: ring lens, Ikat, jali lens, ring-pcs
 ---
 # ring lens (Ikat)
 

@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: polynomial commitments, polynomial commitment scheme, lens, lenses
+alias: polynomial commitments, polynomial commitment scheme, lens, lenses, pcs, pcs trait
 ---
 # lens trait
 

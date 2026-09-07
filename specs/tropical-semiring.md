@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: tropical lens, Assayer, trop lens
+alias: tropical lens, Assayer, trop lens, tropical-pcs
 ---
 # tropical lens (Assayer)
 

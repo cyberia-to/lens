@@ -2,7 +2,7 @@
 tags: cyber, computer science, cryptography
 crystal-type: entity
 crystal-domain: computer science
-alias: binary lens, F2 tower lens, Binius
+alias: binary lens, F2 tower lens, Binius, binary-pcs
 ---
 # binary lens (Binius)
 
