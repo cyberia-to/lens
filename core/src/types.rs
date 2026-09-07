@@ -10,6 +10,7 @@ use cyber_hemera::Hash;
 /// Produced by `Lens::commit`, consumed by `Lens::verify`.
 /// The format is identical across all constructions — always a hemera Hash.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Commitment(pub Hash);
 
 impl Commitment {
@@ -68,7 +69,8 @@ impl<F: Field> MultilinearPoly<F> {
 }
 
 /// A proof that a committed polynomial evaluates to a claimed value at a point.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Opening {
     /// Brakedown, Ikat, Porphyry: recursive tensor decomposition
     /// with proximity testing via codeword queries.

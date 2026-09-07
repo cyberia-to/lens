@@ -34,3 +34,6 @@ kuro.workspace = true
 trop.workspace = true
 genies.workspace = true
 cyber-hemera.workspace = true
+
+[features]
+serde = ["cyber-lens-core/serde"]

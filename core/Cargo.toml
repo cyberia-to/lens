@@ -15,3 +15,12 @@ strata-core.workspace = true
 strata-proof.workspace = true
 cyber-hemera.workspace = true
 nebu.workspace = true
+
+serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"
+cyber-hemera.workspace = true
+
+[features]
+serde = ["dep:serde", "cyber-hemera/serde"]
