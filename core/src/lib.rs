@@ -1,4 +1,4 @@
-//! cyb-lens-core — Lens trait, types, and transcript for polynomial commitment.
+//! cyber-lens-core — Lens trait, types, and transcript for polynomial commitment.
 //!
 //! This crate defines the shared interface that all polynomial commitment
 //! constructions implement. Consumers (nox, zheng, bbg) depend on this crate
@@ -18,12 +18,12 @@ pub use types::{Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};
 /// prove evaluations, verify without seeing the polynomial.
 ///
 /// Four constructions implement this trait directly:
-/// - Brakedown (cyb-lens-brakedown) over Goldilocks
-/// - Binius (cyb-lens-binius) over F₂¹²⁸
-/// - Ikat (cyb-lens-ikat) over Goldilocks (NTT slots)
-/// - Porphyry (cyb-lens-porphyry) over F_q
+/// - Brakedown (cyber-lens-brakedown) over Goldilocks
+/// - Binius (cyber-lens-binius) over F₂¹²⁸
+/// - Ikat (cyber-lens-ikat) over Goldilocks (NTT slots)
+/// - Porphyry (cyber-lens-porphyry) over F_q
 ///
-/// Assayer (cyb-lens-assayer) is a wrapper protocol that delegates
+/// Assayer (cyber-lens-assayer) is a wrapper protocol that delegates
 /// commitment to Brakedown — it does not implement this trait.
 pub trait Lens<F: Field> {
     /// Commit to a multilinear polynomial.

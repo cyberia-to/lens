@@ -13,7 +13,7 @@ details live in the individual spec files: [[scalar-field]], [[binary-tower]],
 
 ## 1. types
 
-all types live in the `cyb-lens-core` crate (depends only on hemera).
+all types live in the `cyber-lens-core` crate (depends only on hemera).
 
 ### 1.1 scalar types
 
@@ -160,10 +160,10 @@ four constructions implement `Lens<F>` directly:
 
 | construction | F | crate |
 |-------------|---|-------|
-| Brakedown | `Goldilocks` | cyb-lens-brakedown |
-| Binius | `F2_128` | cyb-lens-binius |
-| Porphyry | `Fq` | cyb-lens-porphyry |
-| Ikat | `Goldilocks` | cyb-lens-ikat |
+| Brakedown | `Goldilocks` | cyber-lens-brakedown |
+| Binius | `F2_128` | cyber-lens-binius |
+| Porphyry | `Fq` | cyber-lens-porphyry |
+| Ikat | `Goldilocks` | cyber-lens-ikat |
 
 Assayer does not implement `Lens`. it is a separate protocol that accepts
 tropical inputs and produces `Lens<Goldilocks>` artifacts via Brakedown
@@ -275,11 +275,11 @@ each construction is specified in its own file. summary:
 
 | construction | field | encoding | crate | spec |
 |-------------|-------|----------|-------|------|
-| Brakedown | F_p (nebu) | expander-graph linear code | cyb-lens-brakedown | [[scalar-field]] |
-| Binius | F₂ tower (kuro) | binary Reed-Solomon, packed rows | cyb-lens-binius | [[binary-tower]] |
-| Ikat | F_p (jali NTT slots) | NTT-batched Brakedown | cyb-lens-ikat | [[polynomial-ring]] |
-| Assayer | F_p (Brakedown delegation) | tropical witness + dual certificate | cyb-lens-assayer | [[tropical-semiring]] |
-| Porphyry | F_q (genies) | Brakedown over deep field | cyb-lens-porphyry | [[isogeny-curves]] |
+| Brakedown | F_p (nebu) | expander-graph linear code | cyber-lens-brakedown | [[scalar-field]] |
+| Binius | F₂ tower (kuro) | binary Reed-Solomon, packed rows | cyber-lens-binius | [[binary-tower]] |
+| Ikat | F_p (jali NTT slots) | NTT-batched Brakedown | cyber-lens-ikat | [[polynomial-ring]] |
+| Assayer | F_p (Brakedown delegation) | tropical witness + dual certificate | cyber-lens-assayer | [[tropical-semiring]] |
+| Porphyry | F_q (genies) | Brakedown over deep field | cyber-lens-porphyry | [[isogeny-curves]] |
 
 ### 4.1 Brakedown
 
@@ -399,23 +399,23 @@ DAS: Lens openings at random positions verify data availability.
 
 ```
 lens/
-├── core/           cyb-lens-core         trait + types + transcript
+├── core/           cyber-lens-core         trait + types + transcript
 │                   depends on: hemera
-├── brakedown/      cyb-lens-brakedown    impl Lens<Goldilocks>
+├── brakedown/      cyber-lens-brakedown    impl Lens<Goldilocks>
 │                   depends on: core, nebu
-├── binius/         cyb-lens-binius       impl Lens<F2_128>
+├── binius/         cyber-lens-binius       impl Lens<F2_128>
 │                   depends on: core, kuro
-├── ikat/           cyb-lens-ikat         impl Lens<Goldilocks>
+├── ikat/           cyber-lens-ikat         impl Lens<Goldilocks>
 │                   depends on: core, jali
-├── assayer/        cyb-lens-assayer      wrapper (not Lens impl)
+├── assayer/        cyber-lens-assayer      wrapper (not Lens impl)
 │                   depends on: core, trop, brakedown
-├── porphyry/       cyb-lens-porphyry     impl Lens<Fq>
+├── porphyry/       cyber-lens-porphyry     impl Lens<Fq>
 │                   depends on: core, genies
 └── src/            cyber-lens              facade re-exports all
                     depends on: all above
 ```
 
-consumers (nox, zheng, bbg) depend on `cyb-lens-core` for the trait.
+consumers (nox, zheng, bbg) depend on `cyber-lens-core` for the trait.
 they depend on a specific construction crate only when instantiating it.
 
 ## 8. dependency graph
@@ -423,7 +423,7 @@ they depend on a specific construction crate only when instantiating it.
 ```
          hemera
            ↓
-      cyb-lens-core (trait, types, transcript)
+      cyber-lens-core (trait, types, transcript)
       ↓          ↓          ↓          ↓          ↓
   brakedown   binius     ikat      assayer    porphyry
       ↓          ↓          ↓        ↓   ↓        ↓
@@ -453,10 +453,10 @@ all security reduces to hemera collision resistance.
 | jali (R_q arithmetic) | strata-jali | implemented, 70 tests |
 | trop (tropical arithmetic) | strata-trop | implemented, 87 tests |
 | genies (F_q arithmetic) | strata-genies | implemented, 74 tests |
-| Lens trait + types | cyb-lens-core | specified, not implemented |
-| Brakedown | cyb-lens-brakedown | specified, not implemented |
-| Binius | cyb-lens-binius | specified, not implemented |
-| Ikat | cyb-lens-ikat | specified, not implemented |
-| Assayer | cyb-lens-assayer | specified, not implemented |
-| Porphyry | cyb-lens-porphyry | specified, not implemented |
-| Transcript | cyb-lens-core | specified, not implemented |
+| Lens trait + types | cyber-lens-core | specified, not implemented |
+| Brakedown | cyber-lens-brakedown | specified, not implemented |
+| Binius | cyber-lens-binius | specified, not implemented |
+| Ikat | cyber-lens-ikat | specified, not implemented |
+| Assayer | cyber-lens-assayer | specified, not implemented |
+| Porphyry | cyber-lens-porphyry | specified, not implemented |
+| Transcript | cyber-lens-core | specified, not implemented |

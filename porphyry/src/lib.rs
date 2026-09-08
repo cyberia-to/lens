@@ -1,4 +1,4 @@
-//! cyb-lens-porphyry — Porphyry polynomial commitment.
+//! cyber-lens-porphyry — Porphyry polynomial commitment.
 //!
 //! Brakedown instantiated over genies' F_q (CSIDH-512 prime, 512 bits).
 //! Same expander-graph structure as Brakedown, wider field elements.

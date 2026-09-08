@@ -1,4 +1,4 @@
-//! cyb-lens-ikat — Ikat polynomial commitment.
+//! cyber-lens-ikat — Ikat polynomial commitment.
 //!
 //! Ring-aware commitment over jali's R_q = F_p[x]/(x^n+1).
 //! NTT decomposes ring operations into n independent Goldilocks operations.

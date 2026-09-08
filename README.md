@@ -57,18 +57,18 @@ each algebra has its own optimal commitment scheme:
 
 | construction | crate | algebra | encoding |
 |-------------|-------|---------|----------|
-| Brakedown | [cyb-lens-brakedown](brakedown/) | Goldilocks (nebu) | Margulis expander + tensor decomposition |
-| Binius | [cyb-lens-binius](binius/) | F₂ tower (kuro) | binary folding + hemera Merkle tree |
-| Ikat | [cyb-lens-ikat](ikat/) | R_q NTT slots (jali) | ring elements → NTT → batched Brakedown |
-| Assayer | [cyb-lens-assayer](assayer/) | tropical → F_p | witness + dual certificate → Brakedown |
-| Porphyry | [cyb-lens-porphyry](porphyry/) | F_q 512-bit (genies) | Brakedown over deep isogeny field |
+| Brakedown | [cyber-lens-brakedown](brakedown/) | Goldilocks (nebu) | Margulis expander + tensor decomposition |
+| Binius | [cyber-lens-binius](binius/) | F₂ tower (kuro) | binary folding + hemera Merkle tree |
+| Ikat | [cyber-lens-ikat](ikat/) | R_q NTT slots (jali) | ring elements → NTT → batched Brakedown |
+| Assayer | [cyber-lens-assayer](assayer/) | tropical → F_p | witness + dual certificate → Brakedown |
+| Porphyry | [cyber-lens-porphyry](porphyry/) | F_q 512-bit (genies) | Brakedown over deep isogeny field |
 
 four implement `Lens<F: Field>`. Assayer wraps Brakedown — the tropical semiring
 has no subtraction, so the optimization witness is packed as Goldilocks elements.
 
 ## the trait
 
-from [cyb-lens-core](core/) (depends on [strata-core](https://github.com/cyberia-to/strata) for the Field trait):
+from [cyber-lens-core](core/) (depends on [strata-core](https://github.com/cyberia-to/strata) for the Field trait):
 
 ```rust
 pub trait Lens<F: Field> {
@@ -158,33 +158,33 @@ cyber-lens = "0.1"
 
 # just the trait (for consumers)
 [dependencies]
-cyb-lens-core = "0.1"
+cyber-lens-core = "0.1"
 
 # one construction
 [dependencies]
-cyb-lens-brakedown = "0.1"
+cyber-lens-brakedown = "0.1"
 ```
 
 | crate | what |
 |-------|------|
-| [cyb-lens-core](core/) | Lens trait, Commitment, Opening, Transcript, MultilinearPoly |
-| [cyb-lens-brakedown](brakedown/) | Margulis expander + tensor decomposition over F_p |
-| [cyb-lens-binius](binius/) | binary folding + Merkle tree over F₂ |
-| [cyb-lens-ikat](ikat/) | NTT batching → Brakedown over R_q slots |
-| [cyb-lens-assayer](assayer/) | tropical witness-verify → Brakedown delegation |
-| [cyb-lens-porphyry](porphyry/) | Brakedown over F_q (512-bit) |
+| [cyber-lens-core](core/) | Lens trait, Commitment, Opening, Transcript, MultilinearPoly |
+| [cyber-lens-brakedown](brakedown/) | Margulis expander + tensor decomposition over F_p |
+| [cyber-lens-binius](binius/) | binary folding + Merkle tree over F₂ |
+| [cyber-lens-ikat](ikat/) | NTT batching → Brakedown over R_q slots |
+| [cyber-lens-assayer](assayer/) | tropical witness-verify → Brakedown delegation |
+| [cyber-lens-porphyry](porphyry/) | Brakedown over F_q (512-bit) |
 | [cyber-lens](src/) | facade: re-exports core + all five |
 
 ## workspace
 
 ```
 lens/
-├── core/           cyb-lens-core         trait + types + transcript
-├── brakedown/      cyb-lens-brakedown    20 tests
-├── binius/         cyb-lens-binius       6 tests
-├── ikat/           cyb-lens-ikat         5 tests
-├── assayer/        cyb-lens-assayer      9 tests
-├── porphyry/       cyb-lens-porphyry     6 tests
+├── core/           cyber-lens-core         trait + types + transcript
+├── brakedown/      cyber-lens-brakedown    20 tests
+├── binius/         cyber-lens-binius       6 tests
+├── ikat/           cyber-lens-ikat         5 tests
+├── assayer/        cyber-lens-assayer      9 tests
+├── porphyry/       cyber-lens-porphyry     6 tests
 ├── src/            cyber-lens            28 integration tests
 └── specs/          commitment layer spec
 ```

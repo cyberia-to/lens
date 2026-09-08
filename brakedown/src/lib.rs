@@ -1,4 +1,4 @@
-//! cyb-lens-brakedown — Brakedown polynomial commitment.
+//! cyber-lens-brakedown — Brakedown polynomial commitment.
 //!
 //! Expander-graph linear codes over Goldilocks (F_p) with Margulis
 //! expander and proximity testing via codeword queries.
