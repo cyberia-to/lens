@@ -5,7 +5,7 @@
 # ---
 [package]
 name = "cyber-lens"
-version = "0.1.2"
+version = "0.1.3"
 edition.workspace = true
 license-file = "../LICENSE"
 description = "polynomial commitment: five lenses for five algebras"
@@ -21,7 +21,7 @@ name = "lens"
 path = "lib.rs"
 
 [dependencies]
-cyber-lens-core = { version = "0.1.1", path = "../core" }
+cyber-lens-core = { version = "0.1.2", path = "../core" }
 cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
 cyber-lens-binius = { version = "0.1.1", path = "../binius" }
 cyber-lens-ikat = { version = "0.1.1", path = "../ikat" }
