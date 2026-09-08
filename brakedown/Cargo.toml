@@ -1,6 +1,6 @@
 [package]
 name = "cyber-lens-brakedown"
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 license-file = "../LICENSE"
 description = "Brakedown polynomial commitment — expander-graph codes over Goldilocks"
