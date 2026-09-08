@@ -1,6 +1,6 @@
 [package]
 name = "cyber-lens-assayer"
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 license-file = "../LICENSE"
 description = "Assayer — tropical witness-verify commitment via Brakedown delegation"
