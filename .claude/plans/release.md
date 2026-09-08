@@ -337,12 +337,12 @@ so the API surface is reserved. Full implementation is post-0.1.0.
 ## [0.1.0] - 2026-05-14
 
 ### Added
-- `cyb-lens-core`: Lens trait, MultilinearPoly, Commitment, Opening, Transcript
-- `cyb-lens-brakedown`: Margulis expander + tensor decomposition over Goldilocks (18 tests)
-- `cyb-lens-binius`: binary folding + hemera Merkle tree over F₂¹²⁸ (16 tests)
-- `cyb-lens-ikat`: NTT-batched Brakedown over R_q NTT slots (11 tests)
-- `cyb-lens-assayer`: tropical witness + LP dual certificate → Brakedown (15 tests)
-- `cyb-lens-porphyry`: expander codes over F_q 512-bit (9 tests)
+- `cyber-lens-core`: Lens trait, MultilinearPoly, Commitment, Opening, Transcript
+- `cyber-lens-brakedown`: Margulis expander + tensor decomposition over Goldilocks (18 tests)
+- `cyber-lens-binius`: binary folding + hemera Merkle tree over F₂¹²⁸ (16 tests)
+- `cyber-lens-ikat`: NTT-batched Brakedown over R_q NTT slots (11 tests)
+- `cyber-lens-assayer`: tropical witness + LP dual certificate → Brakedown (15 tests)
+- `cyber-lens-porphyry`: expander codes over F_q 512-bit (9 tests)
 - `cyber-lens`: facade (28 integration tests)
 - `lens-cli`: command-line interface for all five constructions
 - `vectors/lens.json`: pinned test vectors for cross-implementation verification
@@ -475,16 +475,16 @@ strata-genies = { path = "../strata/genies/rs" }
 
 ```bash
 # Layer 1
-cargo publish -p cyb-lens-core
+cargo publish -p cyber-lens-core
 
 # Layer 2 (any order)
-cargo publish -p cyb-lens-brakedown
-cargo publish -p cyb-lens-binius
-cargo publish -p cyb-lens-porphyry
+cargo publish -p cyber-lens-brakedown
+cargo publish -p cyber-lens-binius
+cargo publish -p cyber-lens-porphyry
 
 # Layer 3
-cargo publish -p cyb-lens-ikat
-cargo publish -p cyb-lens-assayer
+cargo publish -p cyber-lens-ikat
+cargo publish -p cyber-lens-assayer
 
 # Layer 4
 cargo publish -p cyber-lens

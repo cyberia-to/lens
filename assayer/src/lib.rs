@@ -1,4 +1,4 @@
-//! cyb-lens-assayer — Assayer tropical witness-verify commitment.
+//! cyber-lens-assayer — Assayer tropical witness-verify commitment.
 //!
 //! The tropical semiring (min, +) supports min (addition) and saturating
 //! addition (multiplication) with identities +inf and 0. It has no

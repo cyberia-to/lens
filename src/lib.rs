@@ -6,7 +6,7 @@
 //! cyber-lens — polynomial commitment: five lenses for five algebras.
 //!
 //! This facade crate re-exports the core trait and all five constructions.
-//! For minimal dependencies, depend on `cyb-lens-core` (trait only) or
+//! For minimal dependencies, depend on `cyber-lens-core` (trait only) or
 //! a specific construction crate.
 
 // core: trait, types, transcript

@@ -1,4 +1,4 @@
-//! cyb-lens-binius — Binius polynomial commitment.
+//! cyber-lens-binius — Binius polynomial commitment.
 //!
 //! Binary folding over kuro's F₂ tower (F₂ → F₂¹²⁸).
 //! Binary-native: AND/XOR = 1 constraint each.
