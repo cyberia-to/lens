@@ -7,8 +7,8 @@
 //! carries many. Hand-rolled so no crate gains a serde requirement. Every
 //! read is bounds-checked (quality passes 6, 7).
 
-use cyber_hemera::Hash;
-use lens::{Commitment, Opening};
+use cyber_hemera::{Hash, Side};
+use lens::{Commitment, ColumnQuery, Opening};
 
 use crate::field::CliField;
 
@@ -22,6 +22,7 @@ pub const TAG_PORPHYRY: u8 = 3;
 
 const OPENING_TENSOR: u8 = 0;
 const OPENING_FOLDING: u8 = 1;
+const OPENING_TENSOR_MERKLE: u8 = 2;
 
 /// A decoded artifact over field `F`: everything `verify` needs but the commitment.
 pub struct Artifact<F: CliField> {
@@ -146,6 +147,26 @@ fn encode_opening(out: &mut Vec<u8>, opening: &Opening) -> Result<(), String> {
             }
             put_len_bytes(out, final_value);
         }
+        Opening::TensorMerkle {
+            row_combination,
+            columns,
+        } => {
+            out.push(OPENING_TENSOR_MERKLE);
+            put_len_bytes(out, row_combination);
+            put_u32(out, columns.len());
+            for cq in columns {
+                put_u32(out, cq.index);
+                put_len_bytes(out, &cq.column);
+                put_u32(out, cq.path.len());
+                for (h, side) in &cq.path {
+                    out.extend_from_slice(h.as_bytes());
+                    out.push(match side {
+                        Side::Left => 0,
+                        Side::Right => 1,
+                    });
+                }
+            }
+        }
         Opening::Witness { .. } => {
             return Err("Witness openings are handled by the assayer commands".into());
         }
@@ -188,6 +209,31 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
                 round_commitments,
                 merkle_paths,
                 final_value,
+            })
+        }
+        OPENING_TENSOR_MERKLE => {
+            let row_combination = r.len_bytes()?.to_vec();
+            let n_cols = r.u32()?;
+            let mut columns = Vec::with_capacity(n_cols);
+            for _ in 0..n_cols {
+                let index = r.u32()?;
+                let column = r.len_bytes()?.to_vec();
+                let n_path = r.u32()?;
+                let mut path = Vec::with_capacity(n_path);
+                for _ in 0..n_path {
+                    let h = take_hash(r)?;
+                    let side = match r.u8()? {
+                        0 => Side::Left,
+                        1 => Side::Right,
+                        other => return Err(format!("unknown merkle side {other}")),
+                    };
+                    path.push((h, side));
+                }
+                columns.push(ColumnQuery { index, column, path });
+            }
+            Ok(Opening::TensorMerkle {
+                row_combination,
+                columns,
             })
         }
         other => Err(format!("unknown opening variant {other}")),

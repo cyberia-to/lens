@@ -13,3 +13,10 @@ categories = ["cryptography"]
 cyber-lens-core = { version = "0.1.1", path = "../core" }
 nebu.workspace = true
 cyber-hemera.workspace = true
+
+[dev-dependencies]
+postcard = { version = "1", features = ["alloc"] }
+
+[features]
+# Wire-tightness test (bit-flip scan) needs Opening: Serialize + Deserialize.
+serde = ["cyber-lens-core/serde"]

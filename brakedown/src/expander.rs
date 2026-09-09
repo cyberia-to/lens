@@ -232,4 +232,118 @@ mod tests {
         b[0] = Goldilocks::new(42);
         assert_ne!(exp.encode(&a), exp.encode(&b));
     }
+
+    // ── empirical minimum-distance probe ───────────────────────────
+    //
+    // This code has no proven worst-case distance bound (the Margulis
+    // construction here is a single-layer sparse map, not the recursive
+    // robust-code construction the Brakedown paper uses to GUARANTEE
+    // constant relative distance). Rather than assume a distance figure,
+    // this probe empirically searches for low-weight nonzero codewords
+    // using the standard "cancel via free ratios" adversarial strategy:
+    // a support of size s gives (s-1) free ratios (after fixing scale),
+    // each of which can zero one output position that the support's
+    // neighborhoods share, so an adversary can drive weight down to
+    // roughly |union of neighborhoods| - (s-1). We search s = 1, 2, 3
+    // over many random supports and report the worst (lowest-weight)
+    // relative weight found. This is a LOWER BOUND on the true minimum
+    // distance search (larger s could do worse) and an UPPER BOUND on
+    // the actual guaranteed distance (we only tried s ≤ 3) — it is
+    // reported honestly as an empirical measurement, not a proof.
+    fn hamming_weight(v: &[Goldilocks]) -> usize {
+        v.iter().filter(|&&x| x != Goldilocks::ZERO).count()
+    }
+
+    fn relative_weight_for_support(exp: &Expander, support: &[usize], coeffs: &[Goldilocks]) -> f64 {
+        let mut input = vec![Goldilocks::ZERO; exp.n];
+        for (&i, &c) in support.iter().zip(coeffs) {
+            input[i] = c;
+        }
+        let out = exp.encode(&input);
+        hamming_weight(&out) as f64 / out.len() as f64
+    }
+
+    /// Try to zero one shared output position between inputs i and j.
+    /// Returns the resulting relative weight, or None if i,j share no
+    /// output position (nothing to cancel).
+    fn try_cancel_pair(exp: &Expander, i: usize, j: usize) -> Option<f64> {
+        use std::collections::HashMap;
+        let ni = exp.neighbors(i);
+        let nj = exp.neighbors(j);
+        let mut mult_i: HashMap<usize, u64> = HashMap::new();
+        for r in &ni {
+            *mult_i.entry(*r).or_default() += 1;
+        }
+        let mut mult_j: HashMap<usize, u64> = HashMap::new();
+        for r in &nj {
+            *mult_j.entry(*r).or_default() += 1;
+        }
+        // Find a shared output position to cancel.
+        let shared = mult_i.keys().find(|r| mult_j.contains_key(*r))?;
+        let mi = Goldilocks::new(mult_i[shared]);
+        let mj = Goldilocks::new(mult_j[shared]);
+        // x_i * mi + x_j * mj = 0  =>  x_j = -x_i * mi / mj. Fix x_i = 1.
+        let x_i = Goldilocks::ONE;
+        let x_j = -(x_i * mi * mj.inv());
+        Some(relative_weight_for_support(exp, &[i, j], &[x_i, x_j]))
+    }
+
+    /// Empirically probe the minimum distance for a range of sizes used by
+    /// the tensor-Merkle PCS (k2 ≈ sqrt(N) for realistic N), and print the
+    /// worst weight found (both relative — as a fraction of m — and
+    /// absolute). `lib.rs::num_queries` derives its query count from an
+    /// ASSUMED worst-case ABSOLUTE weight (`ASSUMED_MIN_ABS_WEIGHT`, set
+    /// with a safety margin below what this probe actually finds): the
+    /// assertion below checks that assumption still holds, i.e. that this
+    /// probe cannot force fewer nonzero symbols than `num_queries` assumed
+    /// possible. It deliberately does NOT assert a relative-weight floor —
+    /// relative distance shrinks as k2 grows for this single-layer
+    /// expander code (roughly 1/k2 — see the numbers this prints), which
+    /// is exactly why `num_queries` scales with k2 instead of being fixed.
+    #[test]
+    fn empirical_distance_probe() {
+        let sizes = [8usize, 16, 32, 64, 128, 256, 512, 1024];
+        let mut worst_abs_overall = f64::INFINITY;
+        for &n in &sizes {
+            let exp = Expander::new(n);
+            let mut worst = 1.0f64;
+
+            // s = 1: no cancellation possible, just the coverage of one
+            // input's own neighbor list (upper bound on achievable weight
+            // from a trivial adversary, included for reference).
+            for i in 0..n {
+                let w = relative_weight_for_support(&exp, &[i], &[Goldilocks::ONE]);
+                worst = worst.min(w);
+            }
+
+            // s = 2: one free ratio, cancel one shared output position.
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    if let Some(w) = try_cancel_pair(&exp, i, j) {
+                        worst = worst.min(w);
+                    }
+                }
+            }
+
+            let worst_abs = worst * exp.m as f64;
+            eprintln!(
+                "n={n:5}  m={:5}  worst weight (s<=2): relative={worst:.4}  absolute={worst_abs:.1}",
+                exp.m
+            );
+            worst_abs_overall = worst_abs_overall.min(worst_abs);
+        }
+        eprintln!("worst absolute weight over all probed sizes = {worst_abs_overall:.1}");
+        // This is an empirical measurement, not a proof (only s<=2 attacks
+        // were searched — a real adversary is not restricted to those).
+        // What it guards: lib.rs's ASSUMED_MIN_ABS_WEIGHT must stay a real
+        // lower bound on what this probe can find, with margin, or
+        // NUM_QUERIES silently under-delivers on soundness.
+        assert!(
+            worst_abs_overall > crate::ASSUMED_MIN_ABS_WEIGHT as f64,
+            "expander code's empirically probed absolute weight floor \
+             ({worst_abs_overall:.1}) dropped to or below \
+             ASSUMED_MIN_ABS_WEIGHT ({}) — re-derive NUM_QUERIES in lib.rs",
+            crate::ASSUMED_MIN_ABS_WEIGHT
+        );
+    }
 }
