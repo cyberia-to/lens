@@ -14,7 +14,10 @@
 mod expander;
 mod matrix;
 mod merkle;
+mod public;
 mod tensor;
+
+pub use public::PublicTensor;
 
 pub use cyber_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
 pub use expander::Expander;
