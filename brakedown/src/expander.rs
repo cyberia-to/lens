@@ -1,22 +1,12 @@
-//! Margulis expander graph for linear-code encoding.
-//!
-//! The Margulis construction uses affine transformations over Z_p × Z_p
-//! to produce a bipartite graph with provable spectral expansion.
-//! For any subset S of left vertices with |S| ≤ δN, the neighborhood
-//! satisfies |Γ(S)| ≥ (1-ε)d|S|, where d is the left-degree.
-//!
-//! This replaces hash-based neighbor assignment with an algebraically
-//! constructed graph whose expansion is guaranteed by Kazhdan's property (T).
-//!
-//! Reference: Margulis, "Explicit constructions of expanders" (1973).
-//! The bipartite version maps (x, y) ∈ Z_p × Z_p to neighbors via
-//! six affine transformations, giving base degree 6. We compose
-//! WALK_LENGTH steps of these transformations to achieve the target degree.
+//! Systematic code: raw input followed by sparse Margulis-derived parity.
+//! The raw prefix proves injectivity; no constant relative-distance claim is made.
+//! See specs/scalar-field.md for the versioned encoding contract.
 
 use nebu::Goldilocks;
 
 /// Expansion factor: |R| = EXPANSION · |L|.
-pub const EXPANSION: usize = 2;
+pub const EXPANSION: usize = 3;
+const PARITY_EXPANSION: usize = 2;
 
 /// Number of base Margulis transformations per step.
 const BASE_DEGREE: usize = 6;
@@ -26,8 +16,6 @@ const BASE_DEGREE: usize = 6;
 const WALK_LENGTH: usize = 2;
 
 /// Effective degree: BASE_DEGREE^WALK_LENGTH = 36.
-/// For 128-bit security over Goldilocks (|F| ≈ 2^64), degree 36 with
-/// expansion factor 2 provides sufficient distance.
 #[cfg(test)]
 const DEGREE: usize = BASE_DEGREE * BASE_DEGREE; // 36
 
@@ -37,7 +25,7 @@ pub struct Expander {
     pub n: usize,
     /// Number of output elements (|R| = EXPANSION · n).
     pub m: usize,
-    /// Prime p such that p² ≥ m. Vertices live in Z_p × Z_p.
+    /// Prime p such that p² ≥ 2n (parity positions). Vertices live in Z_p × Z_p.
     p: usize,
 }
 
@@ -45,15 +33,16 @@ impl Expander {
     /// Create an expander for input size n.
     pub fn new(n: usize) -> Self {
         assert!(n > 0, "expander requires n > 0");
-        let m = EXPANSION * n;
-        // Find smallest prime p such that p² ≥ m
-        let p = Self::smallest_prime_with_square_ge(m);
+        let m = EXPANSION.checked_mul(n).expect("encoded length overflow");
+        // Find smallest prime p such that p² covers the parity positions
+        let p = Self::smallest_prime_with_square_ge(PARITY_EXPANSION * n);
         Self { n, m, p }
     }
 
     /// Smallest prime p where p² ≥ target.
     fn smallest_prime_with_square_ge(target: usize) -> usize {
-        let sqrt = (target as f64).sqrt().ceil() as usize;
+        let floor = target.isqrt();
+        let sqrt = floor + usize::from(floor * floor < target);
         let mut p = if sqrt < 2 { 2 } else { sqrt };
         while !Self::is_prime(p) {
             p += 1;
@@ -99,7 +88,7 @@ impl Expander {
     /// Convert a 2D coordinate (x, y) ∈ Z_p × Z_p to a linear index.
     #[inline]
     fn to_index(&self, x: usize, y: usize) -> usize {
-        (x * self.p + y) % self.m
+        self.n + (x * self.p + y) % (PARITY_EXPANSION * self.n)
     }
 
     /// Convert a linear index to 2D coordinate.
@@ -130,13 +119,12 @@ impl Expander {
         current.iter().map(|&(x, y)| self.to_index(x, y)).collect()
     }
 
-    /// Encode input polynomial via sparse matrix-vector multiply.
-    ///
-    /// output[r] += input[l] for all edges (l, r) in the Margulis graph.
-    /// Cost: DEGREE · n field additions.
+    /// Preserve every input symbol, then append the sparse parity sums.
+    /// Cost: DEGREE · n field additions plus the raw-prefix copy.
     pub fn encode(&self, input: &[Goldilocks]) -> Vec<Goldilocks> {
         assert_eq!(input.len(), self.n);
         let mut output = vec![Goldilocks::ZERO; self.m];
+        output[..self.n].copy_from_slice(input);
 
         for (i, &val) in input.iter().enumerate() {
             for r in self.neighbors(i) {
@@ -199,7 +187,7 @@ mod tests {
         // With m=128, expect significant coverage.
         // A good expander should cover at least half the right vertices.
         assert!(
-            all_neighbors.len() > exp.m / 3,
+            all_neighbors.len() > (exp.m - exp.n) / 3,
             "expansion too low: {} distinct out of {}",
             all_neighbors.len(),
             exp.m
@@ -250,17 +238,21 @@ mod tests {
     // distance search (larger s could do worse) and an UPPER BOUND on
     // the actual guaranteed distance (we only tried s ≤ 3) — it is
     // reported honestly as an empirical measurement, not a proof.
-    fn hamming_weight(v: &[Goldilocks]) -> usize {
-        v.iter().filter(|&&x| x != Goldilocks::ZERO).count()
-    }
-
-    fn relative_weight_for_support(exp: &Expander, support: &[usize], coeffs: &[Goldilocks]) -> f64 {
-        let mut input = vec![Goldilocks::ZERO; exp.n];
+    fn relative_weight_for_support(
+        exp: &Expander,
+        support: &[usize],
+        coeffs: &[Goldilocks],
+    ) -> f64 {
+        // Probe sparse supports directly; encoding n zero entries per pair
+        // would turn this diagnostic into an unnecessary cubic-time test.
+        let mut symbols = std::collections::BTreeMap::new();
         for (&i, &c) in support.iter().zip(coeffs) {
-            input[i] = c;
+            *symbols.entry(i).or_insert(Goldilocks::ZERO) += c;
+            for j in exp.neighbors(i) {
+                *symbols.entry(j).or_insert(Goldilocks::ZERO) += c;
+            }
         }
-        let out = exp.encode(&input);
-        hamming_weight(&out) as f64 / out.len() as f64
+        symbols.values().filter(|&&v| v != Goldilocks::ZERO).count() as f64 / exp.m as f64
     }
 
     /// Try to zero one shared output position between inputs i and j.
@@ -288,18 +280,8 @@ mod tests {
         Some(relative_weight_for_support(exp, &[i, j], &[x_i, x_j]))
     }
 
-    /// Empirically probe the minimum distance for a range of sizes used by
-    /// the tensor-Merkle PCS (k2 ≈ sqrt(N) for realistic N), and print the
-    /// worst weight found (both relative — as a fraction of m — and
-    /// absolute). `lib.rs::num_queries` derives its query count from an
-    /// ASSUMED worst-case ABSOLUTE weight (`ASSUMED_MIN_ABS_WEIGHT`, set
-    /// with a safety margin below what this probe actually finds): the
-    /// assertion below checks that assumption still holds, i.e. that this
-    /// probe cannot force fewer nonzero symbols than `num_queries` assumed
-    /// possible. It deliberately does NOT assert a relative-weight floor —
-    /// relative distance shrinks as k2 grows for this single-layer
-    /// expander code (roughly 1/k2 — see the numbers this prints), which
-    /// is exactly why `num_queries` scales with k2 instead of being fixed.
+    /// Diagnostic upper bounds on minimum distance. The query budget uses
+    /// only systematic injectivity (absolute weight >= 1), not this probe.
     #[test]
     fn empirical_distance_probe() {
         let sizes = [8usize, 16, 32, 64, 128, 256, 512, 1024];
@@ -333,17 +315,13 @@ mod tests {
             worst_abs_overall = worst_abs_overall.min(worst_abs);
         }
         eprintln!("worst absolute weight over all probed sizes = {worst_abs_overall:.1}");
-        // This is an empirical measurement, not a proof (only s<=2 attacks
-        // were searched — a real adversary is not restricted to those).
-        // What it guards: lib.rs's ASSUMED_MIN_ABS_WEIGHT must stay a real
-        // lower bound on what this probe can find, with margin, or
-        // NUM_QUERIES silently under-delivers on soundness.
+        // A diagnostic measurement cannot establish a stronger bound.
         assert!(
-            worst_abs_overall > crate::ASSUMED_MIN_ABS_WEIGHT as f64,
+            worst_abs_overall > crate::MIN_ABS_WEIGHT as f64,
             "expander code's empirically probed absolute weight floor \
              ({worst_abs_overall:.1}) dropped to or below \
-             ASSUMED_MIN_ABS_WEIGHT ({}) — re-derive NUM_QUERIES in lib.rs",
-            crate::ASSUMED_MIN_ABS_WEIGHT
+             MIN_ABS_WEIGHT ({}) — re-derive NUM_QUERIES in lib.rs",
+            crate::MIN_ABS_WEIGHT
         );
     }
 }

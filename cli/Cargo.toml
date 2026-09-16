@@ -5,7 +5,7 @@
 # ---
 [package]
 name = "lens-cli"
-version.workspace = true
+version = "0.2.0"
 edition.workspace = true
 license-file = "../LICENSE"
 description = "command-line tool for the lens polynomial commitment layer"
@@ -19,7 +19,7 @@ name = "lens"
 path = "src/main.rs"
 
 [dependencies]
-cyber-lens = { path = "../src" }
+cyber-lens = { version = "0.2.0", path = "../src" }
 nebu.workspace = true
 kuro.workspace = true
 genies.workspace = true

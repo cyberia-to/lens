@@ -154,15 +154,15 @@ of encoding 512-bit operations as Goldilocks constraints.
 ```toml
 # everything
 [dependencies]
-cyber-lens = "0.1"
+cyber-lens = "0.2.0"
 
 # just the trait (for consumers)
 [dependencies]
-cyber-lens-core = "0.1"
+cyber-lens-core = "0.1.2"
 
 # one construction
 [dependencies]
-cyber-lens-brakedown = "0.1"
+cyber-lens-brakedown = "0.2.0"
 ```
 
 | crate | what |
