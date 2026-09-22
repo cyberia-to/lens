@@ -227,6 +227,9 @@ fn write_artifact(bytes: &[u8], out: Option<&str>) -> Result<(), String> {
 
 pub fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
     let s = s.strip_prefix("0x").unwrap_or(s);
+    if !s.is_ascii() {
+        return Err("non-ASCII hex".into());
+    }
     if !s.len().is_multiple_of(2) {
         return Err("odd-length hex".into());
     }
@@ -234,6 +237,26 @@ pub fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| "invalid hex".to_string()))
         .collect()
+}
+
+#[cfg(test)]
+mod hex_to_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_ascii_without_panicking() {
+        // a multi-byte UTF-8 char keeps the byte length even (so the
+        // odd-length guard does not catch it) while landing a
+        // `&s[i..i+2]` slice boundary mid-character; hex_to_bytes must
+        // error, not panic.
+        assert!(hex_to_bytes("aéb").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_hex_with_and_without_prefix() {
+        assert_eq!(hex_to_bytes("0x00ff").unwrap(), vec![0x00, 0xff]);
+        assert_eq!(hex_to_bytes("00ff").unwrap(), vec![0x00, 0xff]);
+    }
 }
 
 pub fn hex(b: &[u8]) -> String {
