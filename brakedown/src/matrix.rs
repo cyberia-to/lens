@@ -154,7 +154,11 @@ mod tests {
         let full = crate::MultilinearPoly::new(evals);
         for (col, &expected) in v.iter().enumerate() {
             let mut point = r_row.to_vec();
-            point.push(if col == 0 { Goldilocks::ZERO } else { Goldilocks::ONE });
+            point.push(if col == 0 {
+                Goldilocks::ZERO
+            } else {
+                Goldilocks::ONE
+            });
             // point order must match evaluate()'s bit convention: bit0..bit(row_vars-1)
             // are the row vars, the remaining bit is the col var — same order used
             // by MultilinearPoly::evaluate (bit j <-> point[j]).

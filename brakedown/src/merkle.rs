@@ -11,14 +11,13 @@
 //! the rest of the stack — only the tree-building and path-extraction
 //! logic (which hemera does not expose for non-chunked leaves) is new.
 //!
-//! The number of columns `m` is always a power of two here (m = EXPANSION
-//! · k2, k2 already a power of two), so the tree is a perfect binary tree
-//! — no left-balancing needed.
+//! Non-power-of-two column counts are padded with indexed empty leaves.
+//! Only actual data indices can be authenticated by the verifier.
 
 use cyber_hemera::tree::{hash_leaf, hash_node};
-use cyber_hemera::{merkle_verify_path, Hash, Side};
+use cyber_hemera::{Hash, Side};
 
-/// A Merkle tree over `m` leaves (m a power of two, m ≥ 1), one per
+/// A Merkle tree over `m` leaves (m ≥ 1), one per
 /// encoded-matrix column.
 pub struct ColumnTree {
     /// `levels[0]` are the leaf hashes, `levels[last]` is `[root]`.
@@ -29,12 +28,19 @@ impl ColumnTree {
     /// Build the tree over column byte-strings (already serialized).
     pub fn build(columns: &[Vec<u8>]) -> Self {
         let n = columns.len();
-        assert!(n.is_power_of_two(), "column count must be a power of two, got {n}");
+        assert!(n > 0, "column tree must be nonempty");
+        let padded = n
+            .checked_next_power_of_two()
+            .expect("column count overflow");
         let is_single = n == 1;
-        let leaves: Vec<Hash> = columns
-            .iter()
-            .enumerate()
-            .map(|(i, bytes)| hash_leaf(bytes, i as u64, is_single))
+        let leaves: Vec<Hash> = (0..padded)
+            .map(|i| {
+                hash_leaf(
+                    columns.get(i).map_or(&[], Vec::as_slice),
+                    i as u64,
+                    is_single,
+                )
+            })
             .collect();
 
         let mut levels = vec![leaves];
@@ -61,7 +67,11 @@ impl ColumnTree {
         let mut idx = index;
         for level in &self.levels[..self.levels.len() - 1] {
             let sibling = level[idx ^ 1];
-            let side = if idx % 2 == 0 { Side::Right } else { Side::Left };
+            let side = if idx % 2 == 0 {
+                Side::Right
+            } else {
+                Side::Left
+            };
             path.push((sibling, side));
             idx /= 2;
         }
@@ -72,6 +82,7 @@ impl ColumnTree {
 /// Verify a column's leaf bytes authenticate against `root` via `path`.
 /// `index` is the column's position (needed to reproduce `hash_leaf`'s
 /// counter and single-leaf flag).
+#[cfg(test)]
 pub fn verify_column(
     root: &Hash,
     index: usize,
@@ -79,8 +90,40 @@ pub fn verify_column(
     column_bytes: &[u8],
     path: &[(Hash, Side)],
 ) -> bool {
-    let leaf = hash_leaf(column_bytes, index as u64, num_columns == 1);
-    merkle_verify_path(root, &leaf, path)
+    column_root(index, num_columns, column_bytes, path).as_ref() == Some(root)
+}
+
+/// Recover a root only from a canonical data-column path.
+pub fn column_root(
+    index: usize,
+    num_columns: usize,
+    column_bytes: &[u8],
+    path: &[(Hash, Side)],
+) -> Option<Hash> {
+    if num_columns == 0 || index >= num_columns {
+        return None;
+    }
+    let depth = num_columns.checked_next_power_of_two()?.trailing_zeros() as usize;
+    if path.len() != depth {
+        return None;
+    }
+    let mut hash = hash_leaf(column_bytes, index as u64, num_columns == 1);
+    for (level, (sibling, side)) in path.iter().enumerate() {
+        let expected = if (index >> level) & 1 == 0 {
+            Side::Right
+        } else {
+            Side::Left
+        };
+        if *side != expected {
+            return None;
+        }
+        let is_root = level + 1 == depth;
+        hash = match side {
+            Side::Left => hash_node(sibling, &hash, is_root),
+            Side::Right => hash_node(&hash, sibling, is_root),
+        };
+    }
+    Some(hash)
 }
 
 #[cfg(test)]
@@ -119,7 +162,13 @@ mod tests {
         let tree = ColumnTree::build(&cols);
         let path_for_2 = tree.path(2);
         // Presenting column 3's bytes with column 2's path/index must fail.
-        assert!(!verify_column(&tree.root(), 2, cols.len(), &cols[3], &path_for_2));
+        assert!(!verify_column(
+            &tree.root(),
+            2,
+            cols.len(),
+            &cols[3],
+            &path_for_2
+        ));
     }
 
     #[test]
@@ -134,6 +183,9 @@ mod tests {
     #[test]
     fn deterministic_root() {
         let cols: Vec<Vec<u8>> = (0u8..4).map(|i| vec![i; 4]).collect();
-        assert_eq!(ColumnTree::build(&cols).root(), ColumnTree::build(&cols).root());
+        assert_eq!(
+            ColumnTree::build(&cols).root(),
+            ColumnTree::build(&cols).root()
+        );
     }
 }
