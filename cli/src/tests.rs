@@ -108,3 +108,67 @@ fn field_parsing() {
     assert!(F2_128::parse("0x1").unwrap() == F2_128(1));
     assert!(Fq::parse("0x2a").unwrap() == Fq::from_u64(42));
 }
+
+// ── artifact decode: a crafted count field must not preallocate past what
+// the buffer can hold. `magic · version · algo · num_vars · batch` header,
+// then a count field is followed by no further bytes at all, so a decoder
+// that trusts the count would ask the allocator for gigabytes on a
+// four-byte file (`Vec::with_capacity` on an unmet allocation aborts the
+// process, uncatchable by `Result`, not merely a panic).
+
+fn artifact_header(num_vars: u8, batch: bool) -> Vec<u8> {
+    let mut b = b"LENS".to_vec();
+    b.push(2); // VERSION
+    b.push(0); // algo tag (Brakedown)
+    b.push(num_vars);
+    b.push(batch as u8);
+    b
+}
+
+#[test]
+fn decode_rejects_oversized_point_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // n_points, no points follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+#[test]
+fn decode_rejects_oversized_commitment_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(0); // OPENING_TENSOR
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // round_commitments count
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+#[test]
+fn decode_rejects_oversized_query_response_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(0); // OPENING_TENSOR
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // round_commitments = 0
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // final_poly len = 0
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // n_q, no responses follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+#[test]
+fn decode_rejects_oversized_merkle_path_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(1); // OPENING_FOLDING
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // round_commitments = 0
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // n_paths, no paths follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+#[test]
+fn decode_rejects_oversized_merkle_path_inner_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(1); // OPENING_FOLDING
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // round_commitments = 0
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // n_paths = 1
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // path length, no hashes follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}

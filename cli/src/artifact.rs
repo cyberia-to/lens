@@ -93,7 +93,7 @@ pub fn decode<F: CliField>(bytes: &[u8]) -> Result<Artifact<F>, String> {
     let batch = r.u8()? != 0;
 
     let n_points = r.u32()?;
-    let mut points = Vec::with_capacity(n_points);
+    let mut points = Vec::with_capacity(n_points.min(r.remaining()));
     for _ in 0..n_points {
         let mut point = Vec::with_capacity(num_vars);
         for _ in 0..num_vars {
@@ -159,7 +159,7 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
             let round_commitments = take_commitments(r)?;
             let final_poly = r.len_bytes()?.to_vec();
             let n_q = r.u32()?;
-            let mut query_responses = Vec::with_capacity(n_q);
+            let mut query_responses = Vec::with_capacity(n_q.min(r.remaining()));
             for _ in 0..n_q {
                 let idx = r.u32()?;
                 let val = r.len_bytes()?.to_vec();
@@ -174,10 +174,10 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
         OPENING_FOLDING => {
             let round_commitments = take_commitments(r)?;
             let n_paths = r.u32()?;
-            let mut merkle_paths = Vec::with_capacity(n_paths);
+            let mut merkle_paths = Vec::with_capacity(n_paths.min(r.remaining()));
             for _ in 0..n_paths {
                 let n = r.u32()?;
-                let mut path = Vec::with_capacity(n);
+                let mut path = Vec::with_capacity(n.min(r.remaining()));
                 for _ in 0..n {
                     path.push(take_hash(r)?);
                 }
@@ -203,7 +203,7 @@ fn put_commitments(out: &mut Vec<u8>, cs: &[Commitment]) {
 
 fn take_commitments(r: &mut Reader) -> Result<Vec<Commitment>, String> {
     let n = r.u32()?;
-    let mut cs = Vec::with_capacity(n);
+    let mut cs = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
         cs.push(Commitment(take_hash(r)?));
     }
@@ -260,5 +260,13 @@ impl<'a> Reader<'a> {
     fn len_bytes(&mut self) -> Result<&'a [u8], String> {
         let n = self.u32()?;
         self.take(n)
+    }
+
+    /// Bytes left to read. A safe upper bound for any single count field's
+    /// preallocation: no element decodes from fewer than one byte, so the
+    /// buffer can never yield more than this many entries regardless of what
+    /// an attacker-supplied count claims.
+    fn remaining(&self) -> usize {
+        self.b.len() - self.pos
     }
 }
