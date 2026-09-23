@@ -93,7 +93,7 @@ pub fn decode<F: CliField>(bytes: &[u8]) -> Result<Artifact<F>, String> {
     let batch = r.u8()? != 0;
 
     let n_points = r.u32()?;
-    let mut points = Vec::with_capacity(n_points);
+    let mut points = Vec::with_capacity(n_points.min(r.remaining()));
     for _ in 0..n_points {
         let mut point = Vec::with_capacity(num_vars);
         for _ in 0..num_vars {
@@ -159,7 +159,7 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
             let round_commitments = take_commitments(r)?;
             let final_poly = r.len_bytes()?.to_vec();
             let n_q = r.u32()?;
-            let mut query_responses = Vec::with_capacity(n_q);
+            let mut query_responses = Vec::with_capacity(n_q.min(r.remaining()));
             for _ in 0..n_q {
                 let idx = r.u32()?;
                 let val = r.len_bytes()?.to_vec();
@@ -174,10 +174,10 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
         OPENING_FOLDING => {
             let round_commitments = take_commitments(r)?;
             let n_paths = r.u32()?;
-            let mut merkle_paths = Vec::with_capacity(n_paths);
+            let mut merkle_paths = Vec::with_capacity(n_paths.min(r.remaining()));
             for _ in 0..n_paths {
                 let n = r.u32()?;
-                let mut path = Vec::with_capacity(n);
+                let mut path = Vec::with_capacity(n.min(r.remaining()));
                 for _ in 0..n {
                     path.push(take_hash(r)?);
                 }
@@ -203,7 +203,7 @@ fn put_commitments(out: &mut Vec<u8>, cs: &[Commitment]) {
 
 fn take_commitments(r: &mut Reader) -> Result<Vec<Commitment>, String> {
     let n = r.u32()?;
-    let mut cs = Vec::with_capacity(n);
+    let mut cs = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
         cs.push(Commitment(take_hash(r)?));
     }
@@ -236,6 +236,14 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
     fn new(b: &'a [u8]) -> Self {
         Self { b, pos: 0 }
+    }
+
+    /// Bytes left unread. A safe upper bound on any length-prefixed count
+    /// still in the stream: every encoded element takes at least one byte,
+    /// so a count larger than this can never be satisfied and must not
+    /// drive a `Vec::with_capacity` allocation sized to the raw count.
+    fn remaining(&self) -> usize {
+        self.b.len() - self.pos
     }
 
     fn take(&mut self, n: usize) -> Result<&'a [u8], String> {

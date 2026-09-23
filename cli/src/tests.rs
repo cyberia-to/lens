@@ -101,6 +101,29 @@ fn tampered_artifact_magic_rejected() {
     assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
 }
 
+/// A huge declared count with nothing behind it must fail cleanly instead of
+/// driving `Vec::with_capacity` to attempt an allocation sized to the raw
+/// (attacker/corruption-controlled) count. Regression for the artifact
+/// reader's `n_points` preallocation.
+#[test]
+fn oversized_points_count_rejected_without_huge_allocation() {
+    let mut bytes = vec![b'L', b'E', b'N', b'S', 2, 0, 0, 0];
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+/// Same class as `oversized_points_count_rejected_without_huge_allocation`,
+/// on the commitments count inside a Tensor opening (`take_commitments`,
+/// shared by every opening variant's round-commitment list).
+#[test]
+fn oversized_commitments_count_rejected_without_huge_allocation() {
+    let mut bytes = vec![b'L', b'E', b'N', b'S', 2, 0, 0, 0];
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(0); // OPENING_TENSOR
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // round_commitments count
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
 #[test]
 fn field_parsing() {
     assert!(Goldilocks::parse("0xffffffffffffffff").is_err()); // ≥ p
