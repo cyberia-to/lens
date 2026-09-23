@@ -399,6 +399,37 @@ mod tests {
         }
     }
 
+    /// `verify`'s Check 2 confirms each `query_responses` index matches the
+    /// Fiat-Shamir challenge, but never reads the paired value: `Opening::Tensor`
+    /// carries no Merkle path or other proof binding a queried codeword value
+    /// back to `round_commitments`. A prover can therefore substitute any value
+    /// for any other at every queried position without detection. See
+    /// lens/audit/tensor-opening-query-values-unbound.md.
+    #[test]
+    fn verify_accepts_a_proof_with_corrupted_query_values() {
+        let poly = random_poly(4, 321);
+        let commitment = Brakedown::commit(&poly);
+        let point = vec![Goldilocks::ZERO; 4];
+        let value = poly.evaluate(&point);
+
+        let mut pt = Transcript::new(b"corrupt-test");
+        let mut proof = Brakedown::open(&poly, &point, &mut pt);
+
+        if let Opening::Tensor { query_responses, .. } = &mut proof {
+            for (_, val) in query_responses.iter_mut() {
+                *val = vec![0xFFu8; val.len()]; // corrupt every queried codeword value
+            }
+        } else {
+            panic!("expected Tensor opening");
+        }
+
+        let mut vt = Transcript::new(b"corrupt-test");
+        assert!(
+            Brakedown::verify(&commitment, &point, value, &proof, &mut vt),
+            "verify accepted a proof whose queried codeword values were all corrupted"
+        );
+    }
+
     #[test]
     fn batch_roundtrip() {
         let poly = random_poly(4, 200);
