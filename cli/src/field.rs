@@ -4,7 +4,7 @@
 //! per-field operations the cli needs — file encoding, canonical byte I/O, and
 //! coordinate parsing — so the command logic stays generic over the algebra.
 
-use lens::{Field, Reduce};
+use lens::{Codec, Field, Reduce};
 use nebu::Goldilocks;
 use nebu::encoding::encode_7;
 
@@ -12,8 +12,10 @@ use genies::Fq;
 use kuro::F2_128;
 
 /// Per-field byte widths, file encoding, and coordinate parsing.
-/// `Reduce` lets the transcript squeeze challenges of this field.
-pub trait CliField: Field + Reduce + Copy {
+/// `Reduce` lets the transcript squeeze challenges of this field;
+/// `Codec` tells the transcript how many bytes of squeeze output
+/// that reduction needs (`Transcript::squeeze_field`).
+pub trait CliField: Field + Reduce + Codec + Copy {
     /// Canonical serialized width of one element, in bytes.
     const WIDTH: usize;
     /// File bytes consumed per element — kept below the modulus so every
