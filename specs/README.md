@@ -19,6 +19,19 @@ trait Lens<F: Field> {
 
 three operations. commit is O(N). open produces a proof. verify checks the proof. all transparent (no trusted setup), all post-quantum. see [[trait]] for the full specification.
 
+## multilinear PCS over Goldilocks (Reed–Solomon)
+
+```
+trait MultilinearPcs {                       // core/src/pcs.rs
+    commit(params, evals: &[Goldilocks]) -> (Commitment, ProverData)
+    open(params, data, point: &[Fp3], transcript) -> (Fp3, Proof)
+    verify(params, commitment, num_vars, point, value, proof, transcript) -> Result<(), PcsError>
+    security_bits(params, num_vars) -> f64   // proven, no conjectures
+}
+```
+
+the contract zheng consumes: Goldilocks tables, Fp3 points and challenges, hemera Merkle trees, security parameters as data in a checked proof header. two implementations in `cyber-lens-rspcs`: [[tensor-rs]] (Ligero geometry, RS rows) and [[whir]] (WHIR, eprint 2024/1586). measurements: `audit/rs-whir-pcs-2026-10.md`.
+
 ## naming convention
 
 every algebra has five names at different layers:
