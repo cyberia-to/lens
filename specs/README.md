@@ -50,11 +50,11 @@ lens files are named `domain-algebra.md` (full name). construction names are ins
 
 | domain | algebra | full name | construction | impl | spec |
 |--------|---------|-----------|-------------|------|------|
-| scalar | field | scalar field | Brakedown (expander-graph codes over F_p) | [[nebu]] | [[scalar-field]] |
+| scalar | field | scalar field | Brakedown (expander-derived code over F_p; legacy, distance unproven — the shipped Goldilocks PCS is [[whir]]) | [[nebu]] | [[scalar-field]] |
 | binary | tower | binary tower | Binius (binary Reed-Solomon over F₂) | [[kuro]] | [[binary-tower]] |
 | polynomial | ring | polynomial ring | Ikat (NTT-batched, structure IS the pattern) | [[jali]] | [[polynomial-ring]] |
 | tropical | semiring | tropical semiring | Assayer (witness-verify via dual certificate) | [[trop]] | [[tropical-semiring]] |
-| isogeny | curves | isogeny curves | Porphyry (expander codes over deep field F_q) | [[genies]] | [[isogeny-curves]] |
+| isogeny | curves | isogeny curves | Porphyry (expander-derived code over deep field F_q; legacy) | [[genies]] | [[isogeny-curves]] |
 
 ## three roles
 

@@ -22,7 +22,7 @@ challenge derivation together with its actual proof checks.
 
 the F_q lens. dedicated polynomial commitment over [[genies]]'s isogeny field F_q where q = 4·ℓ₁·ℓ₂·...·ℓₙ - 1. privacy primitives (stealth addresses, VDF verification, blind signatures, ring signatures) prove natively in their own field — no non-native arithmetic penalty.
 
-implements the [[trait|Lens]] trait for F_q. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash.
+implements the [[trait|Lens]] trait for F_q. the IOP layer ([[SuperSpartan]] + [[sumcheck]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash.
 
 part of the five-lens architecture — see [[commitment]] for the full picture.
 
@@ -71,23 +71,23 @@ hemera operates on byte sequences. F_q elements serialize to bytes. same Merkle 
 
 ## opening and verification
 
-same Brakedown tensor decomposition protocol, over F_q:
+the Brakedown tensor protocol carried over to F_q (legacy; see the implementation boundary above):
 
 ```
 open(poly, point):
   tensor decompose point into F_q vectors
   compute inner products over F_q
-  recursive opening: O(log N + λ) F_q operations
+  tensor opening over F_q (no proven soundness bound: code distance unproven)
 
 verify(commitment, point, value, proof):
   check tensor consistency (F_q arithmetic)
   check Merkle auth paths (hemera)
-  ~660 F_q field ops (same count as Brakedown over F_p)
+  verifier cost: not measured
 ```
 
 ## cost comparison
 
-| operation | F_p (Brakedown) | F_q (Porphyry) | notes |
+| operation | F_p (Goldilocks) | F_q (Porphyry) | notes |
 |---|---|---|---|
 | F_p multiply | 1 constraint | N/A | nebu workload |
 | F_q multiply | ~64 constraints (non-native) | 1 constraint | genies workload |
@@ -107,27 +107,15 @@ verify(commitment, point, value, proof):
 
 ## cross-algebra composition
 
-genies sub-traces fold into the shared F_p accumulator via HyperNova:
-
 ```
-nox<F_q> sub-trace → zheng<Porphyry> proof
+nox<F_q> sub-trace → Porphyry commitment over F_q (legacy: Brakedown-based, distance unproven)
                            ↓
-            HyperNova fold into shared F_p accumulator
-            cost: ~766 F_p constraints per boundary crossing
+            composition with the Goldilocks accumulator: open research
 ```
 
-universal CCS with selectors:
+phase 3 of the proof-system repair (soft3 `proposals/proof-system-repair.md`, landing in this release) accumulates Reed–Solomon evaluation claims over Goldilocks: each step's claims are batched by a sumcheck into one root plus a fixed number of claims, and the decider is one WHIR opening of the final accumulator (zheng `specs/accumulation.md`, `specs/machine.md`). the earlier fold of every algebra into a shared F_p accumulator through a universal CCS with per-algebra selectors, and its per-fold and per-crossing costs, belonged to the retired design (legacy, unsound) and are withdrawn.
 
-```
-universal_ccs = {
-  sel_Fp:   1 for Goldilocks rows, 0 otherwise
-  sel_F2:   1 for binary rows, 0 otherwise
-  sel_ring: 1 for ring-structured rows, 0 otherwise
-  sel_Fq:   1 for isogeny rows, 0 otherwise
-}
-```
-
-one accumulator covers all five algebras. the decider runs once in F_p.
+F_q claims are not Goldilocks evaluation claims, so they do not enter that accumulator directly; simulating F_q in Goldilocks or hemera in F_q is costly either way. how an isogeny sub-trace joins the accumulator is open research; no cost per crossing is claimed.
 
 ## recursion boundary
 
@@ -159,6 +147,6 @@ zheng depends on genies for the Porphyry backend. hemera remains the only hash t
 1. **F_q element size**: CSIDH-512 uses 512-bit field elements (8 × 64-bit limbs). optimal limb representation for Brakedown tensor decomposition
 2. **expander graph over F_q**: Brakedown expander construction generalized to multi-limb fields — concrete expansion parameters
 3. **proof size**: Brakedown over F_q produces larger proofs (field elements are bigger). target: < 10 KiB per isogeny proof
-4. **cross-field soundness**: HyperNova folding F_p and F_q instances into same accumulator — security reduction
+4. **cross-field composition**: how F_q claims join the Goldilocks accumulation of phase 3 — construction and security reduction, open research
 
 see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[tropical-semiring]] for Assayer, [[commitment]] for the full lens architecture
