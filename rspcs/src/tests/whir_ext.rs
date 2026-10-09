@@ -113,3 +113,26 @@ fn leaves_authenticate_symbols_and_univariate_matches_codeword() {
         assert_eq!(crate::whir::Opening::from_bytes(&wire, ext).unwrap(), opening);
     }
 }
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_round_trips_fp3_and_base_proofs() {
+    let params = WhirParams {
+        log_inv_rate: 2,
+        ..WhirParams::default()
+    };
+    let mut rng = Rng::new(31);
+    for (m, ext) in [(5, true), (5, false), (11, true)] {
+        let point = rng.point(m);
+        let data = if ext {
+            Whir::commit_ext(&params, &ext_table(&mut rng, m)).1
+        } else {
+            Whir::commit(&params, &rng.evals(m)).1
+        };
+        let (_, proof) = Whir::open(&params, &data, &point, &mut Transcript::new(DOMAIN));
+        assert_eq!(proof.opens_ext0(), ext);
+        let bytes = postcard::to_allocvec(&proof).unwrap();
+        let back: WhirProof = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(back, proof, "m={m} ext={ext}");
+    }
+}

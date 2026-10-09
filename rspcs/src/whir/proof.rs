@@ -111,6 +111,13 @@ impl WhirProof {
         Self::from_bytes_with(bytes, false)
     }
 
+    /// Whether the openings of `f_0` carry Fp3 symbols (a proof of an Fp3
+    /// commitment).
+    pub fn opens_ext0(&self) -> bool {
+        let first = self.rounds.first().map_or(&self.final_opening, |r| &r.opening);
+        matches!(first.symbols, Symbols::Ext(_))
+    }
+
     /// Parse a proof of an Fp3 commitment (`ext0 = true`: the openings of
     /// `f_0` carry `3×u64` symbols) or of a base one.
     pub fn from_bytes_with(bytes: &[u8], ext0: bool) -> Result<Self, PcsError> {
@@ -158,16 +165,30 @@ mod serde_impl {
     use serde::de::Error;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+    /// Serde form: the wire bytes for a base proof (unchanged), and
+    /// `EXT_MARK ‖ wire bytes` for a proof of an Fp3 commitment — a base
+    /// proof starts with the header's version byte 1, never the mark.
+    const EXT_MARK: u8 = 0xE3;
+
     impl Serialize for WhirProof {
         fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-            s.serialize_bytes(&self.to_bytes())
+            let mut bytes = Vec::new();
+            if self.opens_ext0() {
+                bytes.push(EXT_MARK);
+            }
+            bytes.extend(self.to_bytes());
+            s.serialize_bytes(&bytes)
         }
     }
 
     impl<'de> Deserialize<'de> for WhirProof {
         fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
             let bytes = crate::wire::deserialize_bytes(d)?;
-            WhirProof::from_bytes(&bytes).map_err(D::Error::custom)
+            match bytes.split_first() {
+                Some((&EXT_MARK, rest)) => WhirProof::from_bytes_with(rest, true),
+                _ => WhirProof::from_bytes(&bytes),
+            }
+            .map_err(D::Error::custom)
         }
     }
 }

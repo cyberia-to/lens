@@ -66,7 +66,9 @@ so `security_bits` holds unchanged; the base-field remark at the end of
 domain string `"ext"` right after the scheme name in step 1 of the
 transcript, so a base and an Fp3 opening never share a transcript; the
 proof bytes have the same layout with `3×u64` symbols in the openings of
-`f_0` (`WhirProof::from_bytes_with(bytes, ext0 = true)`). Base commitments,
+`f_0` (`WhirProof::from_bytes_with(bytes, ext0 = true)`; the serde form
+prefixes such a proof with the byte `0xE3`, which no base proof starts
+with). Base commitments,
 their transcripts and their proof bytes are unchanged.
 
 ### leaf access
