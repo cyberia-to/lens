@@ -8,19 +8,32 @@ use super::fold::{coset_tree, open as open_leaves, shift_point};
 use super::proof::{WhirProof, WhirRoundProof};
 use super::{WhirConfig, WhirParams, prologue, sumcheck};
 use crate::field::{
-    add_scaled_eq, eq_table, fold_coeffs_base, fold_coeffs_ext, ml_eval_base, mobius_base,
-    pow_point, univariate_base, univariate_ext, univariate_ext_at_base,
+    add_scaled_eq, eq_table, fold_coeffs_base, fold_coeffs_ext, ml_eval_base, ml_eval_ext,
+    mobius_base, mobius_ext, pow_point, univariate_ext, univariate_ext_at_base,
 };
 use crate::merkle::Tree;
 use crate::pow;
 use crate::rs::{encode_base, encode_ext};
 use crate::wire::Symbols;
 
+/// The committed message `f_0`: its table and monomial coefficients, over
+/// Goldilocks or over Fp3.
+#[derive(Clone)]
+pub(crate) enum Message {
+    Base {
+        evals: Vec<Goldilocks>,
+        coeffs: Vec<Goldilocks>,
+    },
+    Ext {
+        evals: Vec<Fp3>,
+        coeffs: Vec<Fp3>,
+    },
+}
+
 /// Prover state: table, monomial coefficients, codeword and tree of `f_0`.
 pub struct WhirData {
     pub(crate) config: WhirConfig,
-    pub(crate) evals: Vec<Goldilocks>,
-    pub(crate) coeffs: Vec<Goldilocks>,
+    pub(crate) message: Message,
     pub(crate) codeword: Symbols,
     pub(crate) tree: Tree,
 }
@@ -46,16 +59,34 @@ pub fn commit(params: &WhirParams, evals: &[Goldilocks]) -> (Commitment, WhirDat
     let codeword = Symbols::Base(encode_base(&coeffs, spec.log_domain));
     let tree = coset_tree(&codeword, spec.log_domain, spec.fold);
     let root = Commitment(tree.root());
-    (
-        root,
-        WhirData {
-            config,
-            evals: evals.to_vec(),
-            coeffs,
-            codeword,
-            tree,
-        },
-    )
+    let message = Message::Base {
+        evals: evals.to_vec(),
+        coeffs,
+    };
+    (root, WhirData { config, message, codeword, tree })
+}
+
+/// Commit an Fp3-valued table: the code is `RS[K, L, 2^m]` with the same
+/// domain and leaf layout as a base commitment; leaves carry `3×u64`
+/// symbols.
+pub fn commit_ext(params: &WhirParams, evals: &[Fp3]) -> (Commitment, WhirData) {
+    assert!(
+        evals.len().is_power_of_two(),
+        "evals.len() must be 2^num_vars"
+    );
+    let m = evals.len().trailing_zeros() as usize;
+    let config = WhirConfig::derive(params, m).expect("unsupported WHIR shape");
+    let spec = config.rounds[0];
+    let mut coeffs = evals.to_vec();
+    mobius_ext(&mut coeffs);
+    let codeword = Symbols::Ext(encode_ext(&coeffs, spec.log_domain));
+    let tree = coset_tree(&codeword, spec.log_domain, spec.fold);
+    let root = Commitment(tree.root());
+    let message = Message::Ext {
+        evals: evals.to_vec(),
+        coeffs,
+    };
+    (root, WhirData { config, message, codeword, tree })
 }
 
 /// Monomial coefficients of the current folded polynomial.
@@ -93,8 +124,12 @@ pub fn open(
         Ok(cfg),
         "open params differ from commit params"
     );
-    let value = ml_eval_base(&data.evals, point);
-    prologue(t, params, m, &Commitment(data.tree.root()), point, value);
+    let ext0 = matches!(data.message, Message::Ext { .. });
+    let value = match &data.message {
+        Message::Base { evals, .. } => ml_eval_base(evals, point),
+        Message::Ext { evals, .. } => ml_eval_ext(evals, point),
+    };
+    prologue(t, params, m, &Commitment(data.tree.root()), point, value, ext0);
 
     // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
     let spec0 = cfg.rounds[0];
@@ -102,7 +137,7 @@ pub fn open(
     let mut ood_points = Vec::with_capacity(spec0.ood);
     for _ in 0..spec0.ood {
         let z = t.squeeze_fp3();
-        let y = univariate_base(&data.coeffs, z);
+        let y = data.univariate(z);
         t.absorb_fp3(y);
         ood0.push(y);
         ood_points.push(z);
@@ -114,8 +149,13 @@ pub fn open(
         add_scaled_eq(&mut w, &pow_point(z, m), g);
         g *= gamma;
     }
-    let mut f: Vec<Fp3> = data.evals.iter().map(|&x| Fp3::from_base(x)).collect();
-    let mut coeffs = Coeffs::Base(data.coeffs.clone());
+    let (mut f, mut coeffs): (Vec<Fp3>, Coeffs) = match &data.message {
+        Message::Base { evals, coeffs } => (
+            evals.iter().map(|&x| Fp3::from_base(x)).collect(),
+            Coeffs::Base(coeffs.clone()),
+        ),
+        Message::Ext { evals, coeffs } => (evals.clone(), Coeffs::Ext(coeffs.clone())),
+    };
 
     let mut sumcheck0 = Vec::new();
     let mut fold_nonces0 = Vec::new();

@@ -36,6 +36,19 @@ pub struct Opening {
 }
 
 impl Opening {
+    /// Canonical bytes: `u32 width ‖ symbols ‖ u32 d ‖ d × 32 B`.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut w = Writer::default();
+        self.write(&mut w);
+        w.buf
+    }
+    /// Parse exactly one opening whose symbols are Fp3 iff `ext`.
+    pub fn from_bytes(bytes: &[u8], ext: bool) -> Result<Self, PcsError> {
+        let mut r = Reader::new(bytes);
+        let o = Self::read(&mut r, ext)?;
+        r.finish()?;
+        Ok(o)
+    }
     fn write(&self, w: &mut Writer) {
         w.u32(self.width);
         self.symbols.write(w);
@@ -95,6 +108,12 @@ impl WhirProof {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PcsError> {
+        Self::from_bytes_with(bytes, false)
+    }
+
+    /// Parse a proof of an Fp3 commitment (`ext0 = true`: the openings of
+    /// `f_0` carry `3×u64` symbols) or of a base one.
+    pub fn from_bytes_with(bytes: &[u8], ext0: bool) -> Result<Self, PcsError> {
         let mut r = Reader::new(bytes);
         let mut h = [0u8; 8];
         for b in &mut h {
@@ -111,14 +130,14 @@ impl WhirProof {
                 root: r.digest()?,
                 ood: r.exts()?,
                 query_nonce: r.u64s()?,
-                opening: Opening::read(&mut r, i > 0)?,
+                opening: Opening::read(&mut r, i > 0 || ext0)?,
                 sumcheck: r.exts()?,
                 fold_nonces: r.u64s()?,
             });
         }
         let final_poly = r.exts()?;
         let final_nonce = r.u64s()?;
-        let final_opening = Opening::read(&mut r, !rounds.is_empty())?;
+        let final_opening = Opening::read(&mut r, !rounds.is_empty() || ext0)?;
         r.finish()?;
         Ok(Self {
             params,
