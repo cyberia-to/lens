@@ -68,3 +68,55 @@ The first run of the scan found accepted flips in grinding nonces when the
 query count exceeded the number of positions (a different valid nonce
 re-sampled the same full index set). Fixed by opening every position without
 sampling or grinding in that case.
+
+## batched Merkle verification — 2026-10-09 (later)
+
+Branch `perf/batched-merkle`. `merkle::verify` hashes each level's parents
+with one `hemera::tree::hash_node_batch` call. WHIR `check_opening` and the
+TensorRs column check hash their opened leaves with one
+`hemera::tree::hash_leaf_batch` call (`merkle::leaf_digests`). Digests,
+sibling order and error behaviour are unchanged. Depends on hemera#17
+(`perf/permutation-neon`): there hemera runs 16 compressions interleaved
+with a shared inversion, and its single permutation is 1.4× faster.
+
+Tests on this branch: `cargo test --release --workspace` is green. That
+includes all 28 rspcs tests and every bit-flip scan above
+(`tensor::every_bit_flip_rejected`, `…_sampled_columns`,
+`whir::every_bit_flip_rejected`, `…_default_params`, `…_sampled_queries`).
+
+Verify time in ms. Each value is the median of 15 verifies; each binary was
+run 3 times, alternating, and the table gives the median of those three.
+The machine was shared, load average 24–34. Three builds of a verify-only
+harness (throwaway, not committed):
+
+- A: this lens without batching, with hemera `origin/main` 23f3bbc (0.3.1)
+- B: this lens without batching, with hemera#17
+- C: this branch (batched), with hemera#17
+
+| scheme | num_vars | rate | A | B | C | A / C |
+|---|---|---|---|---|---|---|
+| TensorRs | 10 | 1/16 | 4.318 | 3.193 | 1.667 | 2.59× |
+| WHIR | 10 | 1/16 | 2.341 | 1.542 | 0.668 | 3.50× |
+| TensorRs | 10 | 1/4 | 3.870 | 2.979 | 1.635 | 2.37× |
+| WHIR | 10 | 1/4 | 2.747 | 2.060 | 1.026 | 2.68× |
+| TensorRs | 16 | 1/16 | 16.158 | 11.633 | 7.040 | 2.30× |
+| WHIR | 16 | 1/16 | 6.834 | 4.955 | 2.361 | 2.89× |
+| TensorRs | 16 | 1/4 | 17.695 | 13.548 | 8.592 | 2.06× |
+| WHIR | 16 | 1/4 | 9.967 | 6.714 | 2.897 | 3.44× |
+| TensorRs | 20 | 1/16 | 54.555 | 37.241 | 28.314 | 1.93× |
+| WHIR | 20 | 1/16 | 10.101 | 7.761 | 3.475 | 2.91× |
+| TensorRs | 20 | 1/4 | 57.921 | 47.424 | 30.809 | 1.88× |
+| WHIR | 20 | 1/4 | 14.334 | 10.998 | 4.154 | 3.45× |
+
+Results:
+- WHIR verify is below 1 ms at 2^10 at both rates: 0.67 ms at 1/16 and
+  1.03 ms at 1/4. It is not below 1 ms at 2^16 or 2^20 (3.5 ms at
+  2^20, 1/16).
+- One WHIR verify at 2^20 and rate 1/16 performs 2 467 permutations.
+  2 252 of them now run batched (node compressions and leaf hashes); 215
+  (transcript, PoW) stay serial.
+- What remains is the non-hash verifier work, ≈ 1.7 ms by residual at 2^20,
+  plus the serial transcript.
+- The verifier is single-threaded.
+
+Counts and the hemera side: `hemera/audit/permutation-performance-2026-10.md`.
