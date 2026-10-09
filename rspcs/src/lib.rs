@@ -30,3 +30,5 @@ pub use soundness::Regime;
 pub use tensor::{TensorConfig, TensorRs, TensorRsData, TensorRsParams, TensorRsProof};
 pub use whir::{Whir, WhirConfig, WhirData, WhirParams, WhirProof};
 
+#[cfg(test)]
+mod tests;
