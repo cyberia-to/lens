@@ -118,3 +118,25 @@ fn grinding_past_the_first_dispatch() {
         );
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn metal_shared_inversions_equal_cpu() {
+    // several states per GPU thread share each partial round's inversion;
+    // a ragged tail (n not a multiple of k) and zero lanes included
+    for k in [2usize, 3, 4] {
+        let Ok(m) = cyber_lens_gpu::metal::Metal::with_states_per_thread(k) else {
+            eprintln!("metal: skipped");
+            return;
+        };
+        let mut input = random_states(4099, k as u64);
+        input[5] = [0; 16];
+        let mut want = input.clone();
+        Cpu.permute(&mut want);
+        let mut got = input;
+        m.permute(&mut got);
+        assert_eq!(got, want, "k={k}");
+        let t = hash40_template(&[k as u8; 32]);
+        assert_eq!(m.grind(&t, Inject::hash40(), 12), Cpu.grind(&t, Inject::hash40(), 12), "k={k}");
+    }
+}

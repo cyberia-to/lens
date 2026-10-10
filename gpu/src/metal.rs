@@ -12,6 +12,8 @@ use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State};
 
 /// Fewer states than this run on the CPU backend.
 pub const MIN_BATCH: usize = 1 << 12;
+/// States per GPU thread by default (measured: `examples/gpu_bench`).
+pub const PER_THREAD: usize = 1;
 /// Nonces per grinding dispatch (the first dispatch tries 2^16).
 const GRIND_DISPATCH: u64 = 1 << 22;
 
@@ -30,6 +32,7 @@ struct Inner {
 /// Hemera kernels on the Metal GPU.
 pub struct Metal {
     inner: Mutex<Inner>,
+    k: usize,
     name: String,
 }
 
@@ -82,14 +85,22 @@ fn read<T: Copy>(buf: &Buffer, out: &mut [T]) {
 }
 
 impl Metal {
-    /// Open the default Metal device and compile the kernels.
+    /// Open the default Metal device and compile the kernels
+    /// ([`PER_THREAD`] states per GPU thread).
     pub fn new() -> Result<Self, String> {
+        Self::with_states_per_thread(PER_THREAD)
+    }
+
+    /// As [`Self::new`] with `k` states per GPU thread (`k ≥ 1`; their
+    /// partial-round inversions are shared).
+    pub fn with_states_per_thread(k: usize) -> Result<Self, String> {
+        assert!(k >= 1);
         let gpu = Gpu::open().map_err(|e| format!("metal: {e:?}"))?;
         let queue = gpu
             .new_command_queue()
             .map_err(|e| format!("metal queue: {e:?}"))?;
         let lib = gpu
-            .compile(&crate::msl::source())
+            .compile(&crate::msl::source(k))
             .map_err(|e| format!("metal compile: {e:?}"))?;
         let pipe = |name: &str| -> Result<Pipeline, String> {
             let f = lib
@@ -118,6 +129,7 @@ impl Metal {
                 params,
             }),
             name,
+            k,
         })
     }
 
@@ -189,7 +201,7 @@ impl Backend for Metal {
             &inner.permute,
             &[(buf, 0)],
             Some((bytes_of(&n), 1)),
-            states.len(),
+            states.len().div_ceil(self.k),
         )
         .expect("metal permute");
         read(buf, states);
@@ -224,7 +236,7 @@ impl Backend for Metal {
                 &g.grind,
                 &[(&g.tpl, 0), (&g.found, 1), (&g.params, 2)],
                 None,
-                count as usize,
+                (count as usize).div_ceil(self.k),
             )
             .expect("metal grind");
             let mut f = [0u32];

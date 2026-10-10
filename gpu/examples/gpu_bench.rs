@@ -15,6 +15,16 @@ fn main() {
         .unwrap_or(24);
     let mut all: Vec<cyber_lens_gpu::Selected> =
         vec![cyber_lens_gpu::select(cyber_lens_gpu::Choice::Cpu).expect("cpu")];
+    #[cfg(target_os = "macos")]
+    if let Ok(ks) = std::env::var("METAL_K") {
+        for k in ks.split(',').map(|k| k.parse::<usize>().expect("METAL_K")) {
+            let m = cyber_lens_gpu::metal::Metal::with_states_per_thread(k).expect("metal");
+            all.push(cyber_lens_gpu::Selected {
+                device: format!("{} k={k}", m.device()),
+                backend: std::sync::Arc::new(m),
+            });
+        }
+    }
     for b in [cyber_lens_gpu::metal(), cyber_lens_gpu::webgpu()] {
         match b {
             Ok(s) => all.push(s),

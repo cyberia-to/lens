@@ -29,44 +29,65 @@ static inline ulong gsub(ulong a, ulong b) {
     return d;
 }
 
-// any inputs < 2^64, canonical output
-static inline ulong gmul(ulong a, ulong b) {
-    ulong lo = a * b;
-    ulong hi = mulhi(a, b);
+// the 128-bit value hi·2^64 + lo, reduced: 2^64 ≡ 2^32 − 1, 2^96 ≡ −1
+static inline ulong red(ulong lo, ulong hi) {
     ulong hh = hi >> 32;
     ulong hl = hi & EPS;
     ulong t0 = lo - hh;
     if (lo < hh) t0 -= EPS;
-    ulong t1 = hl * EPS;
+    ulong t1 = (hl << 32) - hl;
     ulong r = t0 + t1;
     if (r < t1) r += EPS;
     if (r >= P) r -= P;
     return r;
 }
 
+// 32-bit limb products (one mul + mulhi each); squaring shares the cross term
+static inline ulong gmul(ulong a, ulong b) {
+    uint a0 = (uint)a, a1 = (uint)(a >> 32), b0 = (uint)b, b1 = (uint)(b >> 32);
+    ulong p00 = (ulong)a0 * b0;
+    ulong p01 = (ulong)a0 * b1;
+    ulong p10 = (ulong)a1 * b0;
+    ulong p11 = (ulong)a1 * b1;
+    ulong mid = p01 + p10;
+    ulong mc = mid < p01 ? (1UL << 32) : 0;
+    ulong lo = p00 + (mid << 32);
+    ulong hi = p11 + (mid >> 32) + mc + (lo < p00 ? 1 : 0);
+    return red(lo, hi);
+}
+static inline ulong gsqr(ulong a) {
+    uint a0 = (uint)a, a1 = (uint)(a >> 32);
+    ulong p00 = (ulong)a0 * a0;
+    ulong p01 = (ulong)a0 * a1;
+    ulong p11 = (ulong)a1 * a1;
+    ulong lo = p00 + (p01 << 33);
+    ulong hi = p11 + (p01 >> 31) + (lo < p00 ? 1 : 0);
+    return red(lo, hi);
+}
+
 static inline ulong gsqn(ulong x, int n) {
-    for (int i = 0; i < n; i++) x = gmul(x, x);
+    for (int i = 0; i < n; i++) x = gsqr(x);
     return x;
 }
 
 // x^(p-2) by an addition chain (72 multiplications); 0 maps to 0
 static inline ulong ginv(ulong x) {
-    ulong t2 = gmul(gmul(x, x), x);           // 2^2-1
-    ulong t3 = gmul(gmul(t2, t2), x);         // 2^3-1
+    ulong t2 = gmul(gsqr(x), x);           // 2^2-1
+    ulong t3 = gmul(gsqr(t2), x);         // 2^3-1
     ulong t6 = gmul(gsqn(t3, 3), t3);         // 2^6-1
     ulong t12 = gmul(gsqn(t6, 6), t6);        // 2^12-1
     ulong t24 = gmul(gsqn(t12, 12), t12);     // 2^24-1
     ulong t30 = gmul(gsqn(t24, 6), t6);       // 2^30-1
-    ulong t31 = gmul(gmul(t30, t30), x);      // 2^31-1
-    ulong u = gmul(t31, t31);                 // 2^32-2
+    ulong t31 = gmul(gsqr(t30), x);      // 2^31-1
+    ulong u = gsqr(t31);                 // 2^32-2
     ulong c = gmul(u, x);                     // 2^32-1
     return gmul(gsqn(u, 32), c);              // (2^32-2)·2^32 + 2^32-1 = p-2
 }
 
 static inline ulong pow7(ulong x) {
-    ulong x2 = gmul(x, x);
+    ulong x2 = gsqr(x);
     ulong x3 = gmul(x2, x);
-    ulong x4 = gmul(x2, x2);
+    ulong x4 = gsqr(x2);
     return gmul(x3, x4);
 }
 
@@ -99,16 +120,38 @@ static inline void full_round(thread ulong* s, int r) {
     external(s);
 }
 
-static inline void permute(thread ulong* s) {
-    external(s);
-    for (int r = 0; r < 4; r++) full_round(s, r);
-    for (int r = 0; r < 16; r++) {
-        s[0] = ginv(gadd(s[0], RC[128 + r]));
-        ulong sum = s[0];
-        for (int i = 1; i < 16; i++) sum = gadd(sum, s[i]);
-        for (int i = 0; i < 16; i++) s[i] = gadd(gmul(s[i], DIAG[i]), sum);
+// K states at once: the partial rounds' inversions share one field
+// inversion (Montgomery's trick; a zero input inverts to zero).
+static inline void permute_k(thread ulong (*s)[16]) {
+    for (int k = 0; k < K; k++) {
+        external(s[k]);
+        for (int r = 0; r < 4; r++) full_round(s[k], r);
     }
-    for (int r = 4; r < 8; r++) full_round(s, r);
+    for (int r = 0; r < 16; r++) {
+        ulong x[K];
+        ulong pre[K];
+        ulong acc = 1;
+        for (int k = 0; k < K; k++) {
+            x[k] = gadd(s[k][0], RC[128 + r]);
+            pre[k] = acc;
+            acc = gmul(acc, x[k] == 0 ? 1 : x[k]);
+        }
+        ulong inv = ginv(acc);
+        for (int k = K - 1; k >= 0; k--) {
+            ulong xk = x[k] == 0 ? 1 : x[k];
+            ulong ik = gmul(inv, pre[k]);
+            inv = gmul(inv, xk);
+            s[k][0] = x[k] == 0 ? 0 : ik;
+        }
+        for (int k = 0; k < K; k++) {
+            ulong sum = s[k][0];
+            for (int i = 1; i < 16; i++) sum = gadd(sum, s[k][i]);
+            for (int i = 0; i < 16; i++) s[k][i] = gadd(gmul(s[k][i], DIAG[i]), sum);
+        }
+    }
+    for (int k = 0; k < K; k++) {
+        for (int r = 4; r < 8; r++) full_round(s[k], r);
+    }
 }
 
 struct GrindParams {
@@ -119,40 +162,63 @@ struct GrindParams {
     uint lo_shift;
     uint hi;
     uint hi_shift;   // 64: no high part
-    uint count;      // nonces in the dispatch
+    uint count;      // nonces in the dispatch (a multiple of K)
     uint pad;
 };
 
+// thread t permutes states K·t .. K·t+K−1 (those below n)
 kernel void hemera_permute(device ulong* st [[buffer(0)]],
                            constant uint& n [[buffer(1)]],
                            uint gid [[thread_position_in_grid]]) {
-    if (gid >= n) return;
-    ulong s[16];
-    device ulong* p = st + 16 * (ulong)gid;
-    for (int i = 0; i < 16; i++) s[i] = p[i];
-    permute(s);
-    for (int i = 0; i < 16; i++) p[i] = s[i];
+    uint first = gid * K;
+    if (first >= n) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) {
+        uint j = min(first + k, n - 1);
+        device ulong* p = st + 16 * (ulong)j;
+        for (int i = 0; i < 16; i++) s[k][i] = p[i];
+    }
+    permute_k(s);
+    for (int k = 0; k < K; k++) {
+        uint j = first + k;
+        if (j < n) {
+            device ulong* p = st + 16 * (ulong)j;
+            for (int i = 0; i < 16; i++) p[i] = s[k][i];
+        }
+    }
 }
 
+// thread t tries nonces base + K·t + k
 kernel void hemera_grind(constant ulong* tpl [[buffer(0)]],
                          device atomic_uint* found [[buffer(1)]],
                          constant GrindParams& g [[buffer(2)]],
                          uint gid [[thread_position_in_grid]]) {
-    if (gid >= g.count) return;
-    ulong n = g.base + gid;
-    ulong s[16];
-    for (int i = 0; i < 16; i++) s[i] = tpl[i];
-    s[g.lo] = gadd(s[g.lo], (n & g.lo_mask) << g.lo_shift);
-    if (g.hi_shift < 64) s[g.hi] = gadd(s[g.hi], n >> g.hi_shift);
-    permute(s);
-    if ((s[0] & g.mask) == 0) atomic_fetch_min_explicit(found, gid, memory_order_relaxed);
+    uint first = gid * K;
+    if (first >= g.count) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) {
+        ulong n = g.base + first + k;
+        ulong lo = (n & g.lo_mask) << g.lo_shift;
+        ulong hi = g.hi_shift < 64 ? n >> g.hi_shift : 0;
+        for (int i = 0; i < 16; i++) {
+            ulong v = tpl[i];
+            if (i == (int)g.lo) v = gadd(v, lo);
+            if (i == (int)g.hi) v = gadd(v, hi);
+            s[k][i] = v;
+        }
+    }
+    permute_k(s);
+    for (int k = 0; k < K; k++) {
+        if ((s[k][0] & g.mask) == 0) atomic_fetch_min_explicit(found, first + k, memory_order_relaxed);
+    }
 }
 "#;
 
-/// The whole library source.
-pub fn source() -> String {
+/// The whole library source, `k` states per thread.
+pub fn source(k: usize) -> String {
     let mut s = String::new();
     s.push_str("#include <metal_stdlib>\nusing namespace metal;\n");
+    writeln!(s, "#define K {k}").expect("fmt");
     write!(s, "constant ulong RC[144] = {{").expect("fmt");
     for (i, c) in consts::round_constants().iter().enumerate() {
         if i > 0 {
