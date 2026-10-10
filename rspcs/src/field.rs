@@ -29,6 +29,16 @@ pub fn root_of_unity(log_n: u32) -> Goldilocks {
 /// `eq(point, b)` for every `b ∈ {0,1}^len`, bit `k` of the index ↔
 /// `point[k]`.
 pub fn eq_table(point: &[Fp3]) -> Vec<Fp3> {
+    if point.len() >= 15 {
+        // outer product of the halves' tables, rows in threads
+        let lo = point.len() / 2;
+        let low = eq_table(&point[..lo]);
+        let high = eq_table(&point[lo..]);
+        let rows: Vec<Vec<Fp3>> = crate::par::par_map_min(high.len(), 2, |h| {
+            low.iter().map(|&l| high[h] * l).collect()
+        });
+        return rows.concat();
+    }
     let mut table = Vec::with_capacity(1 << point.len());
     table.push(Fp3::ONE);
     for &r in point {
@@ -47,6 +57,28 @@ pub fn eq_table(point: &[Fp3]) -> Vec<Fp3> {
 /// Add `scale · eq(point, ·)` into `acc` (`acc.len() = 2^point.len()`).
 pub fn add_scaled_eq(acc: &mut [Fp3], point: &[Fp3], scale: Fp3) {
     debug_assert_eq!(acc.len(), 1 << point.len());
+    if point.len() >= 15 && crate::par::threads() > 1 {
+        // acc[l + h·2^lo] += (scale · high[h]) · low[l], rows in threads
+        let lo = point.len() / 2;
+        let low = eq_table(&point[..lo]);
+        let high = eq_table(&point[lo..]);
+        let row = low.len();
+        let per = high.len().div_ceil(crate::par::threads());
+        std::thread::scope(|s| {
+            for (k, part) in acc.chunks_mut(per * row).enumerate() {
+                let (low, high) = (&low, &high);
+                s.spawn(move || {
+                    for (r, out) in part.chunks_exact_mut(row).enumerate() {
+                        let h = scale * high[k * per + r];
+                        for (a, &l) in out.iter_mut().zip(low) {
+                            *a += h * l;
+                        }
+                    }
+                });
+            }
+        });
+        return;
+    }
     let mut table = eq_table(point);
     if scale != Fp3::ONE {
         for t in &mut table {
@@ -76,10 +108,9 @@ pub fn ml_eval_base(evals: &[Goldilocks], point: &[Fp3]) -> Fp3 {
         return Fp3::from_base(evals[0]);
     }
     let r = point[0];
-    let mut cur: Vec<Fp3> = evals
-        .chunks_exact(2)
-        .map(|p| Fp3::from_base(p[0]) + mul_base(r, p[1] - p[0]))
-        .collect();
+    let mut cur: Vec<Fp3> = crate::par::par_map_min(evals.len() / 2, PAR_FOLD, |i| {
+        Fp3::from_base(evals[2 * i]) + mul_base(r, evals[2 * i + 1] - evals[2 * i])
+    });
     fold_evals_in_place(&mut cur, &point[1..]);
     cur[0]
 }
@@ -95,6 +126,16 @@ pub fn ml_eval_ext(evals: &[Fp3], point: &[Fp3]) -> Fp3 {
 fn fold_evals_in_place(cur: &mut Vec<Fp3>, point: &[Fp3]) {
     for &r in point {
         let half = cur.len() / 2;
+        if half >= PAR_FOLD {
+            // large tables fold in threads (exact field arithmetic: the
+            // same values as the serial loop)
+            let src: &[Fp3] = cur;
+            *cur = crate::par::par_map_min(half, PAR_FOLD, |i| {
+                let a = src[2 * i];
+                a + r * (src[2 * i + 1] - a)
+            });
+            continue;
+        }
         for i in 0..half {
             let a = cur[2 * i];
             let b = cur[2 * i + 1];
@@ -103,6 +144,9 @@ fn fold_evals_in_place(cur: &mut Vec<Fp3>, point: &[Fp3]) {
         cur.truncate(half);
     }
 }
+
+/// Folds at least this long run in threads.
+const PAR_FOLD: usize = 1 << 14;
 
 /// Evaluation table → monomial coefficients (Möbius transform over the
 /// subset lattice), in place.
@@ -163,6 +207,11 @@ pub fn fold_coeffs_base(c: &[Goldilocks], alpha: Fp3) -> Vec<Fp3> {
 /// Fold the first variable of an Fp3 coefficient table in place.
 pub fn fold_coeffs_ext(c: &mut Vec<Fp3>, alpha: Fp3) {
     let half = c.len() / 2;
+    if half >= PAR_FOLD {
+        let src: &[Fp3] = c;
+        *c = crate::par::par_map_min(half, PAR_FOLD, |i| src[2 * i] + alpha * src[2 * i + 1]);
+        return;
+    }
     for i in 0..half {
         c[i] = c[2 * i] + alpha * c[2 * i + 1];
     }
@@ -173,6 +222,14 @@ pub fn fold_coeffs_ext(c: &mut Vec<Fp3>, alpha: Fp3) {
 /// `e'_i = e_{2i} + α (e_{2i+1} − e_{2i})`.
 pub fn fold_evals_ext(e: &mut Vec<Fp3>, alpha: Fp3) {
     let half = e.len() / 2;
+    if half >= PAR_FOLD {
+        let src: &[Fp3] = e;
+        *e = crate::par::par_map_min(half, PAR_FOLD, |i| {
+            let a = src[2 * i];
+            a + alpha * (src[2 * i + 1] - a)
+        });
+        return;
+    }
     for i in 0..half {
         let a = e[2 * i];
         e[i] = a + alpha * (e[2 * i + 1] - a);
@@ -182,7 +239,25 @@ pub fn fold_evals_ext(e: &mut Vec<Fp3>, alpha: Fp3) {
 
 /// `Σ c_i z^i` (Horner) for Fp3 coefficients at an Fp3 point.
 pub fn univariate_ext(coeffs: &[Fp3], z: Fp3) -> Fp3 {
-    coeffs.iter().rev().fold(Fp3::ZERO, |acc, &c| acc * z + c)
+    let horner = |cs: &[Fp3]| cs.iter().rev().fold(Fp3::ZERO, |acc, &c| acc * z + c);
+    if coeffs.len() < 1 << 15 || crate::par::threads() == 1 {
+        return horner(coeffs);
+    }
+    // Σ_k z^{k·C} · horner(chunk k): the same polynomial value
+    let chunk = coeffs.len().div_ceil(crate::par::threads());
+    let parts = crate::par::par_map_min(coeffs.len().div_ceil(chunk), 2, |k| {
+        horner(&coeffs[k * chunk..((k + 1) * chunk).min(coeffs.len())])
+    });
+    let mut step = Fp3::ONE;
+    let (mut b, mut e) = (z, chunk);
+    while e > 0 {
+        if e & 1 == 1 {
+            step *= b;
+        }
+        b = b * b;
+        e >>= 1;
+    }
+    parts.iter().rev().fold(Fp3::ZERO, |acc, &p| acc * step + p)
 }
 
 /// `Σ c_i z^i` for base coefficients at an Fp3 point.
@@ -236,4 +311,65 @@ pub fn fp3_eq(a: Fp3, b: Fp3) -> bool {
     a.c0.as_u64() == b.c0.as_u64()
         && a.c1.as_u64() == b.c1.as_u64()
         && a.c2.as_u64() == b.c2.as_u64()
+}
+
+#[cfg(test)]
+mod par_tests {
+    //! The threaded paths (tables of ≥ 2^15 entries) against the serial
+    //! definitions.
+    use super::*;
+
+    fn fp3(k: u64) -> Fp3 {
+        Fp3::new(
+            Goldilocks::new(k * 0x9e37_79b9 + 1),
+            Goldilocks::new(k ^ 0x5555),
+            Goldilocks::new(k * k + 7),
+        )
+    }
+
+    fn eq_serial(point: &[Fp3]) -> Vec<Fp3> {
+        (0..1usize << point.len())
+            .map(|i| {
+                point.iter().enumerate().fold(Fp3::ONE, |acc, (k, &r)| {
+                    acc * if i >> k & 1 == 1 { r } else { Fp3::ONE - r }
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn threaded_tables_equal_serial() {
+        let point: Vec<Fp3> = (0..16).map(fp3).collect();
+        let eq = eq_table(&point);
+        assert_eq!(eq, eq_serial(&point));
+
+        let mut acc: Vec<Fp3> = (0..1u64 << 16).map(fp3).collect();
+        let mut want = acc.clone();
+        add_scaled_eq(&mut acc, &point, fp3(99));
+        for (w, e) in want.iter_mut().zip(&eq) {
+            *w += fp3(99) * *e;
+        }
+        assert_eq!(acc, want);
+
+        let coeffs: Vec<Fp3> = (0..(1u64 << 16) + 3).map(fp3).collect();
+        let z = fp3(5);
+        let horner = coeffs.iter().rev().fold(Fp3::ZERO, |a, &c| a * z + c);
+        assert_eq!(univariate_ext(&coeffs, z), horner);
+
+        let table: Vec<Fp3> = (0..1u64 << 16).map(fp3).collect();
+        let mut f = table.clone();
+        fold_evals_ext(&mut f, z);
+        let want: Vec<Fp3> = table.chunks(2).map(|p| p[0] + z * (p[1] - p[0])).collect();
+        assert_eq!(f, want);
+        let mut c = table.clone();
+        fold_coeffs_ext(&mut c, z);
+        let want: Vec<Fp3> = table.chunks(2).map(|p| p[0] + z * p[1]).collect();
+        assert_eq!(c, want);
+        let pt: Vec<Fp3> = (0..16).map(|k| fp3(k + 40)).collect();
+        let serial = table
+            .iter()
+            .zip(eq_serial(&pt))
+            .fold(Fp3::ZERO, |a, (t, e)| a + *t * e);
+        assert_eq!(ml_eval_ext(&table, &pt), serial);
+    }
 }
