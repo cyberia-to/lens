@@ -62,6 +62,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-core",
+ "strata-genies",
  "strata-nebu",
  "strata-proof",
 ]
