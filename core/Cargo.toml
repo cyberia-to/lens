@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 [dev-dependencies]
 serde_json = "1"
 cyber-hemera.workspace = true
+genies.workspace = true
 
 [features]
 serde = ["dep:serde", "cyber-hemera/serde"]
