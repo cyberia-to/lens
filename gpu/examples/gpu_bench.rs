@@ -31,6 +31,11 @@ fn main() {
             Err(e) => eprintln!("{e}"),
         }
     }
+    let coeffs: Vec<u64> = (0..1u64 << 20)
+        .map(|k| k * 0x9e37_79b9 % 0xFFFF_FFFF_0000_0001)
+        .collect();
+    let shifts: Vec<u64> = (1..=16u64).collect();
+    let want_ntt = Cpu.coset_ntt(&coeffs, &shifts);
     let n = 1usize << 20;
     let input: Vec<State> = (0..n as u64)
         .map(|k| core::array::from_fn(|i| k * 16 + i as u64))
@@ -41,9 +46,9 @@ fn main() {
     let t = hash40_template(&seed);
     let want_nonce = Cpu.grind(&t, Inject::hash40(), bits);
     println!(
-        "| backend | device | permute 2^20 (ms) | Mperm/s | grind {bits} bits (ms) | nonce | equal to cpu |"
+        "| backend | device | permute 2^20 (ms) | Mperm/s | grind {bits} bits (ms) | coset NTT 16 × 2^20 (ms) | nonce | equal to cpu |"
     );
-    println!("|---|---|---|---|---|---|---|");
+    println!("|---|---|---|---|---|---|---|---|");
     for s in &all {
         let b = &s.backend;
         let mut st = input.clone();
@@ -55,15 +60,19 @@ fn main() {
         let t1 = Instant::now();
         let nonce = b.grind(&t, Inject::hash40(), bits);
         let gm = t1.elapsed().as_secs_f64();
+        let t2 = Instant::now();
+        let ntt = b.coset_ntt(&coeffs, &shifts);
+        let nm = t2.elapsed().as_secs_f64();
         println!(
-            "| {} | {} | {:.1} | {:.1} | {:.0} | {} | {} |",
+            "| {} | {} | {:.1} | {:.1} | {:.0} | {:.0} | {} | {} |",
             b.name(),
             s.device,
             pm * 1e3,
             n as f64 / pm / 1e6,
             gm * 1e3,
+            nm * 1e3,
             nonce,
-            st == want && nonce == want_nonce
+            st == want && nonce == want_nonce && ntt == want_ntt
         );
     }
 }

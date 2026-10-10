@@ -212,6 +212,59 @@ kernel void hemera_grind(constant ulong* tpl [[buffer(0)]],
         if ((s[k][0] & g.mask) == 0) atomic_fetch_min_explicit(found, first + k, memory_order_relaxed);
     }
 }
+
+// ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
+
+struct NttParams {
+    uint log_n;   // coset length 2^log_n
+    uint span;    // stage butterfly span (ntt_stage)
+    uint cosets;
+    uint pad;
+};
+
+static inline ulong gpow(ulong b, uint e) {
+    ulong r = 1;
+    while (e != 0) {
+        if (e & 1) r = gmul(r, b);
+        b = gsqr(b);
+        e >>= 1;
+    }
+    return r;
+}
+
+// data[s·n + bitrev(i)] = coeffs[i] · shifts[s]^i
+kernel void ntt_scatter(device const ulong* coeffs [[buffer(0)]],
+                        device ulong* data [[buffer(1)]],
+                        device const ulong* shifts [[buffer(2)]],
+                        constant NttParams& p [[buffer(3)]],
+                        uint gid [[thread_position_in_grid]]) {
+    uint n = 1u << p.log_n;
+    if (gid >= n * p.cosets) return;
+    uint s = gid >> p.log_n;
+    uint i = gid & (n - 1);
+    uint r = reverse_bits(i) >> (32 - p.log_n);
+    if (p.log_n == 0) r = 0;
+    data[(ulong)s * n + r] = gmul(coeffs[i], gpow(shifts[s], i));
+}
+
+// one stage: butterflies of span `half` with twiddles tw[half + i] = ω_{2·half}^i
+kernel void ntt_stage(device ulong* data [[buffer(0)]],
+                      device const ulong* tw [[buffer(1)]],
+                      constant NttParams& p [[buffer(2)]],
+                      uint gid [[thread_position_in_grid]]) {
+    uint n = 1u << p.log_n;
+    uint per = n >> 1;
+    if (gid >= per * p.cosets) return;
+    uint s = gid / per;
+    uint b = gid - s * per;
+    uint i = b & (p.span - 1);
+    uint j = (b - i) << 1;
+    device ulong* a = data + (ulong)s * n + j + i;
+    ulong t = gmul(tw[p.span + i], a[p.span]);
+    ulong u = a[0];
+    a[p.span] = gsub(u, t);
+    a[0] = gadd(u, t);
+}
 "#;
 
 /// The whole library source, `k` states per thread.

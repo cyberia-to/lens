@@ -22,6 +22,10 @@ struct Inner {
     queue: Queue,
     permute: Pipeline,
     grind: Pipeline,
+    scatter: Pipeline,
+    stage: Pipeline,
+    /// Twiddles `ω_{2h}^i` at `h + i` for the last coset length used.
+    twiddles: Option<(u32, Buffer)>,
     /// The states buffer, grown on demand.
     states: Option<Buffer>,
     tpl: Buffer,
@@ -48,6 +52,18 @@ impl core::fmt::Debug for Metal {
         f.debug_struct("Metal").field("device", &self.name).finish()
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NttParams {
+    log_n: u32,
+    span: u32,
+    cosets: u32,
+    pad: u32,
+}
+
+/// Coset NTTs below this length run on the CPU backend.
+pub const MIN_NTT: usize = 1 << 12;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -111,6 +127,8 @@ impl Metal {
         };
         let permute = pipe("hemera_permute")?;
         let grind = pipe("hemera_grind")?;
+        let scatter = pipe("ntt_scatter")?;
+        let stage = pipe("ntt_stage")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -123,6 +141,9 @@ impl Metal {
                 queue,
                 permute,
                 grind,
+                scatter,
+                stage,
+                twiddles: None,
                 states: None,
                 tpl,
                 found,
@@ -207,6 +228,74 @@ impl Backend for Metal {
         read(buf, states);
     }
 
+    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
+        let n = coeffs.len();
+        if n < MIN_NTT || shifts.is_empty() {
+            return Cpu.coset_ntt(coeffs, shifts);
+        }
+        assert!(n.is_power_of_two() && n <= 1 << 31);
+        let log_n = n.trailing_zeros();
+        let mut g = self.lock();
+        if g.twiddles.as_ref().is_none_or(|(l, _)| *l != log_n) {
+            g.twiddles = None;
+            let tw = twiddles(n);
+            let b = g.gpu.buffer(n * 8).expect("metal: twiddles");
+            write(&b, &tw);
+            g.twiddles = Some((log_n, b));
+        }
+        let inner = &*g;
+        let tw = &inner.twiddles.as_ref().expect("twiddles").1;
+        let total = n * shifts.len();
+        let cbuf = inner.gpu.buffer(n * 8).expect("metal: coefficients");
+        write(&cbuf, coeffs);
+        let sbuf = inner.gpu.buffer(shifts.len() * 8).expect("metal: shifts");
+        write(&sbuf, shifts);
+        let data = inner.gpu.buffer(total * 8).expect("metal: cosets");
+        let cosets = shifts.len() as u32;
+        aruminium::autorelease_pool(|| {
+            let cmd = inner.queue.commands().expect("metal: commands");
+            let enc = cmd.encoder().expect("metal: encoder");
+            let group = |p: &Pipeline| {
+                let w = p.thread_execution_width().max(1);
+                ((p.max_total_threads_per_threadgroup() / w).max(1) * w).min(256)
+            };
+            let p0 = NttParams {
+                log_n,
+                span: 0,
+                cosets,
+                pad: 0,
+            };
+            enc.bind(&inner.scatter);
+            enc.bind_buffer(&cbuf, 0, 0);
+            enc.bind_buffer(&data, 0, 1);
+            enc.bind_buffer(&sbuf, 0, 2);
+            enc.push(bytes_of(&p0), 3);
+            enc.launch((total, 1, 1), (group(&inner.scatter), 1, 1));
+            enc.bind(&inner.stage);
+            enc.bind_buffer(&data, 0, 0);
+            enc.bind_buffer(tw, 0, 1);
+            for st in 0..log_n {
+                let p = NttParams {
+                    log_n,
+                    span: 1 << st,
+                    cosets,
+                    pad: 0,
+                };
+                enc.push(bytes_of(&p), 2);
+                enc.launch((total / 2, 1, 1), (group(&inner.stage), 1, 1));
+            }
+            enc.finish();
+            cmd.submit();
+            cmd.wait();
+            if let Some(e) = cmd.error() {
+                panic!("metal ntt: {e}");
+            }
+        });
+        let mut flat = vec![0u64; total];
+        read(&data, &mut flat);
+        flat.chunks_exact(n).map(<[u64]>::to_vec).collect()
+    }
+
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
         assert!((1..64).contains(&bits), "grinding bits in 1..64");
         let g = self.lock();
@@ -248,4 +337,22 @@ impl Backend for Metal {
             count = GRIND_DISPATCH;
         }
     }
+}
+
+/// `tw[h + i] = ω_{2h}^i` for every stage span `h < n` (nebu's roots:
+/// `ω_m = 7^((p−1)/m)`).
+fn twiddles(n: usize) -> Vec<u64> {
+    use nebu::Goldilocks as G;
+    let mut tw = vec![0u64; n.max(2)];
+    let mut h = 1;
+    while h < n {
+        let w = G::new(7).exp((nebu::field::P - 1) / (2 * h) as u64);
+        let mut x = G::ONE;
+        for i in 0..h {
+            tw[h + i] = x.as_u64();
+            x *= w;
+        }
+        h *= 2;
+    }
+    tw
 }

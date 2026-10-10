@@ -22,7 +22,15 @@ fn backends() -> Vec<cyber_lens_gpu::Selected> {
     ] {
         match b {
             Ok(s) => v.push(s),
-            Err(e) => eprintln!("{name}: skipped ({e})"),
+            Err(e) => {
+                // LENS_GPU_REQUIRE=metal,webgpu turns a missing backend into a failure
+                let required = std::env::var("LENS_GPU_REQUIRE").unwrap_or_default();
+                assert!(
+                    !required.split(',').any(|r| r == name),
+                    "{name} required: {e}"
+                );
+                eprintln!("{name}: skipped ({e})")
+            }
         }
     }
     v
@@ -126,6 +134,13 @@ fn metal_shared_inversions_equal_cpu() {
     // a ragged tail (n not a multiple of k) and zero lanes included
     for k in [2usize, 3, 4] {
         let Ok(m) = cyber_lens_gpu::metal::Metal::with_states_per_thread(k) else {
+            assert!(
+                std::env::var("LENS_GPU_REQUIRE")
+                    .unwrap_or_default()
+                    .split(',')
+                    .all(|r| r != "metal"),
+                "metal required"
+            );
             eprintln!("metal: skipped");
             return;
         };
@@ -137,6 +152,27 @@ fn metal_shared_inversions_equal_cpu() {
         m.permute(&mut got);
         assert_eq!(got, want, "k={k}");
         let t = hash40_template(&[k as u8; 32]);
-        assert_eq!(m.grind(&t, Inject::hash40(), 12), Cpu.grind(&t, Inject::hash40(), 12), "k={k}");
+        assert_eq!(
+            m.grind(&t, Inject::hash40(), 12),
+            Cpu.grind(&t, Inject::hash40(), 12),
+            "k={k}"
+        );
+    }
+}
+
+#[test]
+fn coset_ntts_equal_cpu() {
+    let mut r = 99u64;
+    for s in backends() {
+        for log_n in [12u32, 13, 16] {
+            let coeffs: Vec<u64> = (0..1u64 << log_n).map(|_| rng(&mut r) % P).collect();
+            let shifts: Vec<u64> = (0..4).map(|_| rng(&mut r) % P).chain([1]).collect();
+            assert_eq!(
+                s.backend.coset_ntt(&coeffs, &shifts),
+                Cpu.coset_ntt(&coeffs, &shifts),
+                "{} log_n {log_n}",
+                s.backend.name()
+            );
+        }
     }
 }
