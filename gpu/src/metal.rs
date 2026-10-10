@@ -25,6 +25,8 @@ struct Inner {
     scatter: Pipeline,
     stage: Pipeline,
     sponge: Pipeline,
+    /// Sponge lanes and digests buffers, grown on demand.
+    sponge_bufs: Option<(Buffer, Buffer)>,
     /// Twiddles `ω_{2h}^i` at `h + i` for the last coset length used.
     twiddles: Option<(u32, Buffer)>,
     /// The states buffer, grown on demand.
@@ -156,6 +158,7 @@ impl Metal {
                 scatter,
                 stage,
                 sponge,
+                sponge_bufs: None,
                 twiddles: None,
                 states: None,
                 tpl,
@@ -248,10 +251,26 @@ impl Backend for Metal {
         if items < MIN_BATCH {
             return Cpu.sponge(init, rate, blocks, lanes);
         }
-        let g = self.lock();
-        let inb = g.gpu.buffer(lanes.len() * 8).expect("metal: sponge lanes");
-        write(&inb, lanes);
-        let outb = g.gpu.buffer(items * 32).expect("metal: sponge digests");
+        let mut g = self.lock();
+        let (need_in, need_out) = (lanes.len() * 8, items * 32);
+        if g.sponge_bufs
+            .as_ref()
+            .is_none_or(|(i, o)| i.size() < need_in || o.size() < need_out)
+        {
+            g.sponge_bufs = None;
+            let i = g
+                .gpu
+                .buffer(need_in.next_power_of_two())
+                .expect("metal: sponge lanes");
+            let o = g
+                .gpu
+                .buffer(need_out.next_power_of_two())
+                .expect("metal: sponge digests");
+            g.sponge_bufs = Some((i, o));
+        }
+        let inner = &*g;
+        let (inb, outb) = inner.sponge_bufs.as_ref().expect("sponge buffers");
+        write(inb, lanes);
         let p = SpongeParams {
             init: *init,
             rate: rate as u32,
@@ -260,15 +279,15 @@ impl Backend for Metal {
             pad: 0,
         };
         run(
-            &g,
-            &g.sponge,
-            &[(&inb, 0), (&outb, 1)],
+            inner,
+            &inner.sponge,
+            &[(inb, 0), (outb, 1)],
             Some((bytes_of(&p), 2)),
             items,
         )
         .expect("metal sponge");
         let mut out = vec![[0u64; 4]; items];
-        read(&outb, &mut out);
+        read(outb, &mut out);
         out
     }
 
