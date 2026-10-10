@@ -8,6 +8,7 @@ resolver = "3"
 members = [
     "core",
     "brakedown", "binius", "ikat", "assayer", "porphyry", "rspcs",
+    "gpu",
     "src",
     "cli",
 ]

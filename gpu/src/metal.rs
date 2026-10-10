@@ -1,0 +1,239 @@
+//! The Metal backend: hemera kernels in MSL on the Apple GPU through
+//! honeycrisp's aruminium. Buffers are shared-storage (unified memory):
+//! the CPU writes states where the GPU reads them, nothing crosses a bus.
+//!
+//! Batches below [`MIN_BATCH`] states stay on the CPU (a dispatch costs
+//! ~0.2 ms); the NTT runs on the CPU backend (no Metal NTT yet).
+
+use std::sync::Mutex;
+
+use aruminium::{Buffer, Gpu, Pipeline, Queue};
+use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State};
+
+/// Fewer states than this run on the CPU backend.
+pub const MIN_BATCH: usize = 1 << 12;
+/// Nonces per grinding dispatch (the first dispatch tries 2^16).
+const GRIND_DISPATCH: u64 = 1 << 22;
+
+struct Inner {
+    gpu: Gpu,
+    queue: Queue,
+    permute: Pipeline,
+    grind: Pipeline,
+    /// The states buffer, grown on demand.
+    states: Option<Buffer>,
+    tpl: Buffer,
+    found: Buffer,
+    params: Buffer,
+}
+
+/// Hemera kernels on the Metal GPU.
+pub struct Metal {
+    inner: Mutex<Inner>,
+    name: String,
+}
+
+// SAFETY: every Metal object lives in `inner` behind the mutex; one thread
+// at a time encodes, submits and waits. Metal devices, queues, pipelines
+// and shared buffers may be used from any thread.
+unsafe impl Send for Metal {}
+// SAFETY: as above — all access goes through the mutex.
+unsafe impl Sync for Metal {}
+
+impl core::fmt::Debug for Metal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Metal").field("device", &self.name).finish()
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GrindParams {
+    base: u64,
+    mask: u64,
+    lo_mask: u64,
+    lo: u32,
+    lo_shift: u32,
+    hi: u32,
+    hi_shift: u32,
+    count: u32,
+    pad: u32,
+}
+
+fn bytes_of<T: Copy>(v: &T) -> &[u8] {
+    // SAFETY: `T` is a plain `repr(C)` value without padding-sensitive
+    // invariants; the bytes are only copied into a GPU buffer.
+    unsafe { core::slice::from_raw_parts((v as *const T).cast(), core::mem::size_of::<T>()) }
+}
+
+fn write<T: Copy>(buf: &Buffer, v: &[T]) {
+    let n = core::mem::size_of_val(v);
+    assert!(n <= buf.size());
+    // SAFETY: shared buffer of at least `n` bytes, no GPU work in flight
+    // (every submit is waited for under the mutex).
+    unsafe { core::ptr::copy_nonoverlapping(v.as_ptr().cast::<u8>(), buf.contents_ptr(), n) }
+}
+
+fn read<T: Copy>(buf: &Buffer, out: &mut [T]) {
+    let n = core::mem::size_of_val(out);
+    assert!(n <= buf.size());
+    // SAFETY: as in `write`; the GPU finished (waited) before the read.
+    unsafe { core::ptr::copy_nonoverlapping(buf.contents_ptr(), out.as_mut_ptr().cast::<u8>(), n) }
+}
+
+impl Metal {
+    /// Open the default Metal device and compile the kernels.
+    pub fn new() -> Result<Self, String> {
+        let gpu = Gpu::open().map_err(|e| format!("metal: {e:?}"))?;
+        let queue = gpu
+            .new_command_queue()
+            .map_err(|e| format!("metal queue: {e:?}"))?;
+        let lib = gpu
+            .compile(&crate::msl::source())
+            .map_err(|e| format!("metal compile: {e:?}"))?;
+        let pipe = |name: &str| -> Result<Pipeline, String> {
+            let f = lib
+                .function(name)
+                .map_err(|e| format!("metal {name}: {e:?}"))?;
+            gpu.pipeline(&f)
+                .map_err(|e| format!("metal pipeline {name}: {e:?}"))
+        };
+        let permute = pipe("hemera_permute")?;
+        let grind = pipe("hemera_grind")?;
+        let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
+        let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
+        let params = gpu
+            .buffer(core::mem::size_of::<GrindParams>())
+            .map_err(|e| format!("{e:?}"))?;
+        let name = gpu.name();
+        Ok(Self {
+            inner: Mutex::new(Inner {
+                gpu,
+                queue,
+                permute,
+                grind,
+                states: None,
+                tpl,
+                found,
+                params,
+            }),
+            name,
+        })
+    }
+
+    /// The device's name.
+    pub fn device(&self) -> &str {
+        &self.name
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+fn run(
+    inner: &Inner,
+    pipe: &Pipeline,
+    bufs: &[(&Buffer, usize)],
+    push: Option<(&[u8], usize)>,
+    threads: usize,
+) -> Result<(), String> {
+    aruminium::autorelease_pool(|| {
+        let cmd = inner.queue.commands().map_err(|e| format!("{e:?}"))?;
+        let enc = cmd.encoder().map_err(|e| format!("{e:?}"))?;
+        enc.bind(pipe);
+        for &(b, i) in bufs {
+            enc.bind_buffer(b, 0, i);
+        }
+        if let Some((d, i)) = push {
+            enc.push(d, i);
+        }
+        let w = pipe.thread_execution_width().max(1);
+        let group = (pipe.max_total_threads_per_threadgroup() / w).max(1) * w;
+        enc.launch((threads, 1, 1), (group.min(256), 1, 1));
+        enc.finish();
+        cmd.submit();
+        cmd.wait();
+        match cmd.error() {
+            Some(e) => Err(format!("metal command: {e}")),
+            None => Ok(()),
+        }
+    })
+}
+
+impl Backend for Metal {
+    fn name(&self) -> &'static str {
+        "metal"
+    }
+
+    fn permute(&self, states: &mut [State]) {
+        if states.len() < MIN_BATCH {
+            return Cpu.permute(states);
+        }
+        let mut g = self.lock();
+        let bytes = core::mem::size_of_val(states);
+        if g.states.as_ref().is_none_or(|b| b.size() < bytes) {
+            g.states = None;
+            g.states = Some(
+                g.gpu
+                    .buffer(bytes.next_power_of_two())
+                    .expect("metal: states buffer"),
+            );
+        }
+        let inner = &*g;
+        let buf = inner.states.as_ref().expect("states buffer");
+        write(buf, states);
+        let n = states.len() as u32;
+        run(
+            inner,
+            &inner.permute,
+            &[(buf, 0)],
+            Some((bytes_of(&n), 1)),
+            states.len(),
+        )
+        .expect("metal permute");
+        read(buf, states);
+    }
+
+    fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
+        assert!((1..64).contains(&bits), "grinding bits in 1..64");
+        let g = self.lock();
+        write(&g.tpl, template);
+        let mut base = 0u64;
+        let mut count = 1u64 << 16;
+        loop {
+            write(&g.found, &[u32::MAX]);
+            let p = GrindParams {
+                base,
+                mask: (1u64 << bits) - 1,
+                lo_mask: if inject.lo_bits >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << inject.lo_bits) - 1
+                },
+                lo: inject.lo as u32,
+                lo_shift: inject.lo_shift,
+                hi: inject.hi as u32,
+                hi_shift: inject.hi_shift,
+                count: count as u32,
+                pad: 0,
+            };
+            write(&g.params, &[p]);
+            run(
+                &g,
+                &g.grind,
+                &[(&g.tpl, 0), (&g.found, 1), (&g.params, 2)],
+                None,
+                count as usize,
+            )
+            .expect("metal grind");
+            let mut f = [0u32];
+            read(&g.found, &mut f);
+            if f[0] != u32::MAX {
+                return base + f[0] as u64;
+            }
+            base += count;
+            count = GRIND_DISPATCH;
+        }
+    }
+}

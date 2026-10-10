@@ -1,0 +1,35 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "cyber-lens-gpu"
+version = "0.1.0"
+edition.workspace = true
+license-file = "../LICENSE"
+description = "GPU prover backends for lens: Metal (honeycrisp aruminium, Apple Silicon unified memory) and WebGPU (wgpu: browsers, Vulkan, Android, other GPUs) — byte-identical to the CPU backend"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["gpu", "metal", "webgpu", "goldilocks", "prover"]
+categories = ["cryptography"]
+
+[dependencies]
+cyber-lens-rspcs = { version = "0.1.0", path = "../rspcs" }
+cyber-hemera.workspace = true
+nebu.workspace = true
+wgpu = { version = "28", optional = true }
+pollster = { version = "0.4", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+aruminium = { version = "0.2", path = "../../honeycrisp/aruminium", optional = true }
+
+[features]
+default = []
+# Apple Silicon Metal through honeycrisp's aruminium (macOS only; ignored elsewhere).
+metal = ["dep:aruminium"]
+# WebGPU through wgpu (native: Metal/Vulkan/DX12/GL; wasm32: the browser).
+webgpu = ["dep:wgpu", "dep:pollster"]
+
+[[example]]
+name = "gpu_bench"

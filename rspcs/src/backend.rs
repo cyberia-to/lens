@@ -48,20 +48,36 @@ pub struct Inject {
 impl Inject {
     /// The nonce is the lane's value (a field-native duplex absorbing it).
     pub const fn lane(lane: usize) -> Self {
-        Self { lo: lane, lo_shift: 0, lo_bits: 64, hi: lane, hi_shift: 64 }
+        Self {
+            lo: lane,
+            lo_shift: 0,
+            lo_bits: 64,
+            hi: lane,
+            hi_shift: 64,
+        }
     }
 
     /// `hemera::hash(seed ‖ nonce_le)` for a 32-byte seed: the 40-byte
     /// message is one rate block of 7-byte limbs; nonce bytes 0..3 sit in
     /// limb 4 at byte offsets 4..7, bytes 3..8 in limb 5 at offsets 0..5.
     pub const fn hash40() -> Self {
-        Self { lo: 4, lo_shift: 32, lo_bits: 24, hi: 5, hi_shift: 24 }
+        Self {
+            lo: 4,
+            lo_shift: 32,
+            lo_bits: 24,
+            hi: 5,
+            hi_shift: 24,
+        }
     }
 
     /// The permutation input for nonce `n`.
     pub fn apply(&self, template: &State, n: u64) -> State {
         let mut s = *template;
-        let lo = if self.lo_bits >= 64 { n } else { n & ((1u64 << self.lo_bits) - 1) };
+        let lo = if self.lo_bits >= 64 {
+            n
+        } else {
+            n & ((1u64 << self.lo_bits) - 1)
+        };
         s[self.lo] = add(s[self.lo], lo << self.lo_shift);
         if self.hi_shift < 64 {
             s[self.hi] = add(s[self.hi], n >> self.hi_shift);
@@ -163,30 +179,38 @@ impl Backend for Cpu {
     }
 
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
         assert!((1..64).contains(&bits), "grinding bits in 1..64");
         let mask = (1u64 << bits) - 1;
-        let workers = crate::par::threads() as u64;
-        let mut base = 0u64;
-        loop {
-            let found = std::thread::scope(|s| {
-                let hs: Vec<_> = (0..workers)
-                    .map(|w| {
-                        s.spawn(move || {
-                            let from = base + w * GRIND_BATCH;
-                            let mut st: Vec<State> =
-                                (from..from + GRIND_BATCH).map(|n| inject.apply(template, n)).collect();
-                            permute_slice(&mut st);
-                            st.iter().position(|y| y[0] & mask == 0).map(|i| from + i as u64)
-                        })
-                    })
-                    .collect();
-                hs.into_iter().filter_map(|h| h.join().expect("grinder")).min()
-            });
-            if let Some(n) = found {
-                return n;
+        // Workers claim consecutive batches from a shared counter and stop
+        // once a claimed batch starts at or beyond the best nonce found:
+        // every batch below the final best was claimed and searched in
+        // full, so the result is the least passing nonce.
+        let next = AtomicU64::new(0);
+        let best = AtomicU64::new(u64::MAX);
+        let work = || {
+            let mut st: Vec<State> = Vec::with_capacity(GRIND_BATCH as usize);
+            loop {
+                let from = next.fetch_add(GRIND_BATCH, Relaxed);
+                if from >= best.load(Relaxed) {
+                    return;
+                }
+                st.clear();
+                st.extend((from..from + GRIND_BATCH).map(|n| inject.apply(template, n)));
+                permute_slice(&mut st);
+                if let Some(i) = st.iter().position(|y| y[0] & mask == 0) {
+                    best.fetch_min(from + i as u64, Relaxed);
+                }
             }
-            base += workers * GRIND_BATCH;
-        }
+        };
+        let workers = crate::par::threads();
+        std::thread::scope(|s| {
+            for _ in 1..workers {
+                s.spawn(work);
+            }
+            work();
+        });
+        best.into_inner()
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
