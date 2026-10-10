@@ -16,6 +16,7 @@
 //!
 //! Specifications: `specs/tensor-rs.md`, `specs/whir.md`.
 
+pub mod backend;
 pub mod field;
 pub mod merkle;
 mod par;

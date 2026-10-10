@@ -1,0 +1,295 @@
+//! Prover backends: the bulk kernels a prover spends its time in, behind
+//! one trait, so the same proof comes out of a CPU, a Metal GPU or a
+//! WebGPU adapter.
+//!
+//! Every operation is a pure function of its inputs over Goldilocks
+//! (canonical `u64` limbs in, canonical limbs out). A backend changes how
+//! a result is computed, never which result: grinding returns the
+//! *smallest* nonce that passes, a permutation is hemera's permutation,
+//! an NTT is the evaluation on the subgroup. Proofs are therefore
+//! byte-identical across backends; `tests` in the GPU crate check every
+//! operation against [`Cpu`] on random inputs.
+//!
+//! The process holds one current backend ([`current`], [`install`]);
+//! [`Cpu`] until something else is installed. Library code calls
+//! `current()` at the seam and never chooses: the binary (joy) picks.
+//!
+//! Operations:
+//! - [`Backend::permute`] — hemera's permutation of many independent
+//!   states (Merkle leaves and nodes, sponge blocks);
+//! - [`Backend::grind`] — the least nonce whose injected permutation has
+//!   `bits` low zero bits in output lane 0 (proof-of-work grinding, both
+//!   the byte transcript of lens and the field-native one of zheng);
+//! - [`Backend::coset_ntt`] — Reed–Solomon encoding: the NTT of
+//!   `c_i · s^i` for each coset shift `s`.
+
+use std::sync::{Arc, OnceLock, RwLock};
+
+use cyber_hemera::field::Goldilocks as HG;
+use nebu::Goldilocks;
+
+/// A hemera state: sixteen canonical Goldilocks limbs.
+pub type State = [u64; 16];
+
+/// How a grinding nonce `n` enters the permutation input: the template's
+/// lane `lo` gains `(n mod 2^lo_bits) · 2^lo_shift`, lane `hi` gains
+/// `⌊n / 2^hi_shift⌋` (field additions; `hi_shift = 64` disables it). The
+/// added values stay below `2^56 < p`, so the addition is the integer one
+/// the byte encoding performs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Inject {
+    pub lo: usize,
+    pub lo_shift: u32,
+    pub lo_bits: u32,
+    pub hi: usize,
+    pub hi_shift: u32,
+}
+
+impl Inject {
+    /// The nonce is the lane's value (a field-native duplex absorbing it).
+    pub const fn lane(lane: usize) -> Self {
+        Self { lo: lane, lo_shift: 0, lo_bits: 64, hi: lane, hi_shift: 64 }
+    }
+
+    /// `hemera::hash(seed ‖ nonce_le)` for a 32-byte seed: the 40-byte
+    /// message is one rate block of 7-byte limbs; nonce bytes 0..3 sit in
+    /// limb 4 at byte offsets 4..7, bytes 3..8 in limb 5 at offsets 0..5.
+    pub const fn hash40() -> Self {
+        Self { lo: 4, lo_shift: 32, lo_bits: 24, hi: 5, hi_shift: 24 }
+    }
+
+    /// The permutation input for nonce `n`.
+    pub fn apply(&self, template: &State, n: u64) -> State {
+        let mut s = *template;
+        let lo = if self.lo_bits >= 64 { n } else { n & ((1u64 << self.lo_bits) - 1) };
+        s[self.lo] = add(s[self.lo], lo << self.lo_shift);
+        if self.hi_shift < 64 {
+            s[self.hi] = add(s[self.hi], n >> self.hi_shift);
+        }
+        s
+    }
+}
+
+fn add(a: u64, b: u64) -> u64 {
+    (Goldilocks::new(a) + Goldilocks::new(b)).as_u64()
+}
+
+/// The template of [`Inject::hash40`]: hemera's plain-hash state for the
+/// message `seed ‖ 0⁸` before its single permutation.
+pub fn hash40_template(seed: &[u8; 32]) -> State {
+    // hemera's plain sponge: 7-byte limbs over the rate, capacity starting
+    // after the rate, lane CAPACITY+2 the byte length, lane CAPACITY+3 the
+    // domain (0 for `hash`); `hash40_template_is_hemera_hash` pins it.
+    use cyber_hemera::{RATE, RATE_BYTES};
+    const CAPACITY_START: usize = RATE;
+    const INPUT_BYTES_PER_ELEMENT: usize = RATE_BYTES / RATE;
+    let mut padded = [0u8; RATE_BYTES];
+    padded[..32].copy_from_slice(seed);
+    padded[40] = 0x01;
+    let mut s = [0u64; 16];
+    for (i, chunk) in padded.chunks(INPUT_BYTES_PER_ELEMENT).enumerate() {
+        let mut b = [0u8; 8];
+        b[..chunk.len()].copy_from_slice(chunk);
+        s[i] = u64::from_le_bytes(b);
+    }
+    s[CAPACITY_START + 2] = 40;
+    s
+}
+
+/// The bulk kernels of a prover. Implementations must return exactly what
+/// [`Cpu`] returns.
+pub trait Backend: Send + Sync {
+    /// A short name for reports (`cpu`, `metal`, `webgpu`).
+    fn name(&self) -> &'static str;
+
+    /// Hemera's permutation of every state, in place.
+    fn permute(&self, states: &mut [State]) {
+        Cpu.permute(states)
+    }
+
+    /// The least `n ≥ 0` with `permute(inject.apply(template, n))[0]`
+    /// having its low `bits` bits zero (`1 ≤ bits < 64`).
+    fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
+        Cpu.grind(template, inject, bits)
+    }
+
+    /// For each shift `s` in `shifts`: the NTT (nebu's order) of
+    /// `coeffs[i] · s^i`; output `j` is `cosets[j]` (`coeffs.len()` a power
+    /// of two).
+    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
+        Cpu.coset_ntt(coeffs, shifts)
+    }
+}
+
+/// The CPU backend: hemera's lane-interleaved kernel and nebu's NTT across
+/// the machine's threads.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Cpu;
+
+/// States per CPU work unit (a multiple of hemera's 16-lane batch).
+const CPU_CHUNK: usize = 256;
+/// Nonces per CPU worker and round of grinding.
+const GRIND_BATCH: u64 = 1 << 12;
+
+fn permute_slice(states: &mut [State]) {
+    // SAFETY: hemera's Goldilocks is `repr(transparent)` over `u64` and
+    // every canonical limb is a valid representative.
+    let h: &mut [[HG; 16]] =
+        unsafe { core::slice::from_raw_parts_mut(states.as_mut_ptr().cast(), states.len()) };
+    cyber_hemera::permutation::permute_batch(h);
+    for s in states.iter_mut() {
+        for x in s.iter_mut() {
+            *x = HG::new(*x).as_canonical_u64();
+        }
+    }
+}
+
+impl Backend for Cpu {
+    fn name(&self) -> &'static str {
+        "cpu"
+    }
+
+    fn permute(&self, states: &mut [State]) {
+        let t = crate::par::threads();
+        if t == 1 || states.len() < 2 * CPU_CHUNK {
+            return permute_slice(states);
+        }
+        let chunk = states.len().div_ceil(t).next_multiple_of(16);
+        std::thread::scope(|s| {
+            for c in states.chunks_mut(chunk) {
+                s.spawn(move || permute_slice(c));
+            }
+        });
+    }
+
+    fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
+        assert!((1..64).contains(&bits), "grinding bits in 1..64");
+        let mask = (1u64 << bits) - 1;
+        let workers = crate::par::threads() as u64;
+        let mut base = 0u64;
+        loop {
+            let found = std::thread::scope(|s| {
+                let hs: Vec<_> = (0..workers)
+                    .map(|w| {
+                        s.spawn(move || {
+                            let from = base + w * GRIND_BATCH;
+                            let mut st: Vec<State> =
+                                (from..from + GRIND_BATCH).map(|n| inject.apply(template, n)).collect();
+                            permute_slice(&mut st);
+                            st.iter().position(|y| y[0] & mask == 0).map(|i| from + i as u64)
+                        })
+                    })
+                    .collect();
+                hs.into_iter().filter_map(|h| h.join().expect("grinder")).min()
+            });
+            if let Some(n) = found {
+                return n;
+            }
+            base += workers * GRIND_BATCH;
+        }
+    }
+
+    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
+        let one = |s: u64| {
+            let shift = Goldilocks::new(s);
+            let mut v = Vec::with_capacity(coeffs.len());
+            let mut w = Goldilocks::ONE;
+            for &c in coeffs {
+                v.push(Goldilocks::new(c) * w);
+                w *= shift;
+            }
+            nebu::ntt::ntt(&mut v);
+            v.into_iter().map(|x| x.as_u64()).collect::<Vec<u64>>()
+        };
+        if shifts.len() > 1 && coeffs.len() >= 1024 {
+            crate::par::par_map_min(shifts.len(), 2, |j| one(shifts[j]))
+        } else {
+            shifts.iter().map(|&s| one(s)).collect()
+        }
+    }
+}
+
+fn slot() -> &'static RwLock<Arc<dyn Backend>> {
+    static B: OnceLock<RwLock<Arc<dyn Backend>>> = OnceLock::new();
+    B.get_or_init(|| RwLock::new(Arc::new(Cpu)))
+}
+
+/// The process's backend ([`Cpu`] unless one was installed).
+pub fn current() -> Arc<dyn Backend> {
+    slot().read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Make `b` the process's backend; returns the previous one.
+pub fn install(b: Arc<dyn Backend>) -> Arc<dyn Backend> {
+    let mut g = slot().write().unwrap_or_else(|e| e.into_inner());
+    core::mem::replace(&mut *g, b)
+}
+
+/// Canonical limbs of nebu elements.
+pub fn limbs(xs: &[Goldilocks]) -> Vec<u64> {
+    xs.iter().map(|x| x.as_u64()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rand(seed: &mut u64) -> u64 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        *seed
+    }
+
+    #[test]
+    fn hash40_template_is_hemera_hash() {
+        let mut r = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..64 {
+            let mut seed = [0u8; 32];
+            for b in seed.iter_mut() {
+                *b = rand(&mut r) as u8;
+            }
+            let n = rand(&mut r) >> (rand(&mut r) % 64);
+            let mut msg = [0u8; 40];
+            msg[..32].copy_from_slice(&seed);
+            msg[32..].copy_from_slice(&n.to_le_bytes());
+            let want = cyber_hemera::hash(&msg);
+            let mut s = [Inject::hash40().apply(&hash40_template(&seed), n)];
+            Cpu.permute(&mut s);
+            let got: Vec<u8> = s[0][..4].iter().flat_map(|x| x.to_le_bytes()).collect();
+            assert_eq!(got.as_slice(), want.as_bytes(), "nonce {n}");
+        }
+    }
+
+    #[test]
+    fn permute_matches_single_permutations() {
+        let mut r = 7u64;
+        let mut states: Vec<State> = (0..1000)
+            .map(|_| core::array::from_fn(|_| rand(&mut r) % nebu::field::P))
+            .collect();
+        let want: Vec<State> = states
+            .iter()
+            .map(|s| {
+                let mut h: [HG; 16] = core::array::from_fn(|i| HG::new(s[i]));
+                cyber_hemera::permutation::permute(&mut h);
+                core::array::from_fn(|i| h[i].as_canonical_u64())
+            })
+            .collect();
+        Cpu.permute(&mut states);
+        assert_eq!(states, want);
+    }
+
+    #[test]
+    fn grind_returns_the_least_nonce() {
+        let t: State = core::array::from_fn(|i| i as u64 * 977);
+        for bits in [1, 4, 9] {
+            let n = Cpu.grind(&t, Inject::lane(3), bits);
+            let mask = (1u64 << bits) - 1;
+            for m in 0..=n {
+                let mut s = [Inject::lane(3).apply(&t, m)];
+                Cpu.permute(&mut s);
+                assert_eq!(s[0][0] & mask == 0, m == n, "bits {bits} nonce {m}");
+            }
+        }
+    }
+}

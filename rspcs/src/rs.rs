@@ -15,7 +15,6 @@ use nebu::ntt::ntt;
 use nebu::{Fp3, Goldilocks};
 
 use crate::field::root_of_unity;
-use crate::par::par_map_min;
 
 fn coset_ntt(coeffs: &[Goldilocks], shift: Goldilocks) -> Vec<Goldilocks> {
     let mut v = Vec::with_capacity(coeffs.len());
@@ -43,7 +42,13 @@ pub fn encode_base_with(coeffs: &[Goldilocks], log_n: u32, parallel: bool) -> Ve
     let blowup = n / k;
     let omega = root_of_unity(log_n);
     let cosets: Vec<Vec<Goldilocks>> = if parallel && blowup > 1 && k >= 1024 {
-        par_map_min(blowup, 2, |s| coset_ntt(coeffs, omega.exp(s as u64)))
+        // the process's backend (cpu: one coset per thread)
+        let shifts: Vec<u64> = (0..blowup).map(|s| omega.exp(s as u64).as_u64()).collect();
+        crate::backend::current()
+            .coset_ntt(&crate::backend::limbs(coeffs), &shifts)
+            .into_iter()
+            .map(|c| c.into_iter().map(Goldilocks::new).collect())
+            .collect()
     } else {
         (0..blowup)
             .map(|s| coset_ntt(coeffs, omega.exp(s as u64)))
