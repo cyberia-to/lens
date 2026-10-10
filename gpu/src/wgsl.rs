@@ -237,3 +237,43 @@ fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
 "#
     )
 }
+
+/// The sponge module: per item, overwrite the rate lanes block by block
+/// and permute (bindings: 0 constants, 1 lanes, 2 parameters, 3 digests —
+/// three storage buffers).
+pub fn sponge_source() -> String {
+    let field = &SOURCE[..SOURCE.find("struct PermParams").expect("marker")];
+    format!(
+        "{field}{}",
+        r#"
+struct SpongeParams {
+    init: array<vec4<u32>, 8>,
+    rate: u32,
+    blocks: u32,
+    items: u32,
+    row: u32,
+};
+
+@group(0) @binding(1) var<storage, read> LANES: array<vec2<u32>>;
+@group(0) @binding(2) var<uniform> SP: SpongeParams;
+@group(0) @binding(3) var<storage, read_write> OUT: array<vec2<u32>>;
+
+@compute @workgroup_size(64)
+fn hemera_sponge(@builtin(global_invocation_id) id: vec3<u32>) {
+    let gid = id.x + id.y * SP.row;
+    if gid >= SP.items { return; }
+    var s: array<vec2<u32>, 16>;
+    for (var i = 0u; i < 8u; i++) {
+        s[2u * i] = SP.init[i].xy;
+        s[2u * i + 1u] = SP.init[i].zw;
+    }
+    let base = gid * SP.rate * SP.blocks;
+    for (var b = 0u; b < SP.blocks; b++) {
+        for (var i = 0u; i < SP.rate; i++) { s[i] = LANES[base + b * SP.rate + i]; }
+        permute(&s);
+    }
+    for (var i = 0u; i < 4u; i++) { OUT[4u * gid + i] = s[i]; }
+}
+"#
+    )
+}

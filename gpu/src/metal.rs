@@ -24,6 +24,7 @@ struct Inner {
     grind: Pipeline,
     scatter: Pipeline,
     stage: Pipeline,
+    sponge: Pipeline,
     /// Twiddles `ω_{2h}^i` at `h + i` for the last coset length used.
     twiddles: Option<(u32, Buffer)>,
     /// The states buffer, grown on demand.
@@ -51,6 +52,16 @@ impl core::fmt::Debug for Metal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Metal").field("device", &self.name).finish()
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct SpongeParams {
+    init: [u64; 16],
+    rate: u32,
+    blocks: u32,
+    items: u32,
+    pad: u32,
 }
 
 #[repr(C)]
@@ -129,6 +140,7 @@ impl Metal {
         let grind = pipe("hemera_grind")?;
         let scatter = pipe("ntt_scatter")?;
         let stage = pipe("ntt_stage")?;
+        let sponge = pipe("hemera_sponge")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -143,6 +155,7 @@ impl Metal {
                 grind,
                 scatter,
                 stage,
+                sponge,
                 twiddles: None,
                 states: None,
                 tpl,
@@ -226,6 +239,37 @@ impl Backend for Metal {
         )
         .expect("metal permute");
         read(buf, states);
+    }
+
+    fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
+        let per = rate * blocks;
+        assert!((1..=16).contains(&rate) && blocks >= 1 && lanes.len() % per == 0);
+        let items = lanes.len() / per;
+        if items < MIN_BATCH {
+            return Cpu.sponge(init, rate, blocks, lanes);
+        }
+        let g = self.lock();
+        let inb = g.gpu.buffer(lanes.len() * 8).expect("metal: sponge lanes");
+        write(&inb, lanes);
+        let outb = g.gpu.buffer(items * 32).expect("metal: sponge digests");
+        let p = SpongeParams {
+            init: *init,
+            rate: rate as u32,
+            blocks: blocks as u32,
+            items: items as u32,
+            pad: 0,
+        };
+        run(
+            &g,
+            &g.sponge,
+            &[(&inb, 0), (&outb, 1)],
+            Some((bytes_of(&p), 2)),
+            items,
+        )
+        .expect("metal sponge");
+        let mut out = vec![[0u64; 4]; items];
+        read(&outb, &mut out);
+        out
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {

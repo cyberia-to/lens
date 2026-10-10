@@ -122,34 +122,35 @@ static inline void full_round(thread ulong* s, int r) {
 
 // K states at once: the partial rounds' inversions share one field
 // inversion (Montgomery's trick; a zero input inverts to zero).
+template <int KK>
 static inline void permute_k(thread ulong (*s)[16]) {
-    for (int k = 0; k < K; k++) {
+    for (int k = 0; k < KK; k++) {
         external(s[k]);
         for (int r = 0; r < 4; r++) full_round(s[k], r);
     }
     for (int r = 0; r < 16; r++) {
-        ulong x[K];
-        ulong pre[K];
+        ulong x[KK];
+        ulong pre[KK];
         ulong acc = 1;
-        for (int k = 0; k < K; k++) {
+        for (int k = 0; k < KK; k++) {
             x[k] = gadd(s[k][0], RC[128 + r]);
             pre[k] = acc;
             acc = gmul(acc, x[k] == 0 ? 1 : x[k]);
         }
         ulong inv = ginv(acc);
-        for (int k = K - 1; k >= 0; k--) {
+        for (int k = KK - 1; k >= 0; k--) {
             ulong xk = x[k] == 0 ? 1 : x[k];
             ulong ik = gmul(inv, pre[k]);
             inv = gmul(inv, xk);
             s[k][0] = x[k] == 0 ? 0 : ik;
         }
-        for (int k = 0; k < K; k++) {
+        for (int k = 0; k < KK; k++) {
             ulong sum = s[k][0];
             for (int i = 1; i < 16; i++) sum = gadd(sum, s[k][i]);
             for (int i = 0; i < 16; i++) s[k][i] = gadd(gmul(s[k][i], DIAG[i]), sum);
         }
     }
-    for (int k = 0; k < K; k++) {
+    for (int k = 0; k < KK; k++) {
         for (int r = 4; r < 8; r++) full_round(s[k], r);
     }
 }
@@ -178,7 +179,7 @@ kernel void hemera_permute(device ulong* st [[buffer(0)]],
         device ulong* p = st + 16 * (ulong)j;
         for (int i = 0; i < 16; i++) s[k][i] = p[i];
     }
-    permute_k(s);
+    permute_k<K>(s);
     for (int k = 0; k < K; k++) {
         uint j = first + k;
         if (j < n) {
@@ -207,10 +208,37 @@ kernel void hemera_grind(constant ulong* tpl [[buffer(0)]],
             s[k][i] = v;
         }
     }
-    permute_k(s);
+    permute_k<K>(s);
     for (int k = 0; k < K; k++) {
         if ((s[k][0] & g.mask) == 0) atomic_fetch_min_explicit(found, first + k, memory_order_relaxed);
     }
+}
+
+// ── overwrite sponge per item (Merkle leaves) ──
+
+struct SpongeParams {
+    ulong init[16];
+    uint rate;
+    uint blocks;
+    uint items;
+    uint pad;
+};
+
+kernel void hemera_sponge(device const ulong* lanes [[buffer(0)]],
+                          device ulong* out [[buffer(1)]],
+                          constant SpongeParams& p [[buffer(2)]],
+                          uint gid [[thread_position_in_grid]]) {
+    if (gid >= p.items) return;
+    ulong s[1][16];
+    for (int i = 0; i < 16; i++) s[0][i] = p.init[i];
+    device const ulong* src = lanes + (ulong)gid * p.rate * p.blocks;
+    for (uint b = 0; b < p.blocks; b++) {
+        for (uint i = 0; i < 16; i++) {
+            if (i < p.rate) s[0][i] = src[b * p.rate + i];
+        }
+        permute_k<1>(s);
+    }
+    for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
 }
 
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──

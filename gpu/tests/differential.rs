@@ -176,3 +176,22 @@ fn coset_ntts_equal_cpu() {
         }
     }
 }
+
+#[test]
+fn sponges_equal_cpu() {
+    let mut r = 1234u64;
+    for s in backends() {
+        for (rate, blocks, items) in [(9usize, 1usize, 4096usize), (9, 6, 5000), (8, 3, 4097)] {
+            let init: State = core::array::from_fn(|i| if i == rate { 2 } else { rng(&mut r) % 3 });
+            let lanes: Vec<u64> = (0..items * rate * blocks)
+                .map(|_| rng(&mut r) % P)
+                .collect();
+            assert_eq!(
+                s.backend.sponge(&init, rate, blocks, &lanes),
+                Cpu.sponge(&init, rate, blocks, &lanes),
+                "{} rate {rate} blocks {blocks}",
+                s.backend.name()
+            );
+        }
+    }
+}

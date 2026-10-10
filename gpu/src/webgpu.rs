@@ -27,6 +27,7 @@ struct Inner {
     consts: wgpu::Buffer,
     permute: wgpu::ComputePipeline,
     grind: wgpu::ComputePipeline,
+    sponge: wgpu::ComputePipeline,
     /// Largest states buffer the device binds, in states.
     max_states: usize,
 }
@@ -148,6 +149,21 @@ impl WebGpu {
         };
         let permute = pipeline(crate::wgsl::SOURCE, "hemera_permute");
         let grind = pipeline(&crate::wgsl::grind_source(), "hemera_grind");
+        let sponge = {
+            let src = crate::wgsl::sponge_source();
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("hemera_sponge"),
+                source: wgpu::ShaderSource::Wgsl(src.into()),
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("hemera_sponge"),
+                layout: None,
+                module: &module,
+                entry_point: Some("hemera_sponge"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
         let max_bytes = (limits.max_storage_buffer_binding_size as u64)
             .min(limits.max_buffer_size)
             .min(1 << 28);
@@ -159,6 +175,7 @@ impl WebGpu {
                 consts,
                 permute,
                 grind,
+                sponge,
                 max_states,
             }),
             adapter: format!("{} ({:?})", info.name, info.backend),
@@ -267,6 +284,100 @@ impl Backend for WebGpu {
                 *s = u64::from_le_bytes(w.try_into().expect("8 bytes"));
             }
         }
+    }
+
+    fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
+        let per = rate * blocks;
+        assert!((1..=16).contains(&rate) && blocks >= 1 && lanes.len() % per == 0);
+        let items = lanes.len() / per;
+        if items < MIN_BATCH {
+            return Cpu.sponge(init, rate, blocks, lanes);
+        }
+        let g = self.lock();
+        // items per dispatch: the lanes binding within the device limit
+        let cap = (g.max_states * 128 / (per * 8)).max(1);
+        let mut out = Vec::with_capacity(items);
+        for chunk in lanes.chunks(cap * per) {
+            let n = chunk.len() / per;
+            let inb = g
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("sponge lanes"),
+                    contents: &bytes(&u32s(chunk)),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
+            let outb = g.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sponge digests"),
+                size: (n * 32) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let read = g.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: (n * 32) as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let (x, y, row) = grid(n);
+            let mut p = u32s(init);
+            p.extend([rate as u32, blocks as u32, n as u32, row]);
+            let ub = g
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: &bytes(&p),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            let bg = g.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &g.sponge.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: g.consts.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: inb.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: ub.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: outb.as_entire_binding(),
+                    },
+                ],
+            });
+            let mut enc = g
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            {
+                let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&g.sponge);
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(x, y, 1);
+            }
+            enc.copy_buffer_to_buffer(&outb, 0, &read, 0, outb.size());
+            g.queue.submit([enc.finish()]);
+            let slice = read.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |r| r.expect("webgpu: map"));
+            g.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("webgpu: poll");
+            let data = slice.get_mapped_range().to_vec();
+            read.unmap();
+            for d in data.chunks_exact(32) {
+                out.push(core::array::from_fn(|i| {
+                    u64::from_le_bytes(d[8 * i..8 * i + 8].try_into().expect("8 bytes"))
+                }));
+            }
+        }
+        out
     }
 
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {

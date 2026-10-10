@@ -129,6 +129,14 @@ pub trait Backend: Send + Sync {
         Cpu.grind(template, inject, bits)
     }
 
+    /// An overwrite-mode sponge per item: from `init`, for each of
+    /// `blocks` blocks the rate lanes `0..rate` are replaced by the
+    /// item's next `rate` values of `lanes` and the state permuted; the
+    /// digest is lanes `0..4`. `lanes.len() = items · blocks · rate`.
+    fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
+        Cpu.sponge(init, rate, blocks, lanes)
+    }
+
     /// For each shift `s` in `shifts`: the NTT (nebu's order) of
     /// `coeffs[i] · s^i`; output `j` is `cosets[j]` (`coeffs.len()` a power
     /// of two).
@@ -211,6 +219,39 @@ impl Backend for Cpu {
             work();
         });
         best.into_inner()
+    }
+
+    fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
+        assert!((1..=16).contains(&rate) && blocks >= 1 && lanes.len() % (rate * blocks) == 0);
+        let items = lanes.len() / (rate * blocks);
+        let per_item = rate * blocks;
+        let run = |first: usize, out: &mut [[u64; 4]]| {
+            let mut st: Vec<State> = vec![*init; out.len()];
+            for b in 0..blocks {
+                for (k, s) in st.iter_mut().enumerate() {
+                    let at = (first + k) * per_item + b * rate;
+                    s[..rate].copy_from_slice(&lanes[at..at + rate]);
+                }
+                permute_slice(&mut st);
+            }
+            for (o, s) in out.iter_mut().zip(&st) {
+                o.copy_from_slice(&s[..4]);
+            }
+        };
+        let mut out = vec![[0u64; 4]; items];
+        let t = crate::par::threads();
+        if t == 1 || items < 2 * CPU_CHUNK {
+            run(0, &mut out);
+            return out;
+        }
+        let chunk = items.div_ceil(t).next_multiple_of(16);
+        std::thread::scope(|s| {
+            for (i, c) in out.chunks_mut(chunk).enumerate() {
+                let run = &run;
+                s.spawn(move || run(i * chunk, c));
+            }
+        });
+        out
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
@@ -301,6 +342,28 @@ mod tests {
             .collect();
         Cpu.permute(&mut states);
         assert_eq!(states, want);
+    }
+
+    #[test]
+    fn sponge_absorbs_blocks_in_order() {
+        let mut r = 3u64;
+        let init: State = core::array::from_fn(|i| if i == 9 { 2 } else { 0 });
+        let (rate, blocks, items) = (9, 3, 700);
+        let lanes: Vec<u64> = (0..items * rate * blocks)
+            .map(|_| rand(&mut r) % nebu::field::P)
+            .collect();
+        let got = Cpu.sponge(&init, rate, blocks, &lanes);
+        for (i, g) in got.iter().enumerate() {
+            let mut s = init;
+            for b in 0..blocks {
+                let at = (i * blocks + b) * rate;
+                s[..rate].copy_from_slice(&lanes[at..at + rate]);
+                let mut one = [s];
+                permute_slice(&mut one);
+                s = one[0];
+            }
+            assert_eq!(g[..], s[..4]);
+        }
     }
 
     #[test]
