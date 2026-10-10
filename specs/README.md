@@ -30,7 +30,7 @@ trait MultilinearPcs {                       // core/src/pcs.rs
 }
 ```
 
-the contract zheng consumes: Goldilocks tables, Fp3 points and challenges, hemera Merkle trees, security parameters as data in a checked proof header. two implementations in `cyber-lens-rspcs`: [[tensor-rs]] (Ligero geometry, RS rows) and [[whir]] (WHIR, eprint 2024/1586). measurements: `audit/rs-whir-pcs-2026-10.md`.
+the contract zheng consumes: Goldilocks tables, Fp3 points and challenges, hemera Merkle trees, security parameters as data in a checked proof header. two implementations in `cyber-lens-rspcs`: [[tensor-rs]] (Ligero geometry, RS rows) and [[whir]] (WHIR, eprint 2024/1586). measurements: `audit/rs-whir-pcs-2026-10.md`. the provers' bulk kernels (hemera permutations, grinding, coset NTT) run on a [[backend]] — CPU, Metal or WebGPU, the same bytes on each.
 
 ## naming convention
 
