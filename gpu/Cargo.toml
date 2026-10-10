@@ -24,6 +24,11 @@ pollster = { version = "0.4", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 aruminium = { version = "0.2", path = "../../honeycrisp/aruminium", optional = true }
 
+# a browser is single-threaded: wgpu's handles are Send + Sync there only
+# with this feature (the backend trait needs both)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "28", optional = true, features = ["fragile-send-sync-non-atomic-wasm"] }
+
 [features]
 default = []
 # Apple Silicon Metal through honeycrisp's aruminium (macOS only; ignored elsewhere).
