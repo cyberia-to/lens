@@ -240,6 +240,15 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    /// The levels of a Merkle tree above `leaves` (level 1 first, the root
+    /// last): level `j + 1` has one node per `arities[j]` nodes of level
+    /// `j`; a binary node permutes `(l ‖ r ‖ tag ‖ 0⁷)`, a 4-ary node the
+    /// four children's sixteen lanes; a node's digest is lanes `0..4`.
+    /// `None` where the backend does not run them.
+    fn merkle_levels(&self, _leaves: &[[u64; 4]], _arities: &[usize], _tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+        None
+    }
+
     /// The leaf digests of cosets `cosets` of `job` (coset-major, then
     /// leaf), or `None` where the backend does not run them (the caller
     /// streams on the CPU then).
@@ -425,6 +434,31 @@ impl Backend for Cpu {
             shifts.iter().map(|&s| one(s)).collect()
         }
     }
+}
+
+/// The definition of [`Backend::merkle_levels`] on the CPU.
+pub fn merkle_levels_reference(leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Vec<Vec<[u64; 4]>> {
+    let mut out: Vec<Vec<[u64; 4]>> = Vec::new();
+    let mut cur = leaves.to_vec();
+    for &a in arities {
+        let mut st: Vec<State> = cur
+            .chunks_exact(a)
+            .map(|ch| {
+                let mut s = [0u64; 16];
+                for (i, d) in ch.iter().enumerate() {
+                    s[4 * i..4 * i + 4].copy_from_slice(d);
+                }
+                if a == 2 {
+                    s[8] = tag;
+                }
+                s
+            })
+            .collect();
+        Cpu.permute(&mut st);
+        cur = st.iter().map(|x| [x[0], x[1], x[2], x[3]]).collect();
+        out.push(cur.clone());
+    }
+    out
 }
 
 /// The definition of [`Backend::coset_leaves`] on the CPU (the reference

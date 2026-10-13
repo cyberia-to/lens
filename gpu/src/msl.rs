@@ -384,6 +384,27 @@ kernel void fold_cols(device const ulong* src [[buffer(0)]],
     d[0] = r.a; d[1] = r.b; d[2] = r.c;
 }
 
+// ── Merkle levels: a level's nodes from the previous level's digests ──
+struct LevelParams {
+    uint count;   // nodes of this level
+    uint arity;   // 2: (l ‖ r ‖ tag at lane 8), 4: four children, all lanes
+    ulong tag;
+};
+
+kernel void merkle_level(device const ulong* src [[buffer(0)]],
+                         device ulong* dst [[buffer(1)]],
+                         constant LevelParams& p [[buffer(2)]],
+                         uint gid [[thread_position_in_grid]]) {
+    if (gid >= p.count) return;
+    ulong s[1][16];
+    for (int i = 0; i < 16; i++) s[0][i] = 0;
+    device const ulong* c = src + 4 * (ulong)p.arity * gid;
+    for (uint i = 0; i < 4 * p.arity; i++) s[0][i] = c[i];
+    if (p.arity == 2) s[0][8] = p.tag;
+    permute_k<1>(s);
+    for (int i = 0; i < 4; i++) dst[4 * (ulong)gid + i] = s[0][i];
+}
+
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
 
 struct NttParams {
@@ -416,6 +437,35 @@ kernel void ntt_scatter(device const ulong* coeffs [[buffer(0)]],
     uint r = reverse_bits(i) >> (32 - p.log_n);
     if (p.log_n == 0) r = 0;
     data[(ulong)s * n + r] = gmul(coeffs[i], gpow(shifts[s], i));
+}
+
+// the first `stages` radix-2 stages (spans 1 … 2^(stages−1)) of every
+// block of 2^stages elements in threadgroup memory: one dispatch, one
+// threadgroup of 2^(stages−1) threads a block
+kernel void ntt_block(device ulong* data [[buffer(0)]],
+                      device const ulong* tw [[buffer(1)]],
+                      constant NttParams& p [[buffer(2)]],
+                      uint tid [[thread_index_in_threadgroup]],
+                      uint blk [[threadgroup_position_in_grid]]) {
+    threadgroup ulong a[2048];
+    uint size = 1u << p.span;          // block length (span field reused: log of it)
+    uint halfb = size >> 1;
+    device ulong* d = data + (ulong)blk * size;
+    a[tid] = d[tid];
+    a[tid + halfb] = d[tid + halfb];
+    for (uint st = 0; st < p.span; st++) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint h = 1u << st;
+        uint i = tid & (h - 1);
+        uint j = ((tid - i) << 1) + i;
+        ulong t = gmul(tw[h + i], a[j + h]);
+        ulong u = a[j];
+        a[j + h] = gsub(u, t);
+        a[j] = gadd(u, t);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    d[tid] = a[tid];
+    d[tid + halfb] = a[tid + halfb];
 }
 
 // one stage: butterflies of span `half` with twiddles tw[half + i] = ω_{2·half}^i

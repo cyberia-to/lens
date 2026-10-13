@@ -26,10 +26,12 @@ struct Inner {
     grind: Pipeline,
     scatter: Pipeline,
     stage: Pipeline,
+    block: Pipeline,
     sponge: Pipeline,
     lines: Pipeline,
     leaves: Pipeline,
     fold: Pipeline,
+    level: Pipeline,
     /// coset-leaves buffers (coefficients, values, digests), grown on demand.
     leaf_bufs: Option<(Buffer, Buffer, Buffer)>,
     /// Sponge lanes and digests buffers, grown on demand.
@@ -61,6 +63,14 @@ impl core::fmt::Debug for Metal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Metal").field("device", &self.name).finish()
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LevelParams {
+    count: u32,
+    arity: u32,
+    tag: u64,
 }
 
 #[repr(C)]
@@ -266,10 +276,12 @@ impl Metal {
         let grind = pipe("hemera_grind")?;
         let scatter = pipe("ntt_scatter")?;
         let stage = pipe("ntt_stage")?;
+        let block = pipe("ntt_block")?;
         let sponge = pipe("hemera_sponge")?;
         let lines = pipe("prog_lines")?;
         let leaves = pipe("coset_leaves")?;
         let fold = pipe("fold_cols")?;
+        let level = pipe("merkle_level")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -284,10 +296,12 @@ impl Metal {
                 grind,
                 scatter,
                 stage,
+                block,
                 sponge,
                 lines,
                 leaves,
                 fold,
+                level,
                 leaf_bufs: None,
                 sponge_bufs: None,
                 twiddles: None,
@@ -491,6 +505,56 @@ impl Backend for Metal {
         Some(Box::new(MetalSession { m: self, prog, ops: opsb, consts: constsb, cols: [a, b], cur: 0, ncols, stride: len, len }))
     }
 
+    fn merkle_levels(&self, leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+        if leaves.len() < MIN_BATCH || arities.iter().any(|&a| a != 2 && a != 4) {
+            return None;
+        }
+        // every level in one buffer: leaves, then each level in turn
+        let mut counts = Vec::with_capacity(arities.len());
+        let mut c = leaves.len();
+        for &a in arities {
+            c /= a;
+            counts.push(c);
+        }
+        let total: usize = leaves.len() + counts.iter().sum::<usize>();
+        let g = self.lock();
+        let buf = g.gpu.buffer(total * 32).ok()?;
+        write(&buf, leaves);
+        aruminium::autorelease_pool(|| {
+            let cmd = g.queue.commands().expect("metal: commands");
+            let enc = cmd.encoder().expect("metal: encoder");
+            enc.bind(&g.level);
+            let w = g.level.thread_execution_width().max(1);
+            let grp = ((g.level.max_total_threads_per_threadgroup() / w).max(1) * w).min(256);
+            let mut src = 0usize;
+            let mut dst = leaves.len();
+            for (&a, &n) in arities.iter().zip(&counts) {
+                let p = LevelParams { count: n as u32, arity: a as u32, tag };
+                enc.bind_buffer(&buf, src * 32, 0);
+                enc.bind_buffer(&buf, dst * 32, 1);
+                enc.push(bytes_of(&p), 2);
+                enc.launch((n, 1, 1), (grp, 1, 1));
+                src = dst;
+                dst += n;
+            }
+            enc.finish();
+            cmd.submit();
+            cmd.wait();
+            if let Some(e) = cmd.error() {
+                panic!("metal merkle levels: {e}");
+            }
+        });
+        let mut all = vec![[0u64; 4]; total];
+        read(&buf, &mut all);
+        let mut out = Vec::with_capacity(counts.len());
+        let mut at = leaves.len();
+        for &n in &counts {
+            out.push(all[at..at + n].to_vec());
+            at += n;
+        }
+        Some(out)
+    }
+
     fn coset_leaves(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
         let (k, per, g) = (job.k(), job.per(), cosets.len());
         if k < MIN_NTT || job.rate > 16 || g == 0 || !k.is_power_of_two() {
@@ -553,14 +617,7 @@ impl Backend for Metal {
                 enc.bind_buffer(&sbuf, 0, 2);
                 enc.push(bytes_of(&p0), 3);
                 enc.launch((g * k, 1, 1), (group(&inner.scatter), 1, 1));
-                enc.bind(&inner.stage);
-                enc.bind_buffer(vbuf, j * g * k * 8, 0);
-                enc.bind_buffer(tw, 0, 1);
-                for st in 0..log_k {
-                    let p = NttParams { log_n: log_k, span: 1 << st, cosets: g as u32, pad: 0 };
-                    enc.push(bytes_of(&p), 2);
-                    enc.launch((g * k / 2, 1, 1), (group(&inner.stage), 1, 1));
-                }
+                stages(inner, &enc, vbuf, j * g * k * 8, tw, log_k, g, &group);
             }
             enc.bind(&inner.leaves);
             enc.bind_buffer(vbuf, 0, 0);
@@ -622,19 +679,7 @@ impl Backend for Metal {
             enc.bind_buffer(&sbuf, 0, 2);
             enc.push(bytes_of(&p0), 3);
             enc.launch((total, 1, 1), (group(&inner.scatter), 1, 1));
-            enc.bind(&inner.stage);
-            enc.bind_buffer(&data, 0, 0);
-            enc.bind_buffer(tw, 0, 1);
-            for st in 0..log_n {
-                let p = NttParams {
-                    log_n,
-                    span: 1 << st,
-                    cosets,
-                    pad: 0,
-                };
-                enc.push(bytes_of(&p), 2);
-                enc.launch((total / 2, 1, 1), (group(&inner.stage), 1, 1));
-            }
+            stages(inner, &enc, &data, 0, tw, log_n, cosets as usize, &group);
             enc.finish();
             cmd.submit();
             cmd.wait();
@@ -689,6 +734,35 @@ impl Backend for Metal {
         }
     }
 }
+
+/// Encode the radix-2 stages of `cosets` NTTs of `2^log_n` in `buf` from
+/// `off`: the first `min(log_n, 11)` in threadgroup memory in one dispatch,
+/// the rest one dispatch each.
+fn stages(inner: &Inner, enc: &aruminium::Encoder, buf: &Buffer, off: usize, tw: &Buffer, log_n: u32, cosets: usize, group: &dyn Fn(&Pipeline) -> usize) {
+    let total = cosets << log_n;
+    // a block needs 2^(fused − 1) threads in one threadgroup
+    let max_t = inner.block.max_total_threads_per_threadgroup().max(1);
+    let fused = log_n.min(BLOCK_LOG).min(max_t.ilog2() + 1);
+    if fused >= 1 {
+        enc.bind(&inner.block);
+        enc.bind_buffer(buf, off, 0);
+        enc.bind_buffer(tw, 0, 1);
+        let p = NttParams { log_n, span: fused, cosets: cosets as u32, pad: 0 };
+        enc.push(bytes_of(&p), 2);
+        enc.launch_groups((total >> fused, 1, 1), (1 << (fused - 1), 1, 1));
+    }
+    enc.bind(&inner.stage);
+    enc.bind_buffer(buf, off, 0);
+    enc.bind_buffer(tw, 0, 1);
+    for st in fused..log_n {
+        let p = NttParams { log_n, span: 1 << st, cosets: cosets as u32, pad: 0 };
+        enc.push(bytes_of(&p), 2);
+        enc.launch((total / 2, 1, 1), (group(&inner.stage), 1, 1));
+    }
+}
+
+/// Stages fused in threadgroup memory (2^11 elements: 16 KiB).
+const BLOCK_LOG: u32 = 11;
 
 /// `tw[h + i] = ω_{2h}^i` for every stage span `h < n` (nebu's roots:
 /// `ω_m = 7^((p−1)/m)`).

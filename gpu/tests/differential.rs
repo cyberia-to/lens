@@ -280,3 +280,18 @@ fn line_sessions_equal_the_cpu_session() {
         assert_eq!(dev.firsts(), cpu.firsts(), "{}", s.backend.name());
     }
 }
+
+#[test]
+fn merkle_levels_equal_the_reference() {
+    use cyber_lens_rspcs::backend::merkle_levels_reference;
+    let mut r = 31u64;
+    for s in backends() {
+        for arities in [vec![2usize; 13], vec![4, 4, 4, 4, 4, 4, 2]] {
+            let n: usize = arities.iter().product();
+            let leaves: Vec<[u64; 4]> = (0..n).map(|_| core::array::from_fn(|_| rng(&mut r) % P)).collect();
+            if let Some(got) = s.backend.merkle_levels(&leaves, &arities, 0x6e6f6465) {
+                assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465), "{} {arities:?}", s.backend.name());
+            }
+        }
+    }
+}
