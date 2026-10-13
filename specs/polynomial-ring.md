@@ -8,7 +8,7 @@ alias: ring lens, Ikat, jali lens, ring-pcs
 
 the R_q lens for [[zheng]]. polynomial ring workloads (FHE bootstrapping, lattice KEM, convolution) prove natively through their ring structure. the cyclotomic ring R_q = F_p[x]/(x^n+1) decomposes via NTT into n copies of F_p — ring-aware proving exploits this decomposition for batch commitments, automorphism arguments, and running noise accumulators.
 
-implements the [[trait|Lens]] trait with ring-structured constraint encodings over [[jali]]'s R_q arithmetic. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. [[hemera]] remains the only hash.
+implements the [[trait|Lens]] trait with ring-structured constraint encodings over [[jali]]'s R_q arithmetic. the IOP layer ([[SuperSpartan]] + [[sumcheck]]) stays field-generic. [[hemera]] remains the only hash.
 
 ## architecture
 
@@ -70,11 +70,12 @@ generic:     per-operation range check
              n coefficients × m operations = 64nm constraints
 
 ring-aware:  running noise accumulator
-             fold noise bound through computation
-             check once at end (decider)
-             cost: ~30 field ops per fold step
+             carry the noise bound through the computation
+             check once at end
+             cost: one accumulator update per operation (not measured)
 
-savings:     ~64nm / (30m) = ~2n per operation
+savings:     the per-coefficient range checks, ~64nm constraints, are replaced
+             by m accumulator updates and one final check
 ```
 
 ## FHE bootstrapping workload
@@ -85,10 +86,10 @@ TFHE bootstrapping refreshes ciphertext noise. four phases, each with a differen
 |---|---|---|---|
 | gadget decomposition | bit-split coefficients | F₂ (binary) | Binius |
 | blind rotation | n polynomial multiplies in R_q | R_q (ring) | Ikat (this) |
-| key switching | matrix × vector over F_p | F_p (matrix) | Brakedown |
-| modulus switching | rescale coefficients | F_p (field) | Brakedown |
+| key switching | matrix × vector over F_p | F_p (matrix) | RS PCS (WHIR) |
+| modulus switching | rescale coefficients | F_p (field) | RS PCS (WHIR) |
 
-bootstrapping is a cross-algebra computation. each phase proves via the appropriate lens backend. HyperNova folds across boundaries.
+bootstrapping is a cross-algebra computation. each phase proves via the appropriate lens backend; how the phases compose across field boundaries is open research (see cross-algebra composition below).
 
 ## jet library
 
@@ -113,28 +114,28 @@ gadget_decomp(ct, base, levels):
 noise_track(noise_bound, operation):
   fold noise bound into running accumulator
   check at bootstrapping boundary
-  cost: ~30 field ops per fold
+  cost: one accumulator update per operation (not measured)
 ```
 
 ## cross-algebra bootstrapping flow
 
 ```
 step 1: gadget_decomp(ct)          → Binius (F₂)
-         fold into accumulator       ~766 F_p constraints
+         join the accumulator        F₂ composition: open research
 
 step 2: blind_rotation(decomposed)  → Ikat (R_q, ring-aware)
          ntt_batch jet               ~n × N constraints (batched)
-         fold into accumulator       ~766 F_p constraints
+         join the accumulator        Goldilocks claims (NTT slots)
 
-step 3: key_switch(rotated, ks)     → Brakedown (F_p)
+step 3: key_switch(rotated, ks)     → RS PCS over F_p
          key_switch jet              ~k × log(N) constraints
-         fold into accumulator       ~766 F_p constraints
+         join the accumulator        Goldilocks claims
 
-step 4: mod_switch(switched)        → Brakedown (F_p)
+step 4: mod_switch(switched)        → RS PCS over F_p
          ~N constraints              (coefficient rescaling)
-         fold into accumulator       ~766 F_p constraints
+         join the accumulator        Goldilocks claims
 
-total composition overhead: ~3,064 F_p constraints (4 boundary crossings)
+composition overhead: not measured (phase 3 accumulation; F₂ crossing open)
 total computation: dominated by step 2 (blind rotation)
 ```
 
@@ -152,28 +153,15 @@ ring-aware jets prove that hemera evaluation under FHE was computed correctly. h
 
 ## cross-algebra composition
 
-ring sub-traces fold into the shared F_p accumulator via HyperNova:
-
 ```
-jali (R_q) computation → ring-aware proof
+jali (R_q) computation → NTT slots (Goldilocks scalars) → Ikat commitment
                               ↓
-            HyperNova fold into shared F_p accumulator
-            cost: ~766 F_p constraints per boundary crossing
+            Goldilocks evaluation claims → phase 3 accumulation (intended path)
 ```
 
-universal CCS with selectors:
+phase 3 of the proof-system repair (soft3 `proposals/proof-system-repair.md`, landing in this release) accumulates Reed–Solomon evaluation claims over Goldilocks: each step's claims are batched by a sumcheck into one root plus a fixed number of claims, and the decider is one WHIR opening of the final accumulator (zheng `specs/accumulation.md`, `specs/machine.md`). the earlier fold of every algebra into a shared F_p accumulator through a universal CCS with per-algebra selectors, and its per-fold and per-crossing costs, belonged to the retired design (legacy, unsound) and are withdrawn.
 
-```
-universal_ccs = {
-  sel_Fp:   1 for Goldilocks rows
-  sel_F2:   1 for binary rows
-  sel_ring: 1 for ring-structured rows    ← this
-  sel_Fq:   1 for isogeny rows
-  sel_trop: 1 for tropical witness-verify rows
-}
-```
-
-one accumulator covers all five algebras. the decider runs once in F_p.
+Ikat commits NTT slots, which are Goldilocks scalars, so ring sub-traces can be stated as Goldilocks evaluation claims and accumulated like any other step once they are committed through the RS PCS; today's Ikat commitment is Brakedown-based (legacy, distance unproven). the binary (gadget decomposition) part of a ring workload has the F₂ composition problem of [[binary-tower]], open research. no cost per crossing is claimed.
 
 ## jali dependency
 
@@ -193,4 +181,4 @@ zheng depends on jali for the Ikat backend. hemera remains the only hash through
 3. **noise model precision**: running accumulator tracks worst-case — adaptive noise tracking (tighten bounds from measured noise) would improve throughput
 4. **multi-key FHE**: threshold FHE bootstrapping with multiple keys — each key has separate automorphism group, jet recognition across key boundaries
 
-see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[isogeny-curves]] for Porphyry, [[tropical-semiring]] for Assayer, [[commitment]] for cross-algebra folding
+see [[scalar-field]] for Brakedown, [[binary-tower]] for Binius, [[isogeny-curves]] for Porphyry, [[tropical-semiring]] for Assayer, [[commitment]] for the composition interface

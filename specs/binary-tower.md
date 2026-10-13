@@ -8,7 +8,7 @@ alias: binary lens, F2 tower lens, Binius, binary-pcs
 
 the F₂ tower lens for [[zheng]]. binary-native polynomial commitment over [[kuro]]'s tower: F₂ → F₂² → F₂⁴ → ... → F₂¹²⁸. bitwise operations (XOR, AND, NOT, SHL, LT) cost 1 constraint each — 32-64× cheaper than encoding them in [[Goldilocks field|Goldilocks]] where bit decomposition forces 32-64 constraints per operation.
 
-implements the [[trait|Lens]] trait for F₂ tower fields. the IOP layer ([[SuperSpartan]] + [[sumcheck]] + [[HyperNova]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash — used externally for commitment binding and Fiat-Shamir, never proved inside binary circuits.
+implements the [[trait|Lens]] trait for F₂ tower fields. the IOP layer ([[SuperSpartan]] + [[sumcheck]]) stays field-generic. only the polynomial commitment scheme changes. [[hemera]] remains the only hash — used externally for commitment binding and Fiat-Shamir, never proved inside binary circuits.
 
 ## architecture
 
@@ -73,7 +73,7 @@ the verifier uses hemera for hashing and F₂ for field ops. no binary-native ha
 
 ## cost comparison
 
-| operation | F_p (Brakedown) | F₂ (Binius) | ratio |
+| operation | F_p (Goldilocks) | F₂ (Binius) | ratio |
 |---|---|---|---|
 | AND | ~32 constraints | 1 constraint | 32x |
 | XOR | ~32 constraints | 1 constraint | 32x |
@@ -94,23 +94,15 @@ two workloads dominate the binary regime:
 a mixed nox program (field + bitwise) partitions into sub-traces:
 
 ```
-nox<F_p> sub-trace → zheng<Brakedown> proof
-nox<F₂>  sub-trace → zheng<Binius> proof
+nox<F_p> sub-trace → zheng proof over Goldilocks (RS PCS: WHIR)
+nox<F₂>  sub-trace → Binius commitment over the F₂ tower
                            ↓
-            HyperNova fold into shared F_p accumulator
-            cost: ~30 F_p field ops + 1 hemera hash per fold
+            composition with the Goldilocks accumulator: open research
 ```
 
-universal CCS with selectors enables heterogeneous folding:
+phase 3 of the proof-system repair (soft3 `proposals/proof-system-repair.md`, landing in this release) accumulates Reed–Solomon evaluation claims over Goldilocks: each step's claims are batched by a sumcheck into one root plus a fixed number of claims, and the decider is one WHIR opening of the final accumulator (zheng `specs/accumulation.md`, `specs/machine.md`). the earlier fold of every algebra into a shared F_p accumulator through a universal CCS with per-algebra selectors, and its per-fold and per-crossing costs, belonged to the retired design (legacy, unsound) and are withdrawn.
 
-```
-universal_ccs = {
-  sel_Fp:  1 for Goldilocks rows, 0 otherwise
-  sel_F2:  1 for binary rows, 0 otherwise
-}
-```
-
-one accumulator covers both algebras. the decider runs once in F_p (hemera-native).
+F₂-tower claims are not Goldilocks evaluation claims, so they do not enter that accumulator directly. how a binary sub-trace joins it — a boundary relation checked in Goldilocks, re-proving the binary work in Goldilocks, or a binary-native accumulation — is open research; no cost per crossing is claimed.
 
 ## recursion boundary
 
