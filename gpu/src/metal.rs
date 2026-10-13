@@ -9,6 +9,8 @@ use std::sync::Mutex;
 
 use aruminium::{Buffer, Gpu, Pipeline, Queue};
 use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State};
+use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
+use nebu::Fp3;
 
 /// Fewer states than this run on the CPU backend.
 pub const MIN_BATCH: usize = 1 << 12;
@@ -25,6 +27,7 @@ struct Inner {
     scatter: Pipeline,
     stage: Pipeline,
     sponge: Pipeline,
+    lines: Pipeline,
     /// Sponge lanes and digests buffers, grown on demand.
     sponge_bufs: Option<(Buffer, Buffer)>,
     /// Twiddles `ω_{2h}^i` at `h + i` for the last coset length used.
@@ -55,6 +58,25 @@ impl core::fmt::Debug for Metal {
         f.debug_struct("Metal").field("device", &self.name).finish()
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LineParams {
+    nops: u32,
+    ncols: u32,
+    len: u32,
+    nx: u32,
+    threads: u32,
+    first: u32,
+    output: u32,
+    pad: u32,
+    xs: [u64; 16],
+}
+
+/// Registers a program may use on the device (`MAXREGS` in the kernel).
+pub const MAX_REGS: u32 = 160;
+/// Threads per line-sum dispatch.
+const LINE_DISPATCH: usize = 1 << 16;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -143,6 +165,7 @@ impl Metal {
         let scatter = pipe("ntt_scatter")?;
         let stage = pipe("ntt_stage")?;
         let sponge = pipe("hemera_sponge")?;
+        let lines = pipe("prog_lines")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -158,6 +181,7 @@ impl Metal {
                 scatter,
                 stage,
                 sponge,
+                lines,
                 sponge_bufs: None,
                 twiddles: None,
                 states: None,
@@ -289,6 +313,56 @@ impl Backend for Metal {
         let mut out = vec![[0u64; 4]; items];
         read(outb, &mut out);
         out
+    }
+
+    fn line_sums(&self, prog: &Program, cols: &[Limbs], weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+        let pairs = weights.len();
+        if prog.regs > MAX_REGS || xs.len() > 16 || xs.is_empty() || pairs * xs.len() < MIN_BATCH {
+            return Cpu.line_sums(prog, cols, weights, xs);
+        }
+        let len = 2 * pairs;
+        assert_eq!(cols.len(), prog.inputs as usize * len, "cols");
+        let g = self.lock();
+        let buf = |data: &[u8]| -> Buffer {
+            let b = g.gpu.buffer(data.len().max(16)).expect("metal: line buffer");
+            write(&b, data);
+            b
+        };
+        let ops: Vec<u32> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).collect();
+        let as_bytes = |v: &[u64]| -> Vec<u8> { v.iter().flat_map(|x| x.to_le_bytes()).collect() };
+        let opsb = buf(&ops.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>());
+        let constsb = buf(&as_bytes(prog.consts.as_flattened()));
+        let colsb = g.gpu.buffer((cols.len() * 24).max(16)).expect("metal: columns");
+        write(&colsb, cols);
+        let wb = buf(&as_bytes(weights.as_flattened()));
+        let nx = xs.len();
+        let per = (LINE_DISPATCH / nx).max(1);
+        let outb = g.gpu.buffer(per * nx * 24).expect("metal: line sums");
+        let mut sums = vec![Fp3::ZERO; nx];
+        let mut xa = [0u64; 16];
+        xa[..nx].copy_from_slice(xs);
+        let mut part = vec![[0u64; 3]; per * nx];
+        for first in (0..pairs).step_by(per) {
+            let n = per.min(pairs - first);
+            let threads = n * nx;
+            let p = LineParams {
+                nops: prog.ops.len() as u32,
+                ncols: prog.inputs,
+                len: len as u32,
+                nx: nx as u32,
+                threads: threads as u32,
+                first: first as u32,
+                output: prog.output,
+                pad: 0,
+                xs: xa,
+            };
+            run(&g, &g.lines, &[(&opsb, 0), (&constsb, 1), (&colsb, 2), (&wb, 3), (&outb, 4)], Some((bytes_of(&p), 5)), threads).expect("metal line sums");
+            read(&outb, &mut part[..threads]);
+            for (t, v) in part[..threads].iter().enumerate() {
+                sums[t % nx] += to_fp3(*v);
+            }
+        }
+        sums.into_iter().map(from_fp3).collect()
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {

@@ -26,7 +26,7 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
 use cyber_hemera::field::Goldilocks as HG;
-use nebu::Goldilocks;
+use nebu::{Fp3, Goldilocks};
 
 /// A hemera state: sixteen canonical Goldilocks limbs.
 pub type State = [u64; 16];
@@ -135,6 +135,15 @@ pub trait Backend: Send + Sync {
     /// digest is lanes `0..4`. `lanes.len() = items · blocks · rate`.
     fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
         Cpu.sponge(init, rate, blocks, lanes)
+    }
+
+    /// The weighted sums of a program along lines: for each `x` in `xs`,
+    /// `Σ_i weights[i] · prog(v_i(x))` where input `c` of `v_i(x)` is
+    /// `a + x·(b − a)`, `a = cols[c][2i]`, `b = cols[c][2i + 1]`
+    /// (`cols` column-major: `cols[c·len + r]`, `len = 2·weights.len()`).
+    /// Pairs of weight zero contribute nothing.
+    fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+        Cpu.line_sums(prog, cols, weights, xs)
     }
 
     /// For each shift `s` in `shifts`: the NTT (nebu's order) of
@@ -252,6 +261,49 @@ impl Backend for Cpu {
             }
         });
         out
+    }
+
+    fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+        use crate::program::{from_fp3, to_fp3};
+        let pairs = weights.len();
+        let len = 2 * pairs;
+        let ncols = prog.inputs as usize;
+        assert_eq!(cols.len(), ncols * len, "cols");
+        let part = |lo: usize, hi: usize| {
+            let mut sums = vec![Fp3::ZERO; xs.len()];
+            let mut ins = vec![Fp3::ZERO; ncols];
+            let mut regs = Vec::new();
+            for i in lo..hi {
+                let g = to_fp3(weights[i]);
+                if g == Fp3::ZERO {
+                    continue;
+                }
+                for (k, &x) in xs.iter().enumerate() {
+                    let xf = Goldilocks::new(x);
+                    for (c, v) in ins.iter_mut().enumerate() {
+                        let a = to_fp3(cols[c * len + 2 * i]);
+                        let b = to_fp3(cols[c * len + 2 * i + 1]);
+                        let d = b - a;
+                        *v = a + Fp3::new(d.c0 * xf, d.c1 * xf, d.c2 * xf);
+                    }
+                    sums[k] += g * prog.eval(&ins, &mut regs);
+                }
+            }
+            sums
+        };
+        let t = crate::par::threads();
+        let chunk = pairs.div_ceil(t).max(1);
+        let parts: Vec<Vec<Fp3>> = std::thread::scope(|s| {
+            let hs: Vec<_> = (0..pairs).step_by(chunk).map(|lo| s.spawn(move || part(lo, (lo + chunk).min(pairs)))).collect();
+            hs.into_iter().map(|h| h.join().expect("line sums")).collect()
+        });
+        let mut out = vec![Fp3::ZERO; xs.len()];
+        for p in parts {
+            for (o, v) in out.iter_mut().zip(p) {
+                *o += v;
+            }
+        }
+        out.into_iter().map(from_fp3).collect()
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {

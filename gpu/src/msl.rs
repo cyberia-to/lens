@@ -241,6 +241,79 @@ kernel void hemera_sponge(device const ulong* lanes [[buffer(0)]],
     for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
 }
 
+// ── straight-line Fp3 programs along lines (zerocheck rounds) ──
+// Fp3 = F[t]/(t³ − t − 1), limbs c0 + c1·t + c2·t².
+
+struct f3 { ulong a; ulong b; ulong c; };
+
+static inline f3 f3add(f3 x, f3 y) { return f3{gadd(x.a, y.a), gadd(x.b, y.b), gadd(x.c, y.c)}; }
+static inline f3 f3sub(f3 x, f3 y) { return f3{gsub(x.a, y.a), gsub(x.b, y.b), gsub(x.c, y.c)}; }
+static inline f3 f3neg(f3 x) { return f3{gsub(0, x.a), gsub(0, x.b), gsub(0, x.c)}; }
+static inline f3 f3mulb(f3 x, ulong k) { return f3{gmul(x.a, k), gmul(x.b, k), gmul(x.c, k)}; }
+static inline f3 f3mul(f3 x, f3 y) {
+    ulong d0 = gmul(x.a, y.a);
+    ulong d1 = gadd(gmul(x.a, y.b), gmul(x.b, y.a));
+    ulong d2 = gadd(gadd(gmul(x.a, y.c), gmul(x.b, y.b)), gmul(x.c, y.a));
+    ulong d3 = gadd(gmul(x.b, y.c), gmul(x.c, y.b));
+    ulong d4 = gmul(x.c, y.c);
+    // t³ = t + 1, t⁴ = t² + t
+    return f3{gadd(d0, d3), gadd(gadd(d1, d3), d4), gadd(d2, d4)};
+}
+
+struct LineParams {
+    uint nops;
+    uint ncols;
+    uint len;       // rows per column (2 · pairs)
+    uint nx;        // points per pair
+    uint threads;   // pairs · nx in this dispatch
+    uint first;     // first pair of this dispatch
+    uint output;    // the output operand
+    uint pad;
+    ulong xs[16];
+};
+
+#define MAXREGS 160
+
+static inline f3 rd(uint o, device const ulong* consts, device const ulong* cols, thread const f3* r,
+                    uint len, uint i, ulong x) {
+    uint t = o >> 30, k = o & 0x3FFFFFFFu;
+    if (t == 2) return r[k];
+    if (t == 1) return f3{consts[3 * k], consts[3 * k + 1], consts[3 * k + 2]};
+    device const ulong* pa = cols + 3 * ((ulong)k * len + 2 * i);
+    f3 a = f3{pa[0], pa[1], pa[2]};
+    f3 b = f3{pa[3], pa[4], pa[5]};
+    return f3add(a, f3mulb(f3sub(b, a), x));
+}
+
+kernel void prog_lines(device const uint4* ops [[buffer(0)]],
+                       device const ulong* consts [[buffer(1)]],
+                       device const ulong* cols [[buffer(2)]],
+                       device const ulong* weights [[buffer(3)]],
+                       device ulong* out [[buffer(4)]],
+                       constant LineParams& p [[buffer(5)]],
+                       uint gid [[thread_position_in_grid]]) {
+    if (gid >= p.threads) return;
+    uint i = p.first + gid / p.nx;
+    ulong x = p.xs[gid % p.nx];
+    f3 r[MAXREGS];
+    for (uint n = 0; n < p.nops; n++) {
+        uint4 op = ops[n];
+        f3 a = rd(op.y, consts, cols, r, p.len, i, x);
+        f3 v;
+        if (op.x == 0) v = f3add(a, rd(op.z, consts, cols, r, p.len, i, x));
+        else if (op.x == 1) v = f3sub(a, rd(op.z, consts, cols, r, p.len, i, x));
+        else if (op.x == 2) v = f3mul(a, rd(op.z, consts, cols, r, p.len, i, x));
+        else if (op.x == 3) v = f3neg(a);
+        else v = f3mulb(a, consts[3 * (op.z & 0x3FFFFFFFu)]);
+        r[op.w] = v;
+    }
+    f3 g = f3{weights[3 * i], weights[3 * i + 1], weights[3 * i + 2]};
+    f3 res = f3mul(g, rd(p.output, consts, cols, r, p.len, i, x));
+    out[3 * (ulong)gid] = res.a;
+    out[3 * (ulong)gid + 1] = res.b;
+    out[3 * (ulong)gid + 2] = res.c;
+}
+
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
 
 struct NttParams {

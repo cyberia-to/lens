@@ -195,3 +195,31 @@ fn sponges_equal_cpu() {
         }
     }
 }
+
+#[test]
+fn program_line_sums_equal_cpu() {
+    use cyber_lens_rspcs::program::{Program, from_fp3, OP_MULB};
+    let mut r = 4242u64;
+    for s in backends() {
+        let inputs = 23usize;
+        let consts: Vec<[u64; 3]> = (0..6).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).chain([[9, 0, 0]]).collect();
+        let base = (inputs + consts.len()) as u32;
+        let mut ops = Vec::new();
+        for k in 0..400u32 {
+            let avail = base + k;
+            let code = (rng(&mut r) % 5) as u8;
+            let a = (rng(&mut r) % avail as u64) as u32;
+            let b = if code == OP_MULB { (consts.len() - 1) as u32 } else { (rng(&mut r) % avail as u64) as u32 };
+            ops.push((code, a, b));
+        }
+        let prog = Program::from_slots(&ops, consts, inputs, base + 399);
+        let pairs = 3000usize;
+        let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+        let mut weights: Vec<[u64; 3]> = (0..pairs).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+        weights[7] = [0, 0, 0];
+        let xs = [0u64, 2, 3, 4, 5, 6, 7];
+        let want = Cpu.line_sums(&prog, &cols, &weights, &xs);
+        assert_eq!(s.backend.line_sums(&prog, &cols, &weights, &xs), want, "{} regs {}", s.backend.name(), prog.regs);
+        let _ = from_fp3;
+    }
+}
