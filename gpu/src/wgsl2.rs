@@ -172,6 +172,9 @@ fn ntt_block(@builtin(local_invocation_index) tid: u32, @builtin(workgroup_id) w
     let size = 1u << N.span;
     let halfb = size >> 1u;
     let blk = wg.x + wg.y * N.row;
+    // the 2-D grid may hold more workgroups than blocks (uniform per
+    // workgroup: the early return keeps the barriers uniform)
+    if blk >= ((N.cosets << N.log_n) >> N.span) { return; }
     let base = blk * size;
     if tid < halfb {
         BLK[tid] = DATA[base + tid];
@@ -214,7 +217,9 @@ struct LP {
 
 @compute @workgroup_size(64)
 fn coset_leaves(@builtin(global_invocation_id) id: vec3<u32>) {
-    let gid = id.x + id.y * L.row;
+    let local = id.x + id.y * L.row;
+    if local >= L.p1 { return; }
+    let gid = L.p0 + local;
     if gid >= L.g * L.per { return; }
     let c = gid / L.per;
     let a = gid % L.per;
@@ -256,7 +261,7 @@ struct MP { count: u32, arity: u32, row: u32, p0: u32, tag: vec2<u32>, p1: vec2<
 
 @compute @workgroup_size(64)
 fn merkle_level(@builtin(global_invocation_id) id: vec3<u32>) {
-    let gid = id.x + id.y * M.row;
+    let gid = id.x + id.y * M.row + M.p0;
     if gid >= M.count { return; }
     var s: array<vec2<u32>, 16>;
     for (var i = 0u; i < 16u; i++) { s[i] = vec2<u32>(0u, 0u); }

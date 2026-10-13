@@ -357,7 +357,11 @@ fn merkle_levels_equal_the_reference() {
     use cyber_lens_rspcs::backend::merkle_levels_reference;
     let mut r = 31u64;
     for s in backends() {
-        for arities in [vec![2usize; 13], vec![4, 4, 4, 4, 4, 4, 2]] {
+        for arities in [
+            vec![2usize; 13],
+            vec![4, 4, 4, 4, 4, 4, 2],
+            vec![2usize; 18],
+        ] {
             let n: usize = arities.iter().product();
             let leaves: Vec<[u64; 4]> = (0..n)
                 .map(|_| core::array::from_fn(|_| rng(&mut r) % P))
@@ -404,4 +408,51 @@ fn webgpu_async_ops_equal_cpu() {
     let got = pollster::block_on(w.merkle_levels_async(&leaves, &arities, 0x6e6f6465))
         .expect("async levels");
     assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465));
+}
+
+/// Coset counts that leave the 2-D block grid ragged (not a multiple of
+/// its row): the regression of a run whose proof differed on WebGPU.
+#[test]
+fn ragged_coset_groups_equal_the_reference() {
+    use cyber_lens_rspcs::backend::{CosetLeaves, coset_leaves_reference};
+    let mut r = 4141u64;
+    for s in backends() {
+        // k = 2^21: 2^12 blocks a coset; 14 cosets = 57,344 blocks (rows of 32,768)
+        let k = 1usize << 21;
+        let data: Vec<Vec<u64>> = vec![(0..k).map(|_| rng(&mut r) % P).collect()];
+        let mut init = [0u64; 16];
+        init[9] = 2;
+        let job = CosetLeaves {
+            limbs: data.iter().map(|v| v.as_slice()).collect(),
+            limbs_per_member: 1,
+            log_n: 29,
+            log_width: 4,
+            init,
+            rate: 9,
+        };
+        let range = 242..256;
+        match s.backend.coset_leaves(&job, range.clone()) {
+            Some(got) => {
+                let want = coset_leaves_reference(&job, range.clone());
+                assert!(
+                    got == want,
+                    "{}: ragged coset leaves differ at {:?}",
+                    s.backend.name(),
+                    got.iter().zip(&want).position(|(a, b)| a != b)
+                );
+            }
+            None => assert!(
+                !required(s.backend.name()),
+                "{}: declined",
+                s.backend.name()
+            ),
+        }
+        let shifts: Vec<u64> = (0..14).map(|i| job.shift(242 + i)).collect();
+        assert_eq!(
+            s.backend.coset_ntt(&data[0], &shifts),
+            Cpu.coset_ntt(&data[0], &shifts),
+            "{}: ragged NTT",
+            s.backend.name()
+        );
+    }
 }

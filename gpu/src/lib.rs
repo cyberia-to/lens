@@ -46,6 +46,11 @@ pub enum Choice {
     WebGpu,
     /// A device backend checked against the CPU on every operation.
     Check(Inner),
+    /// A device backend spot-checked against the CPU on sampled outputs.
+    Spot(Inner),
+    /// A device backend recording every call's input and output hashes
+    /// to the file `LENS_RECORD`.
+    Record(Inner),
 }
 
 /// The device a [`Choice::Check`] runs.
@@ -65,6 +70,10 @@ impl core::str::FromStr for Choice {
             "webgpu" => Ok(Choice::WebGpu),
             "check-metal" => Ok(Choice::Check(Inner::Metal)),
             "check-webgpu" => Ok(Choice::Check(Inner::WebGpu)),
+            "spot-metal" => Ok(Choice::Spot(Inner::Metal)),
+            "spot-webgpu" => Ok(Choice::Spot(Inner::WebGpu)),
+            "record-metal" => Ok(Choice::Record(Inner::Metal)),
+            "record-webgpu" => Ok(Choice::Record(Inner::WebGpu)),
             _ => Err(format!("unknown backend `{s}` (auto, cpu, metal, webgpu)")),
         }
     }
@@ -147,6 +156,31 @@ pub fn select(choice: Choice) -> Result<Selected, String> {
             Ok(Selected {
                 device: s.device,
                 backend: Arc::new(checked::Checked(s.backend)),
+            })
+        }
+        Choice::Spot(i) => {
+            let s = if i == Inner::Metal {
+                metal()?
+            } else {
+                webgpu()?
+            };
+            Ok(Selected {
+                device: s.device,
+                backend: Arc::new(checked::Spot(s.backend)),
+            })
+        }
+        Choice::Record(i) => {
+            let s = if i == Inner::Metal {
+                metal()?
+            } else {
+                webgpu()?
+            };
+            let path =
+                std::env::var("LENS_RECORD").map_err(|_| "record: set LENS_RECORD".to_string())?;
+            let f = std::fs::File::create(&path).map_err(|e| format!("record: {e}"))?;
+            Ok(Selected {
+                device: s.device,
+                backend: Arc::new(checked::Record(s.backend, std::sync::Mutex::new(f))),
             })
         }
         Choice::Auto => Ok(metal().or_else(|_| webgpu()).unwrap_or_else(|_| cpu())),

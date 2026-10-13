@@ -370,7 +370,7 @@ impl Backend for WebGpu {
         }
         let g = self.lock();
         // items per dispatch: the lanes binding within the device limit
-        let cap = (g.max_states * 128 / (per * 8)).max(1);
+        let cap = (g.max_states * 128 / (per * 8)).clamp(1, 1 << 15);
         let mut out = Vec::with_capacity(items);
         for chunk in lanes.chunks(cap * per) {
             let n = chunk.len() / per;

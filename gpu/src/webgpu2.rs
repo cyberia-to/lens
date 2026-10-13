@@ -12,6 +12,11 @@ use wgpu::util::DeviceExt;
 const WG: u32 = 64;
 /// Workgroups along x before a dispatch wraps into y.
 const ROW: u32 = 1 << 15;
+/// Leaves per coset-leaves submission.
+const LEAF_CHUNK: usize = 1 << 14;
+/// Nodes per Merkle-level submission.
+const NODE_CHUNK: usize = 1 << 16;
+
 /// Stages fused in workgroup memory (512 elements, 256 invocations).
 const BLOCK_LOG: u32 = 9;
 
@@ -398,34 +403,48 @@ pub fn coset_leaves(
             g,
         );
     }
-    let (x, y, row) = grid(g * per);
-    let mut words = u32s(&job.init);
-    words.extend([
-        k as u32,
-        per as u32,
-        g as u32,
-        1 << job.log_width,
-        job.members() as u32,
-        job.limbs_per_member as u32,
-        spb as u32,
-        blocks as u32,
-        job.rate as u32,
-        row,
-        0,
-        0,
-    ]);
-    let u = c.uniform(&words);
-    c.pass(
-        &mut enc,
-        &c.ext.leaves,
-        &[
-            (0, c.consts.as_entire_binding()),
-            (1, vals.as_entire_binding()),
-            (2, out.as_entire_binding()),
-            (3, u.as_entire_binding()),
-        ],
-        (x, y),
-    );
+    // the NTTs first, then the leaves in bounded submissions (a long
+    // command buffer on a busy GPU is the suspect of a run whose proof
+    // differed; see the audit)
+    c.queue.submit([enc.finish()]);
+    let total = g * per;
+    for first in (0..total).step_by(LEAF_CHUNK) {
+        let n = LEAF_CHUNK.min(total - first);
+        let (x, y, row) = grid(n);
+        let mut words = u32s(&job.init);
+        words.extend([
+            k as u32,
+            per as u32,
+            g as u32,
+            1 << job.log_width,
+            job.members() as u32,
+            job.limbs_per_member as u32,
+            spb as u32,
+            blocks as u32,
+            job.rate as u32,
+            row,
+            first as u32,
+            n as u32,
+        ]);
+        let u = c.uniform(&words);
+        let mut e = c.encoder();
+        c.pass(
+            &mut e,
+            &c.ext.leaves,
+            &[
+                (0, c.consts.as_entire_binding()),
+                (1, vals.as_entire_binding()),
+                (2, out.as_entire_binding()),
+                (3, u.as_entire_binding()),
+            ],
+            (x, y),
+        );
+        c.queue.submit([e.finish()]);
+        c.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("webgpu: poll");
+    }
+    let enc = c.encoder();
     let raw = c.submit_read(enc, &out, 0, (g * per * 32) as u64);
     Some(
         raw.chunks_exact(32)
@@ -457,20 +476,29 @@ pub fn merkle_levels(
     for &a in arities {
         n /= a;
         let dst = c.empty((n * 32) as u64);
-        let (x, y, row) = grid(n);
         let t = u32s(&[tag]);
-        let u = c.uniform(&[n as u32, a as u32, row, 0, t[0], t[1], 0, 0]);
-        c.pass(
-            &mut enc,
-            &c.ext.level,
-            &[
-                (0, c.consts.as_entire_binding()),
-                (1, src.as_entire_binding()),
-                (2, dst.as_entire_binding()),
-                (3, u.as_entire_binding()),
-            ],
-            (x, y),
-        );
+        // bounded submissions per level
+        for first in (0..n).step_by(NODE_CHUNK) {
+            let m = NODE_CHUNK.min(n - first);
+            let (x, y, row) = grid(m);
+            let u = c.uniform(&[n as u32, a as u32, row, first as u32, t[0], t[1], 0, 0]);
+            c.pass(
+                &mut enc,
+                &c.ext.level,
+                &[
+                    (0, c.consts.as_entire_binding()),
+                    (1, src.as_entire_binding()),
+                    (2, dst.as_entire_binding()),
+                    (3, u.as_entire_binding()),
+                ],
+                (x, y),
+            );
+            c.queue
+                .submit([core::mem::replace(&mut enc, c.encoder()).finish()]);
+            c.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("webgpu: poll");
+        }
         bufs.push((dst.clone(), n));
         src = dst;
     }
@@ -621,12 +649,6 @@ impl LineSession for Session<'_> {
                 (x, y),
             );
             c.queue.submit([enc.finish()]);
-            // wait for the fold: without this a wrap level's proof came out
-            // different (still verifying) when coset leaves ran on the device
-            // in the same proof — root cause not isolated (see the audit)
-            c.device
-                .poll(wgpu::PollType::wait_indefinitely())
-                .expect("webgpu: poll");
         });
         self.cur = 1 - self.cur;
         self.len = half;
