@@ -13,7 +13,7 @@ pub use fri::fri_fold;
 pub use strata_core::Codec;
 pub use strata_proof::Reduce;
 pub use transcript::Transcript;
-pub use types::{Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};
+pub use types::{ColumnQuery, Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};
 
 /// Polynomial commitment scheme — commit to a multilinear polynomial,
 /// prove evaluations, verify without seeing the polynomial.

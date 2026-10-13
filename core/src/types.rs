@@ -3,7 +3,7 @@
 // Re-export algebraic trait hierarchy from strata-core
 pub use strata_core::{Field, Ring, Semiring};
 
-use cyber_hemera::Hash;
+use cyber_hemera::{Hash, Side};
 
 /// A binding digest of a polynomial — a hemera hash.
 ///
@@ -68,16 +68,60 @@ impl<F: Field> MultilinearPoly<F> {
     }
 }
 
+/// One column of the tensor-Merkle encoded matrix, opened against the root.
+///
+/// `index` is the column's position in the encoded matrix (0..m). `column`
+/// is the k1 revealed field elements of that column, serialized (little-
+/// endian, `Field::byte_len` bytes each — 8 for Goldilocks). `path` is the
+/// Merkle authentication path from the column's leaf to the root, in the
+/// leaf-to-root order `cyber_hemera::merkle_verify_path` expects.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ColumnQuery {
+    pub index: usize,
+    pub column: Vec<u8>,
+    pub path: Vec<(Hash, Side)>,
+}
+
 /// A proof that a committed polynomial evaluates to a claimed value at a point.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Opening {
-    /// Brakedown, Ikat, Porphyry: recursive tensor decomposition
-    /// with proximity testing via codeword queries.
+    /// Porphyry: recursive tensor decomposition with proximity testing via
+    /// codeword queries. **Known-unsound residual**: the queried codeword
+    /// values are carried but never checked against the round commitments
+    /// (a flat hash of a whole codeword cannot authenticate one symbol),
+    /// and consecutive round commitments are not tied to each other through
+    /// the tensor reduction. See github.com/cyberia-to/lens/issues/6 — the
+    /// same defect Brakedown had before it moved to `TensorMerkle`. Kept
+    /// only because Porphyry has not been migrated yet.
     Tensor {
         round_commitments: Vec<Commitment>,
         final_poly: Vec<u8>,
         query_responses: Vec<(usize, Vec<u8>)>,
+    },
+    /// Brakedown (and Ikat, Assayer via delegation): tensor-matrix
+    /// commitment via a linear code, Ligero/Brakedown-style (Golovnev,
+    /// Lee, Setty, Thaler, Wahby, "Brakedown: Linear-time and post-quantum
+    /// SNARKs for R1CS", §5). The evaluation table is reshaped into a
+    /// k1×k2 matrix U; each row is encoded by the SAME linear code into an
+    /// m-column matrix Û (m = EXPANSION·k2); the `Commitment` is the
+    /// Merkle root over Û's columns.
+    ///
+    /// To open at point r = (r_row, r_col) (r_row = point[..log2 k1],
+    /// r_col = point[log2 k1..]):
+    /// - `row_combination` = Σ_i eq(r_row, i)·U[i,:], sent in the clear
+    ///   (k2 field elements, serialized).
+    /// - `columns` — the sampled columns of Û with Merkle paths. The
+    ///   verifier checks each one authenticates against the root AND that
+    ///   `encode(row_combination)[j] == Σ_i eq(r_row, i)·Û[i,j]` — the
+    ///   consistency check that ties the opening to the committed matrix.
+    ///   This is the check the old `Tensor` scheme never performed.
+    ///
+    /// See specs/scalar-field.md for the query-count derivation.
+    TensorMerkle {
+        row_combination: Vec<u8>,
+        columns: Vec<ColumnQuery>,
     },
     /// Binius: folding with Merkle authentication paths.
     Folding {

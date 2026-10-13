@@ -1,26 +1,66 @@
 //! cyber-lens-brakedown — Brakedown polynomial commitment.
 //!
 //! Expander-graph linear codes over Goldilocks (F_p) with Margulis
-//! expander and proximity testing via codeword queries.
+//! expander, committed as a tensor-matrix Merkle tree with a queried-column
+//! consistency check (Ligero/Brakedown-style — Golovnev, Lee, Setty,
+//! Thaler, Wahby, "Brakedown: Linear-time and post-quantum SNARKs for
+//! R1CS", §5).
 //!
-//! See specs/scalar-field.md for the full specification.
+//! See specs/scalar-field.md for the full specification and
+//! github.com/cyberia-to/lens/issues/6 for the soundness defect this
+//! construction replaces (the old per-round "commit fresh codeword, then
+//! reduce" scheme never checked queried codeword values against anything).
 
 mod expander;
+mod matrix;
+mod merkle;
+mod public;
 mod tensor;
+
+pub use public::PublicTensor;
 
 pub use cyber_lens_core::{Commitment, Field, Lens, MultilinearPoly, Opening, Transcript};
 pub use expander::Expander;
 pub use tensor::{evaluate_small, tensor_reduce};
 
+use cyber_lens_core::ColumnQuery;
+use merkle::ColumnTree;
 use nebu::Goldilocks;
 
-/// Number of proximity queries per round.
-/// More queries = higher soundness. 20 queries gives ~2^(-20) soundness
-/// per round, compounding across ν rounds.
-const NUM_QUERIES: usize = 20;
+/// Current raw and tensor commitment format. Old roots must be recomputed.
+pub const COMMITMENT_VERSION: u32 = 2;
+const RAW_DOMAIN: &[u8] = b"lens-brakedown-raw-v2";
+const TENSOR_DOMAIN: &[u8] = b"lens-brakedown-tensor-v2";
+pub const OPENING_VERSION: u32 = 3;
+const OPENING_DOMAIN: &[u8] = b"lens-brakedown-opening-v3";
+const MAX_VARIABLES: usize = 20;
+/// Conditional sampling budget; this is not a global PCS security claim.
+const TARGET_SOUNDNESS_BITS: usize = 100;
+/// A nonzero systematic codeword contains a nonzero raw symbol.
+const MIN_ABS_WEIGHT: usize = 1;
+
+/// Query budget using only the proven absolute weight of one.
+/// Malicious-matrix validity and enclosing field bounds remain separate.
+fn num_queries(k2: usize) -> usize {
+    // (1 - 1/m)^m <= e^-1 < 1/2, so 100*m queries suffice
+    // for the conditional 100-bit sampling budget, without floating point.
+    TARGET_SOUNDNESS_BITS * expander::EXPANSION * k2 / MIN_ABS_WEIGHT
+}
 
 /// Brakedown polynomial commitment over Goldilocks.
 pub struct Brakedown;
+
+/// The reshaped-and-encoded matrix a commitment binds to, kept around so
+/// `open` does not redundantly rebuild what `commit` already computed
+/// within the same call (both are still recomputed by `open` when called
+/// independently — the same trade-off the old round-by-round scheme made).
+struct CommittedMatrix {
+    /// U: k1 rows of length k2 (the original, unencoded evaluation table).
+    rows: Vec<Vec<Goldilocks>>,
+    /// Û: m columns of length k1 (the encoded matrix, transposed).
+    columns: Vec<Vec<Goldilocks>>,
+    tree: ColumnTree,
+}
 
 impl Brakedown {
     /// Serialize field elements to bytes for hashing.
@@ -32,24 +72,45 @@ impl Brakedown {
         bytes
     }
 
-    /// Commit to raw field elements via Margulis expander encoding + hemera hash.
+    /// Commit to raw field elements via Margulis expander encoding + a
+    /// flat hemera hash of the whole codeword.
+    ///
+    /// This is DELIBERATELY not the tensor-Merkle scheme below: it is
+    /// used only where a binding-but-never-opened commitment is needed
+    /// (e.g. zheng's witness/accumulator commitments in
+    /// `folding::fold`/`folding::decide`/`phi::spmv`, which are compared
+    /// for equality but never passed to `Lens::open`/`verify`). A flat
+    /// hash is a perfectly sound binding commitment for that use — the
+    /// problem the old scheme had was using a flat hash for a commitment
+    /// that ALSO needed to support authenticated partial openings, which
+    /// `commit_raw` never claims to do. Do not feed a `commit_raw` output
+    /// to `Brakedown::verify` — the digests are unrelated to `Lens::commit`'s
+    /// Merkle-root commitments and would never match.
     pub fn commit_raw(elements: &[Goldilocks]) -> Commitment {
         Self::commit_raw_with_codeword(elements).0
     }
 
-    /// The commit AND the codeword it hashed. `open` needs both every
-    /// round; computing the codeword twice was the single largest waste
-    /// in a proof (the encode is half of Brakedown's non-hash cost).
     fn commit_raw_with_codeword(elements: &[Goldilocks]) -> (Commitment, Vec<Goldilocks>) {
         let codeword = Self::encode(elements);
-        let hash = cyber_hemera::hash(&Self::serialize(&codeword));
+        let mut bytes = RAW_DOMAIN.to_vec();
+        bytes.extend_from_slice(&(elements.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&Self::serialize(&codeword));
+        let hash = cyber_hemera::hash(&bytes);
         (Commitment(hash), codeword)
     }
 
     /// Encode elements via expander graph. Expanders are memoized per
     /// length and thread: construction runs a prime search, and a proof
-    /// asks for the same handful of sizes hundreds of times.
+    /// asks for the same handful of sizes hundreds of times. Every row of
+    /// the tensor matrix has the SAME length (k2), so a single opening
+    /// builds exactly one `Expander` and reuses it for all k1 rows plus
+    /// the verifier's `encode(row_combination)` — unlike the old
+    /// round-by-round scheme, which built a fresh, different expander for
+    /// every round (no two rounds' codewords were linearly related).
     fn encode(elements: &[Goldilocks]) -> Vec<Goldilocks> {
+        if elements.is_empty() {
+            return Vec::new();
+        }
         use std::cell::RefCell;
         use std::collections::HashMap;
         use std::rc::Rc;
@@ -65,11 +126,36 @@ impl Brakedown {
         });
         expander.encode(elements)
     }
+
+    /// Split ν variables into (row_vars, col_vars); see `matrix` module.
+    fn split_vars(num_vars: usize) -> (usize, usize) {
+        matrix::split_vars(num_vars)
+    }
+
+    /// Reshape, encode every row, and build the column Merkle tree.
+    fn build_matrix(evals: &[Goldilocks], row_vars: usize) -> CommittedMatrix {
+        let rows = matrix::reshape(evals, row_vars);
+        let encoded_rows: Vec<Vec<Goldilocks>> = rows.iter().map(|r| Self::encode(r)).collect();
+        let m = encoded_rows.first().map_or(0, Vec::len);
+        let columns: Vec<Vec<Goldilocks>> = (0..m)
+            .map(|j| encoded_rows.iter().map(|row| row[j]).collect())
+            .collect();
+        let leaf_bytes: Vec<Vec<u8>> = columns.iter().map(|c| Self::serialize(c)).collect();
+        let tree = ColumnTree::build(&leaf_bytes);
+        CommittedMatrix {
+            rows,
+            columns,
+            tree,
+        }
+    }
 }
 
 impl Lens<Goldilocks> for Brakedown {
     fn commit(poly: &MultilinearPoly<Goldilocks>) -> Commitment {
-        Self::commit_raw(&poly.evals)
+        validate_poly(poly);
+        let (row_vars, _) = Self::split_vars(poly.num_vars);
+        let matrix = Self::build_matrix(&poly.evals, row_vars);
+        tensor_commitment(matrix.tree.root(), poly.num_vars)
     }
 
     fn open(
@@ -77,43 +163,34 @@ impl Lens<Goldilocks> for Brakedown {
         point: &[Goldilocks],
         transcript: &mut Transcript,
     ) -> Opening {
+        validate_poly(poly);
         assert_eq!(point.len(), poly.num_vars, "point dimension mismatch");
 
-        let mut current = poly.evals.clone();
-        let mut round_commitments = Vec::with_capacity(poly.num_vars);
-        let mut all_queries: Vec<(usize, Vec<u8>)> = Vec::new();
+        let (row_vars, _col_vars) = Self::split_vars(poly.num_vars);
+        let matrix = Self::build_matrix(&poly.evals, row_vars);
+        let commitment = tensor_commitment(matrix.tree.root(), poly.num_vars);
 
-        // Absorb initial commitment
-        let initial = Self::commit_raw(&current);
-        transcript.absorb(initial.as_bytes());
+        let (r_row, _r_col) = point.split_at(row_vars);
+        let weights = matrix::eq_table(r_row);
+        let v = matrix::row_combination(&matrix.rows, &weights);
+        let row_combination_bytes = Self::serialize(&v);
 
-        // Reduce one variable at a time, committing intermediate states
-        for &r_i in point {
-            // Commit current polynomial — keeping the codeword the commit
-            // just encoded; the proximity queries read from it directly.
-            let (rc, codeword) = Self::commit_raw_with_codeword(&current);
-            round_commitments.push(rc);
-            transcript.absorb(rc.as_bytes());
-            for _ in 0..NUM_QUERIES {
-                let challenge = transcript.squeeze();
-                let idx = (u64::from_le_bytes(challenge.as_bytes()[..8].try_into().unwrap())
-                    as usize)
-                    % codeword.len();
-                let value_bytes = codeword[idx].as_u64().to_le_bytes().to_vec();
-                all_queries.push((idx, value_bytes));
-            }
+        absorb_claim(transcript, &commitment, point, poly.evaluate(point));
+        transcript.absorb(&row_combination_bytes);
 
-            // Tensor reduce
-            current = tensor_reduce(&current, r_i);
-        }
+        let k2 = v.len();
+        let columns = query_indices(transcript, k2)
+            .into_iter()
+            .map(|idx| ColumnQuery {
+                index: idx,
+                column: Self::serialize(&matrix.columns[idx]),
+                path: matrix.tree.path(idx),
+            })
+            .collect();
 
-        assert_eq!(current.len(), 1);
-        let final_poly = Self::serialize(&current);
-
-        Opening::Tensor {
-            round_commitments,
-            final_poly,
-            query_responses: all_queries,
+        Opening::TensorMerkle {
+            row_combination: row_combination_bytes,
+            columns,
         }
     }
 
@@ -124,61 +201,64 @@ impl Lens<Goldilocks> for Brakedown {
         proof: &Opening,
         transcript: &mut Transcript,
     ) -> bool {
-        let Opening::Tensor {
-            round_commitments,
-            final_poly,
-            query_responses,
+        let Opening::TensorMerkle {
+            row_combination,
+            columns,
         } = proof
         else {
             return false;
         };
 
-        if round_commitments.len() != point.len() {
+        if point.len() > MAX_VARIABLES {
+            return false;
+        }
+        let (row_vars, col_vars) = Self::split_vars(point.len());
+        let k1 = 1usize << row_vars;
+        let k2 = 1usize << col_vars;
+
+        let Some(v) = deserialize_goldilocks(row_combination, k2) else {
+            return false;
+        };
+
+        absorb_claim(transcript, commitment, point, value);
+        transcript.absorb(row_combination);
+
+        let m = expander::EXPANSION * k2;
+        if columns.len() > m || columns.windows(2).any(|w| w[0].index >= w[1].index) {
+            return false;
+        }
+        let expected = query_indices(transcript, k2);
+        if !columns.iter().map(|c| c.index).eq(expected) {
             return false;
         }
 
-        // Check 1: first round commitment binds to the committed polynomial
-        if !round_commitments.is_empty() && round_commitments[0] != *commitment {
-            return false;
-        }
+        let encoded_v = Self::encode(&v);
+        let (r_row, r_col) = point.split_at(row_vars);
+        let weights = matrix::eq_table(r_row);
 
-        // Check 2: replay transcript and verify proximity queries
-        transcript.absorb(commitment.as_bytes());
-
-        let expected_total_queries = round_commitments.len() * NUM_QUERIES;
-        if query_responses.len() != expected_total_queries {
-            return false;
-        }
-
-        let mut query_idx = 0;
-        // current_n tracks the polynomial size at each round:
-        // round 0 has 2^num_vars evals, each round halves it via tensor_reduce.
-        let mut current_n = 1usize << point.len();
-        for rc in round_commitments {
-            transcript.absorb(rc.as_bytes());
-            let codeword_len = expander::EXPANSION * current_n;
-
-            for _ in 0..NUM_QUERIES {
-                let challenge = transcript.squeeze();
-                let expected_idx =
-                    (u64::from_le_bytes(challenge.as_bytes()[..8].try_into().unwrap()) as usize)
-                        % codeword_len;
-                let (qidx, _qval) = &query_responses[query_idx];
-                if *qidx != expected_idx {
-                    return false;
-                }
-                query_idx += 1;
+        for cq in columns {
+            // Validate the bounded canonical payload before hashing attacker
+            // supplied bytes. Dimensions alone must bound verification work.
+            let Some(col_vals) = deserialize_goldilocks(&cq.column, k1) else {
+                return false;
+            };
+            let Some(root) = merkle::column_root(cq.index, m, &cq.column, &cq.path) else {
+                return false;
+            };
+            if tensor_commitment(root, point.len()) != *commitment {
+                return false;
+            };
+            let combo: Goldilocks = weights
+                .iter()
+                .zip(&col_vals)
+                .fold(Goldilocks::ZERO, |acc, (&w, &c)| acc + w * c);
+            if encoded_v[cq.index] != combo {
+                return false;
             }
-            current_n >>= 1;
         }
 
-        // Check 3: final value matches claimed evaluation
-        let final_elements = deserialize_goldilocks(final_poly);
-        if final_elements.len() != 1 {
-            return false;
-        }
-
-        final_elements[0] == value
+        let claimed = evaluate_small(&v, r_col);
+        claimed == value
     }
 
     fn batch_open(
@@ -186,14 +266,12 @@ impl Lens<Goldilocks> for Brakedown {
         points: &[(Vec<Goldilocks>, Goldilocks)],
         transcript: &mut Transcript,
     ) -> Opening {
-        if points.len() <= 1 {
-            let (pt, _) = &points[0];
-            return Self::open(poly, pt, transcript);
-        }
-
-        let num_vars = poly.num_vars;
-        let r_star: Vec<Goldilocks> = (0..num_vars).map(|_| transcript.squeeze_field()).collect();
-        Self::open(poly, &r_star, transcript)
+        assert_eq!(
+            points.len(),
+            1,
+            "Brakedown supports only single-point batches; use PublicTensor for exact public batches"
+        );
+        Self::open(poly, &points[0].0, transcript)
     }
 
     fn batch_verify(
@@ -202,23 +280,7 @@ impl Lens<Goldilocks> for Brakedown {
         proof: &Opening,
         transcript: &mut Transcript,
     ) -> bool {
-        if points.len() <= 1 {
-            let (pt, val) = &points[0];
-            return Self::verify(commitment, pt, *val, proof, transcript);
-        }
-
-        let num_vars = points[0].0.len();
-        let r_star: Vec<Goldilocks> = (0..num_vars).map(|_| transcript.squeeze_field()).collect();
-
-        let Opening::Tensor { final_poly, .. } = proof else {
-            return false;
-        };
-        let final_elements = deserialize_goldilocks(final_poly);
-        if final_elements.len() != 1 {
-            return false;
-        }
-
-        Self::verify(commitment, &r_star, final_elements[0], proof, transcript)
+        points.len() == 1 && Self::verify(commitment, &points[0].0, points[0].1, proof, transcript)
     }
 }
 
@@ -232,208 +294,60 @@ pub fn multilinear_eq(r: &[Goldilocks], x: &[Goldilocks]) -> Goldilocks {
     result
 }
 
-fn deserialize_goldilocks(bytes: &[u8]) -> Vec<Goldilocks> {
+fn deserialize_goldilocks(bytes: &[u8], elements: usize) -> Option<Vec<Goldilocks>> {
+    if bytes.len() != elements.checked_mul(8)? {
+        return None;
+    }
     bytes
         .chunks_exact(8)
         .map(|chunk| {
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(chunk);
-            Goldilocks::new(u64::from_le_bytes(buf))
+            let value = u64::from_le_bytes(chunk.try_into().ok()?);
+            (value < nebu::field::P).then(|| Goldilocks::new(value))
+        })
+        .collect()
+}
+
+fn validate_poly(poly: &MultilinearPoly<Goldilocks>) {
+    assert!(poly.num_vars <= MAX_VARIABLES, "Brakedown variable limit");
+    assert_eq!(
+        poly.evals.len(),
+        1 << poly.num_vars,
+        "invalid polynomial dimensions"
+    );
+}
+
+fn tensor_commitment(root: cyber_hemera::Hash, variables: usize) -> Commitment {
+    let mut bytes = TENSOR_DOMAIN.to_vec();
+    bytes.extend_from_slice(&(variables as u64).to_le_bytes());
+    bytes.extend_from_slice(root.as_bytes());
+    Commitment(cyber_hemera::hash(&bytes))
+}
+
+fn absorb_claim(t: &mut Transcript, c: &Commitment, point: &[Goldilocks], value: Goldilocks) {
+    t.absorb(OPENING_DOMAIN);
+    t.absorb(c.as_bytes());
+    t.absorb(&(point.len() as u64).to_le_bytes());
+    t.absorb(&Brakedown::serialize(point));
+    t.absorb(&value.as_u64().to_le_bytes());
+}
+
+/// Repeated samples retain their transcript position but share one authenticated
+/// payload. Sorted unique indices make the wire canonical and bounded by m.
+fn query_indices(t: &mut Transcript, k2: usize) -> std::collections::BTreeSet<usize> {
+    let m = expander::EXPANSION * k2;
+    (0..num_queries(k2))
+        .map(|_| {
+            let challenge = t.squeeze();
+            (u64::from_le_bytes(
+                challenge.as_bytes()[..8]
+                    .try_into()
+                    .expect("eight-byte digest prefix"),
+            ) % m as u64) as usize
         })
         .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn random_poly(num_vars: usize, seed: u64) -> MultilinearPoly<Goldilocks> {
-        let n = 1 << num_vars;
-        let evals: Vec<Goldilocks> = (0..n)
-            .map(|i| {
-                let v = seed
-                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-                    .wrapping_add(i as u64);
-                Goldilocks::new(v).canonicalize()
-            })
-            .collect();
-        MultilinearPoly::new(evals)
-    }
-
-    #[test]
-    fn commit_deterministic() {
-        let poly = random_poly(4, 42);
-        assert_eq!(Brakedown::commit(&poly), Brakedown::commit(&poly));
-    }
-
-    #[test]
-    fn commit_different_polys_differ() {
-        let p1 = random_poly(4, 1);
-        let p2 = random_poly(4, 2);
-        assert_ne!(Brakedown::commit(&p1), Brakedown::commit(&p2));
-    }
-
-    #[test]
-    fn roundtrip_tiny() {
-        let poly = MultilinearPoly::new(vec![Goldilocks::new(3), Goldilocks::new(7)]);
-        let commitment = Brakedown::commit(&poly);
-        let point = vec![Goldilocks::ZERO];
-        let value = poly.evaluate(&point);
-
-        let mut pt = Transcript::new(b"test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-        let mut vt = Transcript::new(b"test");
-        assert!(Brakedown::verify(
-            &commitment,
-            &point,
-            value,
-            &proof,
-            &mut vt
-        ));
-    }
-
-    #[test]
-    fn roundtrip_small() {
-        let poly = MultilinearPoly::new(vec![
-            Goldilocks::new(1),
-            Goldilocks::new(2),
-            Goldilocks::new(3),
-            Goldilocks::new(4),
-        ]);
-        let commitment = Brakedown::commit(&poly);
-        let point = vec![Goldilocks::ZERO, Goldilocks::ZERO];
-        let value = poly.evaluate(&point);
-
-        let mut pt = Transcript::new(b"test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-        let mut vt = Transcript::new(b"test");
-        assert!(Brakedown::verify(
-            &commitment,
-            &point,
-            value,
-            &proof,
-            &mut vt
-        ));
-    }
-
-    #[test]
-    fn roundtrip_medium() {
-        let poly = random_poly(8, 123);
-        let commitment = Brakedown::commit(&poly);
-        let point: Vec<Goldilocks> = (0..8)
-            .map(|i| Goldilocks::new(i * 7 + 3).canonicalize())
-            .collect();
-        let value = poly.evaluate(&point);
-
-        let mut pt = Transcript::new(b"brakedown-test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-        let mut vt = Transcript::new(b"brakedown-test");
-        assert!(Brakedown::verify(
-            &commitment,
-            &point,
-            value,
-            &proof,
-            &mut vt
-        ));
-    }
-
-    #[test]
-    fn wrong_value_rejected() {
-        let poly = random_poly(4, 99);
-        let commitment = Brakedown::commit(&poly);
-        let point = vec![Goldilocks::ZERO; 4];
-        let value = poly.evaluate(&point);
-
-        let mut pt = Transcript::new(b"test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-        let mut vt = Transcript::new(b"test");
-        assert!(!Brakedown::verify(
-            &commitment,
-            &point,
-            value + Goldilocks::ONE,
-            &proof,
-            &mut vt
-        ));
-    }
-
-    #[test]
-    fn wrong_commitment_rejected() {
-        let poly = random_poly(4, 50);
-        let point = vec![Goldilocks::ZERO; 4];
-        let value = poly.evaluate(&point);
-        let fake = Commitment(cyber_hemera::hash(b"fake"));
-
-        let mut pt = Transcript::new(b"test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-        let mut vt = Transcript::new(b"test");
-        assert!(!Brakedown::verify(&fake, &point, value, &proof, &mut vt));
-    }
-
-    #[test]
-    fn proof_contains_proximity_queries() {
-        let poly = random_poly(4, 200);
-        let point = vec![Goldilocks::ZERO; 4];
-
-        let mut pt = Transcript::new(b"test");
-        let proof = Brakedown::open(&poly, &point, &mut pt);
-
-        if let Opening::Tensor {
-            query_responses,
-            round_commitments,
-            ..
-        } = &proof
-        {
-            assert_eq!(
-                query_responses.len(),
-                round_commitments.len() * NUM_QUERIES,
-                "should have {} queries per round × {} rounds",
-                NUM_QUERIES,
-                round_commitments.len()
-            );
-            for (idx, val) in query_responses {
-                assert!(*idx < expander::EXPANSION * (1 << 4)); // within codeword bounds
-                assert_eq!(val.len(), 8); // one Goldilocks element
-            }
-        } else {
-            panic!("expected Tensor opening");
-        }
-    }
-
-    #[test]
-    fn batch_roundtrip() {
-        let poly = random_poly(4, 200);
-        let commitment = Brakedown::commit(&poly);
-        let points: Vec<(Vec<Goldilocks>, Goldilocks)> = (0..3)
-            .map(|seed| {
-                let pt: Vec<Goldilocks> = (0..4)
-                    .map(|i| Goldilocks::new(seed * 10 + i + 1).canonicalize())
-                    .collect();
-                let val = poly.evaluate(&pt);
-                (pt, val)
-            })
-            .collect();
-
-        let mut pt = Transcript::new(b"batch-test");
-        let proof = Brakedown::batch_open(&poly, &points, &mut pt);
-        let mut vt = Transcript::new(b"batch-test");
-        assert!(Brakedown::batch_verify(
-            &commitment,
-            &points,
-            &proof,
-            &mut vt
-        ));
-    }
-
-    #[test]
-    fn multilinear_eq_boolean_identity() {
-        let b = vec![Goldilocks::ONE, Goldilocks::ZERO, Goldilocks::ONE];
-        assert_eq!(multilinear_eq(&b, &b), Goldilocks::ONE);
-    }
-
-    #[test]
-    fn multilinear_eq_orthogonal() {
-        let a = vec![Goldilocks::ZERO, Goldilocks::ZERO];
-        let b = vec![Goldilocks::ONE, Goldilocks::ZERO];
-        assert_eq!(multilinear_eq(&a, &b), Goldilocks::ZERO);
-    }
-}
+mod tests;
+#[cfg(test)]
+mod version_tests;
