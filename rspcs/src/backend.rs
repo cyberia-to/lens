@@ -419,7 +419,7 @@ impl Backend for Cpu {
             nebu::ntt::ntt(&mut v);
             v.into_iter().map(|x| x.as_u64()).collect::<Vec<u64>>()
         };
-        if shifts.len() > 1 && coeffs.len() >= 1024 {
+        if shifts.len() > 1 && shifts.len() * coeffs.len() >= 1 << 14 {
             crate::par::par_map_min(shifts.len(), 2, |j| one(shifts[j]))
         } else {
             shifts.iter().map(|&s| one(s)).collect()

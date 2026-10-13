@@ -41,7 +41,7 @@ pub fn encode_base_with(coeffs: &[Goldilocks], log_n: u32, parallel: bool) -> Ve
     assert!(k.is_power_of_two() && k <= n);
     let blowup = n / k;
     let omega = root_of_unity(log_n);
-    if parallel && blowup > 1 && k >= 1024 {
+    if parallel && blowup > 1 && blowup * k >= PAR_MIN {
         // the process's backend (cpu: one coset per thread), interleaved in threads
         let shifts: Vec<u64> = (0..blowup).map(|s| omega.exp(s as u64).as_u64()).collect();
         let cosets = crate::backend::current().coset_ntt(&crate::backend::limbs(coeffs), &shifts);
@@ -50,6 +50,9 @@ pub fn encode_base_with(coeffs: &[Goldilocks], log_n: u32, parallel: bool) -> Ve
     let cosets: Vec<Vec<Goldilocks>> = (0..blowup).map(|s| coset_ntt(coeffs, omega.exp(s as u64))).collect();
     interleave(&cosets, k, blowup)
 }
+
+/// Codewords at least this long encode in threads.
+const PAR_MIN: usize = 1 << 14;
 
 /// `out[u·blowup + s] = at(s, u)`, chunks of `out` in threads.
 fn interleave_par<T: Copy + Default + Send>(n: usize, blowup: usize, at: impl Fn(usize, usize) -> T + Sync) -> Vec<T> {
@@ -76,7 +79,7 @@ pub fn encode_ext(coeffs: &[Fp3], log_n: u32) -> Vec<Fp3> {
     let k = coeffs.len();
     let n = 1usize << log_n;
     let blowup = n / k;
-    if blowup > 1 && k >= 1024 {
+    if blowup > 1 && blowup * k >= PAR_MIN {
         // three limbs, every coset, in one backend call; interleaved in threads
         let omega = root_of_unity(log_n);
         let shifts: Vec<u64> = (0..blowup).map(|s| omega.exp(s as u64).as_u64()).collect();
