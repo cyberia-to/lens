@@ -188,7 +188,8 @@ impl WebGpu {
             })
         };
         let ext = crate::webgpu2::Ext::new(&device);
-        let max_storage = (limits.max_storage_buffer_binding_size as u64).min(limits.max_buffer_size);
+        let max_storage =
+            (limits.max_storage_buffer_binding_size as u64).min(limits.max_buffer_size);
         let max_bytes = (limits.max_storage_buffer_binding_size as u64)
             .min(limits.max_buffer_size)
             .min(1 << 28);
@@ -220,10 +221,48 @@ impl WebGpu {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// [`Backend::coset_ntt`] without blocking (browsers): awaits the
+    /// readback.
+    pub async fn coset_ntt_async(&self, coeffs: &[u64], shifts: &[u64]) -> Option<Vec<Vec<u64>>> {
+        let g = self.lock();
+        let c = crate::webgpu2::Ctx {
+            device: &g.device,
+            queue: &g.queue,
+            consts: &g.consts,
+            ext: &g.ext,
+            max_storage: g.max_storage,
+        };
+        crate::webgpu2::coset_ntt_async(&c, coeffs, shifts).await
+    }
+
+    /// [`Backend::merkle_levels`] without blocking (browsers).
+    pub async fn merkle_levels_async(
+        &self,
+        leaves: &[[u64; 4]],
+        arities: &[usize],
+        tag: u64,
+    ) -> Option<Vec<Vec<[u64; 4]>>> {
+        let g = self.lock();
+        let c = crate::webgpu2::Ctx {
+            device: &g.device,
+            queue: &g.queue,
+            consts: &g.consts,
+            ext: &g.ext,
+            max_storage: g.max_storage,
+        };
+        crate::webgpu2::merkle_levels_async(&c, leaves, arities, tag).await
+    }
+
     /// Run `f` with the device context (the backend locked).
     pub(crate) fn with_ctx<R>(&self, f: impl FnOnce(&crate::webgpu2::Ctx<'_>) -> R) -> R {
         let g = self.lock();
-        let c = crate::webgpu2::Ctx { device: &g.device, queue: &g.queue, consts: &g.consts, ext: &g.ext, max_storage: g.max_storage };
+        let c = crate::webgpu2::Ctx {
+            device: &g.device,
+            queue: &g.queue,
+            consts: &g.consts,
+            ext: &g.ext,
+            max_storage: g.max_storage,
+        };
         f(&c)
     }
 }
@@ -416,7 +455,13 @@ impl Backend for WebGpu {
         out
     }
 
-    fn line_sums(&self, prog: &Program, cols: &[Limbs], weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+    fn line_sums(
+        &self,
+        prog: &Program,
+        cols: &[Limbs],
+        weights: &[Limbs],
+        xs: &[u64],
+    ) -> Vec<Limbs> {
         let pairs = weights.len();
         if prog.regs > 160 || xs.len() > 16 || xs.is_empty() || pairs * xs.len() < MIN_BATCH {
             return Cpu.line_sums(prog, cols, weights, xs);
@@ -425,14 +470,20 @@ impl Backend for WebGpu {
         let ncols = prog.inputs as usize;
         assert_eq!(cols.len(), ncols * len, "cols");
         let g = self.lock();
-        let mut progw: Vec<u32> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).collect();
+        let mut progw: Vec<u32> = prog
+            .ops
+            .iter()
+            .flat_map(|o| [o.code as u32, o.a, o.b, o.dst])
+            .collect();
         let consts_at = progw.len() as u32;
         progw.extend(u32s(prog.consts.as_flattened()));
-        let progb = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("program"),
-            contents: &bytes(&progw),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
+        let progb = g
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("program"),
+                contents: &bytes(&progw),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
         let nx = xs.len();
         // pairs per dispatch: the chunk's rows within the binding limit and
         // a bounded number of threads
@@ -450,11 +501,13 @@ impl Backend for WebGpu {
             // in vec2 units: every limb is one vec2<u32>
             let weights_at = (ncols * 2 * n * 3) as u32;
             data.extend(weights[first..first + n].as_flattened());
-            let datab = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("lines data"),
-                contents: &bytes(&u32s(&data)),
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+            let datab = g
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("lines data"),
+                    contents: &bytes(&u32s(&data)),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
             let threads = n * nx;
             let outb = g.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("line results"),
@@ -469,26 +522,58 @@ impl Backend for WebGpu {
                 mapped_at_creation: false,
             });
             let (x, y, row) = grid(threads);
-            let mut p = vec![prog.ops.len() as u32, ncols as u32, (2 * n) as u32, nx as u32, threads as u32, 0, prog.output, consts_at, weights_at, row, 0, 0];
+            let mut p = vec![
+                prog.ops.len() as u32,
+                ncols as u32,
+                (2 * n) as u32,
+                nx as u32,
+                threads as u32,
+                0,
+                prog.output,
+                consts_at,
+                weights_at,
+                row,
+                0,
+                0,
+            ];
             p.extend(u32s(&xa));
-            let ub = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: &bytes(&p),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
+            let ub = g
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: &bytes(&p),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
             let bg = g.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &g.lines.get_bind_group_layout(0),
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 1, resource: progb.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: datab.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: outb.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: ub.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: progb.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: datab.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: outb.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: ub.as_entire_binding(),
+                    },
                 ],
             });
-            let mut enc = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            let mut enc = g
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             {
-                let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
+                let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: None,
+                });
                 pass.set_pipeline(&g.lines);
                 pass.set_bind_group(0, &bg, &[]);
                 pass.dispatch_workgroups(x, y, 1);
@@ -497,27 +582,45 @@ impl Backend for WebGpu {
             g.queue.submit([enc.finish()]);
             let slice = read.slice(..);
             slice.map_async(wgpu::MapMode::Read, |r| r.expect("webgpu: map"));
-            g.device.poll(wgpu::PollType::wait_indefinitely()).expect("webgpu: poll");
+            g.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("webgpu: poll");
             let raw = slice.get_mapped_range().to_vec();
             read.unmap();
             for (t, v) in raw.chunks_exact(24).enumerate() {
-                let l: [u64; 3] = core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8 bytes")));
+                let l: [u64; 3] = core::array::from_fn(|q| {
+                    u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8 bytes"))
+                });
                 sums[t % nx] += to_fp3(l);
             }
         }
         sums.into_iter().map(from_fp3).collect()
     }
 
-    fn line_session<'a>(&'a self, prog: &'a Program, cols: &[Limbs], len: usize) -> Option<Box<dyn cyber_lens_rspcs::backend::LineSession + 'a>> {
+    fn line_session<'a>(
+        &'a self,
+        prog: &'a Program,
+        cols: &[Limbs],
+        len: usize,
+    ) -> Option<Box<dyn cyber_lens_rspcs::backend::LineSession + 'a>> {
         let s = self.with_ctx(|c| crate::webgpu2::session(c, self, prog, cols, len))?;
         Some(Box::new(s))
     }
 
-    fn coset_leaves(&self, job: &cyber_lens_rspcs::backend::CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves(
+        &self,
+        job: &cyber_lens_rspcs::backend::CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+    ) -> Option<Vec<[u64; 4]>> {
         self.with_ctx(|c| crate::webgpu2::coset_leaves(c, job, cosets))
     }
 
-    fn merkle_levels(&self, leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+    fn merkle_levels(
+        &self,
+        leaves: &[[u64; 4]],
+        arities: &[usize],
+        tag: u64,
+    ) -> Option<Vec<Vec<[u64; 4]>>> {
         self.with_ctx(|c| crate::webgpu2::merkle_levels(c, leaves, arities, tag))
     }
 
@@ -525,7 +628,8 @@ impl Backend for WebGpu {
         if coeffs.len() < 1 << 12 || shifts.is_empty() {
             return Cpu.coset_ntt(coeffs, shifts);
         }
-        self.with_ctx(|c| crate::webgpu2::coset_ntt(c, coeffs, shifts)).unwrap_or_else(|| Cpu.coset_ntt(coeffs, shifts))
+        self.with_ctx(|c| crate::webgpu2::coset_ntt(c, coeffs, shifts))
+            .unwrap_or_else(|| Cpu.coset_ntt(coeffs, shifts))
     }
 
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {

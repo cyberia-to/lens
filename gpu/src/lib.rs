@@ -17,6 +17,7 @@
 //! least grinding nonce); `tests/differential.rs` checks them on random
 //! inputs. [`install`] picks one for the process.
 
+pub mod checked;
 pub mod consts;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 pub mod metal;
@@ -25,11 +26,11 @@ mod msl;
 #[cfg(feature = "webgpu")]
 pub mod webgpu;
 #[cfg(feature = "webgpu")]
+mod webgpu2;
+#[cfg(feature = "webgpu")]
 mod wgsl;
 #[cfg(feature = "webgpu")]
 mod wgsl2;
-#[cfg(feature = "webgpu")]
-mod webgpu2;
 
 use std::sync::Arc;
 
@@ -43,6 +44,15 @@ pub enum Choice {
     Cpu,
     Metal,
     WebGpu,
+    /// A device backend checked against the CPU on every operation.
+    Check(Inner),
+}
+
+/// The device a [`Choice::Check`] runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Inner {
+    Metal,
+    WebGpu,
 }
 
 impl core::str::FromStr for Choice {
@@ -53,6 +63,8 @@ impl core::str::FromStr for Choice {
             "cpu" => Ok(Choice::Cpu),
             "metal" => Ok(Choice::Metal),
             "webgpu" => Ok(Choice::WebGpu),
+            "check-metal" => Ok(Choice::Check(Inner::Metal)),
+            "check-webgpu" => Ok(Choice::Check(Inner::WebGpu)),
             _ => Err(format!("unknown backend `{s}` (auto, cpu, metal, webgpu)")),
         }
     }
@@ -126,6 +138,17 @@ pub fn select(choice: Choice) -> Result<Selected, String> {
         Choice::Cpu => Ok(cpu()),
         Choice::Metal => metal(),
         Choice::WebGpu => webgpu(),
+        Choice::Check(i) => {
+            let s = if i == Inner::Metal {
+                metal()?
+            } else {
+                webgpu()?
+            };
+            Ok(Selected {
+                device: s.device,
+                backend: Arc::new(checked::Checked(s.backend)),
+            })
+        }
         Choice::Auto => Ok(metal().or_else(|_| webgpu()).unwrap_or_else(|_| cpu())),
     }
 }

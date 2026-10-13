@@ -38,7 +38,10 @@ fn backends() -> Vec<cyber_lens_gpu::Selected> {
 
 /// A required backend must run the operation (no silent CPU fallback).
 fn required(name: &str) -> bool {
-    std::env::var("LENS_GPU_REQUIRE").unwrap_or_default().split(',').any(|r| r == name)
+    std::env::var("LENS_GPU_REQUIRE")
+        .unwrap_or_default()
+        .split(',')
+        .any(|r| r == name)
 }
 
 fn random_states(n: usize, seed: u64) -> Vec<State> {
@@ -203,28 +206,45 @@ fn sponges_equal_cpu() {
 
 #[test]
 fn program_line_sums_equal_cpu() {
-    use cyber_lens_rspcs::program::{Program, from_fp3, OP_MULB};
+    use cyber_lens_rspcs::program::{OP_MULB, Program, from_fp3};
     let mut r = 4242u64;
     for s in backends() {
         let inputs = 23usize;
-        let consts: Vec<[u64; 3]> = (0..6).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).chain([[9, 0, 0]]).collect();
+        let consts: Vec<[u64; 3]> = (0..6)
+            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .chain([[9, 0, 0]])
+            .collect();
         let base = (inputs + consts.len()) as u32;
         let mut ops = Vec::new();
         for k in 0..400u32 {
             let avail = base + k;
             let code = (rng(&mut r) % 5) as u8;
             let a = (rng(&mut r) % avail as u64) as u32;
-            let b = if code == OP_MULB { (consts.len() - 1) as u32 } else { (rng(&mut r) % avail as u64) as u32 };
+            let b = if code == OP_MULB {
+                (consts.len() - 1) as u32
+            } else {
+                (rng(&mut r) % avail as u64) as u32
+            };
             ops.push((code, a, b));
         }
         let prog = Program::from_slots(&ops, consts, inputs, base + 399);
         let pairs = 3000usize;
-        let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
-        let mut weights: Vec<[u64; 3]> = (0..pairs).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+        let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs)
+            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .collect();
+        let mut weights: Vec<[u64; 3]> = (0..pairs)
+            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .collect();
         weights[7] = [0, 0, 0];
         let xs = [0u64, 2, 3, 4, 5, 6, 7];
         let want = Cpu.line_sums(&prog, &cols, &weights, &xs);
-        assert_eq!(s.backend.line_sums(&prog, &cols, &weights, &xs), want, "{} regs {}", s.backend.name(), prog.regs);
+        assert_eq!(
+            s.backend.line_sums(&prog, &cols, &weights, &xs),
+            want,
+            "{} regs {}",
+            s.backend.name(),
+            prog.regs
+        );
         let _ = from_fp3;
     }
 }
@@ -234,17 +254,39 @@ fn coset_leaves_equal_the_reference() {
     use cyber_lens_rspcs::backend::{CosetLeaves, coset_leaves_reference};
     let mut r = 77u64;
     for s in backends() {
-        for (members, limbs, log_k, log_n, log_w) in [(2usize, 1usize, 12u32, 16u32, 3u32), (2, 3, 12, 16, 4), (1, 3, 13, 16, 2)] {
+        for (members, limbs, log_k, log_n, log_w) in [
+            (2usize, 1usize, 12u32, 16u32, 3u32),
+            (2, 3, 12, 16, 4),
+            (1, 3, 13, 16, 2),
+        ] {
             let k = 1usize << log_k;
-            let data: Vec<Vec<u64>> = (0..members * limbs).map(|_| (0..k).map(|_| rng(&mut r) % P).collect()).collect();
+            let data: Vec<Vec<u64>> = (0..members * limbs)
+                .map(|_| (0..k).map(|_| rng(&mut r) % P).collect())
+                .collect();
             let mut init = [0u64; 16];
             init[9] = 2;
-            let job = CosetLeaves { limbs: data.iter().map(|v| v.as_slice()).collect(), limbs_per_member: limbs, log_n, log_width: log_w, init, rate: 9 };
+            let job = CosetLeaves {
+                limbs: data.iter().map(|v| v.as_slice()).collect(),
+                limbs_per_member: limbs,
+                log_n,
+                log_width: log_w,
+                init,
+                rate: 9,
+            };
             let cosets = job.cosets();
             for range in [0..cosets, 3..5] {
                 match s.backend.coset_leaves(&job, range.clone()) {
-                    Some(got) => assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} members {members} limbs {limbs} range {range:?}", s.backend.name()),
-                    None => assert!(!required(s.backend.name()), "{}: coset leaves declined", s.backend.name()),
+                    Some(got) => assert_eq!(
+                        got,
+                        coset_leaves_reference(&job, range.clone()),
+                        "{} members {members} limbs {limbs} range {range:?}",
+                        s.backend.name()
+                    ),
+                    None => assert!(
+                        !required(s.backend.name()),
+                        "{}: coset leaves declined",
+                        s.backend.name()
+                    ),
                 }
             }
         }
@@ -258,29 +300,49 @@ fn line_sessions_equal_the_cpu_session() {
     let mut r = 999u64;
     for s in backends() {
         let inputs = 11usize;
-        let consts: Vec<[u64; 3]> = (0..3).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).chain([[5, 0, 0]]).collect();
+        let consts: Vec<[u64; 3]> = (0..3)
+            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .chain([[5, 0, 0]])
+            .collect();
         let base = (inputs + consts.len()) as u32;
         let ops: Vec<(u8, u32, u32)> = (0..150u32)
             .map(|k| {
                 let code = (rng(&mut r) % 5) as u8;
                 let a = (rng(&mut r) % (base + k) as u64) as u32;
-                let b = if code == OP_MULB { (consts.len() - 1) as u32 } else { (rng(&mut r) % (base + k) as u64) as u32 };
+                let b = if code == OP_MULB {
+                    (consts.len() - 1) as u32
+                } else {
+                    (rng(&mut r) % (base + k) as u64) as u32
+                };
                 (code, a, b)
             })
             .collect();
         let prog = Program::from_slots(&ops, consts, inputs, base + 149);
         let len = 1usize << 13;
-        let cols: Vec<[u64; 3]> = (0..inputs * len).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+        let cols: Vec<[u64; 3]> = (0..inputs * len)
+            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .collect();
         let Some(mut dev) = s.backend.line_session(&prog, &cols, len) else {
-            assert!(!required(s.backend.name()), "{}: no line session", s.backend.name());
+            assert!(
+                !required(s.backend.name()),
+                "{}: no line session",
+                s.backend.name()
+            );
             continue;
         };
         let mut cpu = CpuSession::new(&prog, &cols, len);
         let mut rows = len;
         while rows >= 2 {
-            let weights: Vec<[u64; 3]> = (0..rows / 2).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+            let weights: Vec<[u64; 3]> = (0..rows / 2)
+                .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+                .collect();
             let xs = [0u64, 2, 3, 5];
-            assert_eq!(dev.sums(&weights, &xs), cpu.sums(&weights, &xs), "{} rows {rows}", s.backend.name());
+            assert_eq!(
+                dev.sums(&weights, &xs),
+                cpu.sums(&weights, &xs),
+                "{} rows {rows}",
+                s.backend.name()
+            );
             let alpha = [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P];
             dev.fold(alpha);
             cpu.fold(alpha);
@@ -297,11 +359,49 @@ fn merkle_levels_equal_the_reference() {
     for s in backends() {
         for arities in [vec![2usize; 13], vec![4, 4, 4, 4, 4, 4, 2]] {
             let n: usize = arities.iter().product();
-            let leaves: Vec<[u64; 4]> = (0..n).map(|_| core::array::from_fn(|_| rng(&mut r) % P)).collect();
+            let leaves: Vec<[u64; 4]> = (0..n)
+                .map(|_| core::array::from_fn(|_| rng(&mut r) % P))
+                .collect();
             match s.backend.merkle_levels(&leaves, &arities, 0x6e6f6465) {
-                Some(got) => assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465), "{} {arities:?}", s.backend.name()),
-                None => assert!(!required(s.backend.name()), "{}: merkle levels declined", s.backend.name()),
+                Some(got) => assert_eq!(
+                    got,
+                    merkle_levels_reference(&leaves, &arities, 0x6e6f6465),
+                    "{} {arities:?}",
+                    s.backend.name()
+                ),
+                None => assert!(
+                    !required(s.backend.name()),
+                    "{}: merkle levels declined",
+                    s.backend.name()
+                ),
             }
         }
     }
+}
+
+/// The asynchronous WebGPU path (a browser's): the same results, awaited
+/// through the map callback without a blocking device wait.
+#[cfg(feature = "webgpu")]
+#[test]
+fn webgpu_async_ops_equal_cpu() {
+    use cyber_lens_rspcs::backend::merkle_levels_reference;
+    let w = match cyber_lens_gpu::webgpu::WebGpu::new() {
+        Ok(w) => w,
+        Err(e) => {
+            assert!(!required("webgpu"), "{e}");
+            return;
+        }
+    };
+    let mut r = 5u64;
+    let coeffs: Vec<u64> = (0..1u64 << 13).map(|_| rng(&mut r) % P).collect();
+    let shifts = [3u64, 7, 1];
+    let got = pollster::block_on(w.coset_ntt_async(&coeffs, &shifts)).expect("async ntt");
+    assert_eq!(got, Cpu.coset_ntt(&coeffs, &shifts));
+    let leaves: Vec<[u64; 4]> = (0..1usize << 12)
+        .map(|_| core::array::from_fn(|_| rng(&mut r) % P))
+        .collect();
+    let arities = [4usize, 4, 4, 4, 4, 4];
+    let got = pollster::block_on(w.merkle_levels_async(&leaves, &arities, 0x6e6f6465))
+        .expect("async levels");
+    assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465));
 }

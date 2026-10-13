@@ -38,3 +38,6 @@ webgpu = ["dep:wgpu", "dep:pollster"]
 
 [[example]]
 name = "gpu_bench"
+
+[dev-dependencies]
+pollster = "0.4"

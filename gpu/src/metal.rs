@@ -107,7 +107,10 @@ impl LineSession for MetalSession<'_> {
         let nx = xs.len();
         assert!(nx <= 16 && nx > 0);
         let per = (LINE_DISPATCH / nx).max(1);
-        let outb = g.gpu.buffer(per.min(pairs) * nx * 24).expect("metal: line sums");
+        let outb = g
+            .gpu
+            .buffer(per.min(pairs) * nx * 24)
+            .expect("metal: line sums");
         let mut xa = [0u64; 16];
         xa[..nx].copy_from_slice(xs);
         let mut sums = vec![Fp3::ZERO; nx];
@@ -126,7 +129,20 @@ impl LineSession for MetalSession<'_> {
                 pad: 0,
                 xs: xa,
             };
-            run(&g, &g.lines, &[(&self.ops, 0), (&self.consts, 1), (&self.cols[self.cur], 2), (&wb, 3), (&outb, 4)], Some((bytes_of(&p), 5)), threads).expect("metal line sums");
+            run(
+                &g,
+                &g.lines,
+                &[
+                    (&self.ops, 0),
+                    (&self.consts, 1),
+                    (&self.cols[self.cur], 2),
+                    (&wb, 3),
+                    (&outb, 4),
+                ],
+                Some((bytes_of(&p), 5)),
+                threads,
+            )
+            .expect("metal line sums");
             read(&outb, &mut part[..threads]);
             for (t, v) in part[..threads].iter().enumerate() {
                 sums[t % nx] += to_fp3(*v);
@@ -137,9 +153,22 @@ impl LineSession for MetalSession<'_> {
     fn fold(&mut self, alpha: Limbs) {
         let half = self.len / 2;
         let g = self.m.lock();
-        let p = FoldParams { alpha, ncols: self.ncols as u32, stride: self.stride as u32, half: half as u32, pad: 0 };
+        let p = FoldParams {
+            alpha,
+            ncols: self.ncols as u32,
+            stride: self.stride as u32,
+            half: half as u32,
+            pad: 0,
+        };
         let (src, dst) = (&self.cols[self.cur], &self.cols[1 - self.cur]);
-        run(&g, &g.fold, &[(src, 0), (dst, 1)], Some((bytes_of(&p), 2)), self.ncols * half).expect("metal fold");
+        run(
+            &g,
+            &g.fold,
+            &[(src, 0), (dst, 1)],
+            Some((bytes_of(&p), 2)),
+            self.ncols * half,
+        )
+        .expect("metal fold");
         self.cur = 1 - self.cur;
         self.len = half;
     }
@@ -436,7 +465,13 @@ impl Backend for Metal {
         out
     }
 
-    fn line_sums(&self, prog: &Program, cols: &[Limbs], weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+    fn line_sums(
+        &self,
+        prog: &Program,
+        cols: &[Limbs],
+        weights: &[Limbs],
+        xs: &[u64],
+    ) -> Vec<Limbs> {
         let pairs = weights.len();
         if prog.regs > MAX_REGS || xs.len() > 16 || xs.is_empty() || pairs * xs.len() < MIN_BATCH {
             return Cpu.line_sums(prog, cols, weights, xs);
@@ -445,15 +480,28 @@ impl Backend for Metal {
         assert_eq!(cols.len(), prog.inputs as usize * len, "cols");
         let g = self.lock();
         let buf = |data: &[u8]| -> Buffer {
-            let b = g.gpu.buffer(data.len().max(16)).expect("metal: line buffer");
+            let b = g
+                .gpu
+                .buffer(data.len().max(16))
+                .expect("metal: line buffer");
             write(&b, data);
             b
         };
-        let ops: Vec<u32> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).collect();
+        let ops: Vec<u32> = prog
+            .ops
+            .iter()
+            .flat_map(|o| [o.code as u32, o.a, o.b, o.dst])
+            .collect();
         let as_bytes = |v: &[u64]| -> Vec<u8> { v.iter().flat_map(|x| x.to_le_bytes()).collect() };
-        let opsb = buf(&ops.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>());
+        let opsb = buf(&ops
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect::<Vec<u8>>());
         let constsb = buf(&as_bytes(prog.consts.as_flattened()));
-        let colsb = g.gpu.buffer((cols.len() * 24).max(16)).expect("metal: columns");
+        let colsb = g
+            .gpu
+            .buffer((cols.len() * 24).max(16))
+            .expect("metal: columns");
         write(&colsb, cols);
         let wb = buf(&as_bytes(weights.as_flattened()));
         let nx = xs.len();
@@ -477,7 +525,14 @@ impl Backend for Metal {
                 pad: 0,
                 xs: xa,
             };
-            run(&g, &g.lines, &[(&opsb, 0), (&constsb, 1), (&colsb, 2), (&wb, 3), (&outb, 4)], Some((bytes_of(&p), 5)), threads).expect("metal line sums");
+            run(
+                &g,
+                &g.lines,
+                &[(&opsb, 0), (&constsb, 1), (&colsb, 2), (&wb, 3), (&outb, 4)],
+                Some((bytes_of(&p), 5)),
+                threads,
+            )
+            .expect("metal line sums");
             read(&outb, &mut part[..threads]);
             for (t, v) in part[..threads].iter().enumerate() {
                 sums[t % nx] += to_fp3(*v);
@@ -486,13 +541,23 @@ impl Backend for Metal {
         sums.into_iter().map(from_fp3).collect()
     }
 
-    fn line_session<'a>(&'a self, prog: &'a Program, cols: &[Limbs], len: usize) -> Option<Box<dyn LineSession + 'a>> {
+    fn line_session<'a>(
+        &'a self,
+        prog: &'a Program,
+        cols: &[Limbs],
+        len: usize,
+    ) -> Option<Box<dyn LineSession + 'a>> {
         if prog.regs > MAX_REGS || len < 2 || cols.len() % len != 0 {
             return None;
         }
         let ncols = cols.len() / len;
         let g = self.lock();
-        let ops: Vec<u8> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).flat_map(|x| x.to_le_bytes()).collect();
+        let ops: Vec<u8> = prog
+            .ops
+            .iter()
+            .flat_map(|o| [o.code as u32, o.a, o.b, o.dst])
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
         let opsb = g.gpu.buffer(ops.len().max(16)).ok()?;
         write(&opsb, &ops);
         let consts: Vec<u64> = prog.consts.as_flattened().to_vec();
@@ -502,10 +567,25 @@ impl Backend for Metal {
         write(&a, cols);
         let b = g.gpu.buffer(cols.len() * 24).ok()?;
         drop(g);
-        Some(Box::new(MetalSession { m: self, prog, ops: opsb, consts: constsb, cols: [a, b], cur: 0, ncols, stride: len, len }))
+        Some(Box::new(MetalSession {
+            m: self,
+            prog,
+            ops: opsb,
+            consts: constsb,
+            cols: [a, b],
+            cur: 0,
+            ncols,
+            stride: len,
+            len,
+        }))
     }
 
-    fn merkle_levels(&self, leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+    fn merkle_levels(
+        &self,
+        leaves: &[[u64; 4]],
+        arities: &[usize],
+        tag: u64,
+    ) -> Option<Vec<Vec<[u64; 4]>>> {
         if leaves.len() < MIN_BATCH || arities.iter().any(|&a| a != 2 && a != 4) {
             return None;
         }
@@ -529,7 +609,11 @@ impl Backend for Metal {
             let mut src = 0usize;
             let mut dst = leaves.len();
             for (&a, &n) in arities.iter().zip(&counts) {
-                let p = LevelParams { count: n as u32, arity: a as u32, tag };
+                let p = LevelParams {
+                    count: n as u32,
+                    arity: a as u32,
+                    tag,
+                };
                 enc.bind_buffer(&buf, src * 32, 0);
                 enc.bind_buffer(&buf, dst * 32, 1);
                 enc.push(bytes_of(&p), 2);
@@ -555,7 +639,11 @@ impl Backend for Metal {
         Some(out)
     }
 
-    fn coset_leaves(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves(
+        &self,
+        job: &CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+    ) -> Option<Vec<[u64; 4]>> {
         let (k, per, g) = (job.k(), job.per(), cosets.len());
         if k < MIN_NTT || job.rate > 16 || g == 0 || !k.is_power_of_two() {
             return None;
@@ -572,18 +660,37 @@ impl Backend for Metal {
             gd.twiddles = Some((log_k, b));
         }
         let (need_c, need_v, need_o) = (ml * k * 8, ml * g * k * 8, g * per * 32);
-        if gd.leaf_bufs.as_ref().is_none_or(|(c, v, o)| c.size() < need_c || v.size() < need_v || o.size() < need_o) {
+        if gd
+            .leaf_bufs
+            .as_ref()
+            .is_none_or(|(c, v, o)| c.size() < need_c || v.size() < need_v || o.size() < need_o)
+        {
             gd.leaf_bufs = None;
-            let c = gd.gpu.buffer(need_c.next_power_of_two()).expect("metal: coefficients");
-            let v = gd.gpu.buffer(need_v.next_power_of_two()).expect("metal: coset values");
-            let o = gd.gpu.buffer(need_o.next_power_of_two()).expect("metal: leaf digests");
+            let c = gd
+                .gpu
+                .buffer(need_c.next_power_of_two())
+                .expect("metal: coefficients");
+            let v = gd
+                .gpu
+                .buffer(need_v.next_power_of_two())
+                .expect("metal: coset values");
+            let o = gd
+                .gpu
+                .buffer(need_o.next_power_of_two())
+                .expect("metal: leaf digests");
             gd.leaf_bufs = Some((c, v, o));
         }
         let inner = &*gd;
         let (cbuf, vbuf, obuf) = inner.leaf_bufs.as_ref().expect("leaf buffers");
         for (j, l) in job.limbs.iter().enumerate() {
             // SAFETY: shared buffer of at least `ml·k` u64; no GPU work in flight
-            unsafe { core::ptr::copy_nonoverlapping(l.as_ptr(), (cbuf.contents_ptr() as *mut u64).add(j * k), k) };
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    l.as_ptr(),
+                    (cbuf.contents_ptr() as *mut u64).add(j * k),
+                    k,
+                )
+            };
         }
         let shifts: Vec<u64> = cosets.clone().map(|s| job.shift(s)).collect();
         let sbuf = inner.gpu.buffer(g * 8).expect("metal: shifts");
@@ -610,7 +717,12 @@ impl Backend for Metal {
                 ((p.max_total_threads_per_threadgroup() / w).max(1) * w).min(256)
             };
             for j in 0..ml {
-                let p0 = NttParams { log_n: log_k, span: 0, cosets: g as u32, pad: 0 };
+                let p0 = NttParams {
+                    log_n: log_k,
+                    span: 0,
+                    cosets: g as u32,
+                    pad: 0,
+                };
                 enc.bind(&inner.scatter);
                 enc.bind_buffer(cbuf, j * k * 8, 0);
                 enc.bind_buffer(vbuf, j * g * k * 8, 1);
@@ -738,7 +850,16 @@ impl Backend for Metal {
 /// Encode the radix-2 stages of `cosets` NTTs of `2^log_n` in `buf` from
 /// `off`: the first `min(log_n, 11)` in threadgroup memory in one dispatch,
 /// the rest one dispatch each.
-fn stages(inner: &Inner, enc: &aruminium::Encoder, buf: &Buffer, off: usize, tw: &Buffer, log_n: u32, cosets: usize, group: &dyn Fn(&Pipeline) -> usize) {
+fn stages(
+    inner: &Inner,
+    enc: &aruminium::Encoder,
+    buf: &Buffer,
+    off: usize,
+    tw: &Buffer,
+    log_n: u32,
+    cosets: usize,
+    group: &dyn Fn(&Pipeline) -> usize,
+) {
     let total = cosets << log_n;
     // a block needs 2^(fused − 1) threads in one threadgroup
     let max_t = inner.block.max_total_threads_per_threadgroup().max(1);
@@ -747,7 +868,12 @@ fn stages(inner: &Inner, enc: &aruminium::Encoder, buf: &Buffer, off: usize, tw:
         enc.bind(&inner.block);
         enc.bind_buffer(buf, off, 0);
         enc.bind_buffer(tw, 0, 1);
-        let p = NttParams { log_n, span: fused, cosets: cosets as u32, pad: 0 };
+        let p = NttParams {
+            log_n,
+            span: fused,
+            cosets: cosets as u32,
+            pad: 0,
+        };
         enc.push(bytes_of(&p), 2);
         enc.launch_groups((total >> fused, 1, 1), (1 << (fused - 1), 1, 1));
     }
@@ -755,7 +881,12 @@ fn stages(inner: &Inner, enc: &aruminium::Encoder, buf: &Buffer, off: usize, tw:
     enc.bind_buffer(buf, off, 0);
     enc.bind_buffer(tw, 0, 1);
     for st in fused..log_n {
-        let p = NttParams { log_n, span: 1 << st, cosets: cosets as u32, pad: 0 };
+        let p = NttParams {
+            log_n,
+            span: 1 << st,
+            cosets: cosets as u32,
+            pad: 0,
+        };
         enc.push(bytes_of(&p), 2);
         enc.launch((total / 2, 1, 1), (group(&inner.stage), 1, 1));
     }

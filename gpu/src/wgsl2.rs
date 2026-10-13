@@ -6,9 +6,12 @@
 /// The field, hemera's permutation and Fp3 (no bindings of their own
 /// except the hemera constants `K`, binding 0, used by permuting kernels).
 fn common() -> String {
-    let field = &crate::wgsl::SOURCE[..crate::wgsl::SOURCE.find("struct PermParams").expect("marker")];
+    let field = &crate::wgsl::SOURCE[..crate::wgsl::SOURCE
+        .find("struct PermParams")
+        .expect("marker")];
     let lines = crate::wgsl::lines_source();
-    let f3 = &lines[lines.find("fn gsub(").expect("gsub")..lines.find("struct LineParams").expect("marker")];
+    let f3 = &lines
+        [lines.find("fn gsub(").expect("gsub")..lines.find("struct LineParams").expect("marker")];
     format!("{field}{f3}")
 }
 
