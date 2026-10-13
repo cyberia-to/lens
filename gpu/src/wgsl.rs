@@ -277,3 +277,119 @@ fn hemera_sponge(@builtin(global_invocation_id) id: vec3<u32>) {
 "#
     )
 }
+
+/// The program module: a straight-line Fp3 program summed along lines
+/// (bindings: 1 program — ops then constants, 2 columns then weights,
+/// 3 per-thread results, 4 parameters; three storage buffers).
+pub fn lines_source() -> String {
+    let field = &SOURCE[..SOURCE.find("struct PermParams").expect("marker")];
+    format!(
+        "{field}{}",
+        r#"
+fn gsub(a: vec2<u32>, b: vec2<u32>) -> vec2<u32> {
+    let d = sub64(a, b);
+    if ge64(a, b) { return d; }
+    return add64(d, PV).xy;
+}
+
+struct F3 { a: vec2<u32>, b: vec2<u32>, c: vec2<u32> };
+
+fn f3add(x: F3, y: F3) -> F3 { return F3(gadd(x.a, y.a), gadd(x.b, y.b), gadd(x.c, y.c)); }
+fn f3sub(x: F3, y: F3) -> F3 { return F3(gsub(x.a, y.a), gsub(x.b, y.b), gsub(x.c, y.c)); }
+fn f3neg(x: F3) -> F3 { let z = vec2<u32>(0u, 0u); return F3(gsub(z, x.a), gsub(z, x.b), gsub(z, x.c)); }
+fn f3mulb(x: F3, k: vec2<u32>) -> F3 { return F3(gmul(x.a, k), gmul(x.b, k), gmul(x.c, k)); }
+fn f3mul(x: F3, y: F3) -> F3 {
+    let d0 = gmul(x.a, y.a);
+    let d1 = gadd(gmul(x.a, y.b), gmul(x.b, y.a));
+    let d2 = gadd(gadd(gmul(x.a, y.c), gmul(x.b, y.b)), gmul(x.c, y.a));
+    let d3 = gadd(gmul(x.b, y.c), gmul(x.c, y.b));
+    let d4 = gmul(x.c, y.c);
+    return F3(gadd(d0, d3), gadd(gadd(d1, d3), d4), gadd(d2, d4));
+}
+
+struct LineParams {
+    nops: u32,
+    ncols: u32,
+    len: u32,
+    nx: u32,
+    threads: u32,
+    first: u32,
+    output: u32,
+    consts_at: u32,   // u32 offset of the constants in PROG
+    weights_at: u32,  // vec2 offset of the weights in DATA
+    row: u32,
+    pad0: u32,
+    pad1: u32,
+    xs: array<vec4<u32>, 8>,
+};
+
+@group(0) @binding(1) var<storage, read> PROG: array<u32>;
+@group(0) @binding(2) var<storage, read> DATA: array<vec2<u32>>;
+@group(0) @binding(3) var<storage, read_write> RES: array<vec2<u32>>;
+@group(0) @binding(4) var<uniform> LP: LineParams;
+
+fn konst(k: u32) -> F3 {
+    let o = LP.consts_at + 6u * k;
+    return F3(vec2<u32>(PROG[o], PROG[o + 1u]), vec2<u32>(PROG[o + 2u], PROG[o + 3u]), vec2<u32>(PROG[o + 4u], PROG[o + 5u]));
+}
+
+fn xval(k: u32) -> vec2<u32> {
+    let v = LP.xs[k / 2u];
+    if k % 2u == 0u { return v.xy; }
+    return v.zw;
+}
+
+@compute @workgroup_size(64)
+fn prog_lines(@builtin(global_invocation_id) id: vec3<u32>) {
+    let gid = id.x + id.y * LP.row;
+    if gid >= LP.threads { return; }
+    let i = LP.first + gid / LP.nx;
+    let x = xval(gid % LP.nx);
+    var r: array<F3, 160>;
+    for (var n = 0u; n < LP.nops; n++) {
+        let code = PROG[4u * n];
+        var opnd = array<u32, 2>(PROG[4u * n + 1u], PROG[4u * n + 2u]);
+        var v: array<F3, 2>;
+        for (var q = 0u; q < 2u; q++) {
+            let o = opnd[q];
+            let t = o >> 30u;
+            let k = o & 0x3FFFFFFFu;
+            if t == 2u {
+                v[q] = r[k];
+            } else if t == 1u {
+                v[q] = konst(k);
+            } else {
+                let at = 3u * (k * LP.len + 2u * i);
+                let a = F3(DATA[at], DATA[at + 1u], DATA[at + 2u]);
+                let b = F3(DATA[at + 3u], DATA[at + 4u], DATA[at + 5u]);
+                v[q] = f3add(a, f3mulb(f3sub(b, a), x));
+            }
+            if code == 3u || code == 4u { break; }
+        }
+        var res: F3;
+        if code == 0u { res = f3add(v[0], v[1]); }
+        else if code == 1u { res = f3sub(v[0], v[1]); }
+        else if code == 2u { res = f3mul(v[0], v[1]); }
+        else if code == 3u { res = f3neg(v[0]); }
+        else { res = f3mulb(v[0], konst(opnd[1] & 0x3FFFFFFFu).a); }
+        r[PROG[4u * n + 3u]] = res;
+    }
+    // the output operand
+    let o = LP.output;
+    var out: F3;
+    if (o >> 30u) == 2u { out = r[o & 0x3FFFFFFFu]; } else if (o >> 30u) == 1u { out = konst(o & 0x3FFFFFFFu); } else {
+        let at = 3u * ((o & 0x3FFFFFFFu) * LP.len + 2u * i);
+        let a = F3(DATA[at], DATA[at + 1u], DATA[at + 2u]);
+        let b = F3(DATA[at + 3u], DATA[at + 4u], DATA[at + 5u]);
+        out = f3add(a, f3mulb(f3sub(b, a), x));
+    }
+    let wa = LP.weights_at + 3u * i;
+    let g = F3(DATA[wa], DATA[wa + 1u], DATA[wa + 2u]);
+    let res = f3mul(g, out);
+    RES[3u * gid] = res.a;
+    RES[3u * gid + 1u] = res.b;
+    RES[3u * gid + 2u] = res.c;
+}
+"#
+    )
+}

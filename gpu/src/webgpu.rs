@@ -10,6 +10,8 @@
 use std::sync::Mutex;
 
 use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State};
+use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
+use nebu::Fp3;
 use wgpu::util::DeviceExt;
 
 /// Fewer states than this run on the CPU backend.
@@ -28,6 +30,9 @@ struct Inner {
     permute: wgpu::ComputePipeline,
     grind: wgpu::ComputePipeline,
     sponge: wgpu::ComputePipeline,
+    lines: wgpu::ComputePipeline,
+    /// Largest storage binding, bytes.
+    max_binding: u64,
     /// Largest states buffer the device binds, in states.
     max_states: usize,
 }
@@ -149,6 +154,21 @@ impl WebGpu {
         };
         let permute = pipeline(crate::wgsl::SOURCE, "hemera_permute");
         let grind = pipeline(&crate::wgsl::grind_source(), "hemera_grind");
+        let auto = |src: String, entry: &str| {
+            let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(entry),
+                source: wgpu::ShaderSource::Wgsl(src.into()),
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry),
+                layout: None,
+                module: &module,
+                entry_point: Some(entry),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
+        let lines = auto(crate::wgsl::lines_source(), "prog_lines");
         let sponge = {
             let src = crate::wgsl::sponge_source();
             let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -176,6 +196,8 @@ impl WebGpu {
                 permute,
                 grind,
                 sponge,
+                lines,
+                max_binding: max_bytes,
                 max_states,
             }),
             adapter: format!("{} ({:?})", info.name, info.backend),
@@ -378,6 +400,98 @@ impl Backend for WebGpu {
             }
         }
         out
+    }
+
+    fn line_sums(&self, prog: &Program, cols: &[Limbs], weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+        let pairs = weights.len();
+        if prog.regs > 160 || xs.len() > 16 || xs.is_empty() || pairs * xs.len() < MIN_BATCH {
+            return Cpu.line_sums(prog, cols, weights, xs);
+        }
+        let len = 2 * pairs;
+        let ncols = prog.inputs as usize;
+        assert_eq!(cols.len(), ncols * len, "cols");
+        let g = self.lock();
+        let mut progw: Vec<u32> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).collect();
+        let consts_at = progw.len() as u32;
+        progw.extend(u32s(prog.consts.as_flattened()));
+        let progb = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("program"),
+            contents: &bytes(&progw),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+        let nx = xs.len();
+        // pairs per dispatch: the chunk's rows within the binding limit and
+        // a bounded number of threads
+        let per_pair = (ncols * 2 + 1) * 24;
+        let per = ((g.max_binding as usize / per_pair).min((1 << 16) / nx)).max(1);
+        let mut xa = vec![0u64; 16];
+        xa[..nx].copy_from_slice(xs);
+        let mut sums = vec![Fp3::ZERO; nx];
+        for first in (0..pairs).step_by(per) {
+            let n = per.min(pairs - first);
+            let mut data: Vec<u64> = Vec::with_capacity((ncols * 2 * n + n) * 3);
+            for c in 0..ncols {
+                data.extend(cols[c * len + 2 * first..c * len + 2 * (first + n)].as_flattened());
+            }
+            // in vec2 units: every limb is one vec2<u32>
+            let weights_at = (ncols * 2 * n * 3) as u32;
+            data.extend(weights[first..first + n].as_flattened());
+            let datab = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("lines data"),
+                contents: &bytes(&u32s(&data)),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+            let threads = n * nx;
+            let outb = g.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("line results"),
+                size: (threads * 24) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            let read = g.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: (threads * 24) as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let (x, y, row) = grid(threads);
+            let mut p = vec![prog.ops.len() as u32, ncols as u32, (2 * n) as u32, nx as u32, threads as u32, 0, prog.output, consts_at, weights_at, row, 0, 0];
+            p.extend(u32s(&xa));
+            let ub = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: &bytes(&p),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let bg = g.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &g.lines.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 1, resource: progb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: datab.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: outb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: ub.as_entire_binding() },
+                ],
+            });
+            let mut enc = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            {
+                let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
+                pass.set_pipeline(&g.lines);
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(x, y, 1);
+            }
+            enc.copy_buffer_to_buffer(&outb, 0, &read, 0, outb.size());
+            g.queue.submit([enc.finish()]);
+            let slice = read.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |r| r.expect("webgpu: map"));
+            g.device.poll(wgpu::PollType::wait_indefinitely()).expect("webgpu: poll");
+            let raw = slice.get_mapped_range().to_vec();
+            read.unmap();
+            for (t, v) in raw.chunks_exact(24).enumerate() {
+                let l: [u64; 3] = core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8 bytes")));
+                sums[t % nx] += to_fp3(l);
+            }
+        }
+        sums.into_iter().map(from_fp3).collect()
     }
 
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
