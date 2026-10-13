@@ -360,6 +360,30 @@ kernel void coset_leaves(device const ulong* vals [[buffer(0)]],
     for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
 }
 
+// column folds of a line session: dst[c·stride + i] = v + α·(w − v),
+// v = src[c·stride + 2i], w = src[c·stride + 2i + 1]
+struct FoldParams {
+    ulong alpha[3];
+    uint ncols;
+    uint stride;
+    uint halfn;
+    uint pad;
+};
+
+kernel void fold_cols(device const ulong* src [[buffer(0)]],
+                      device ulong* dst [[buffer(1)]],
+                      constant FoldParams& p [[buffer(2)]],
+                      uint gid [[thread_position_in_grid]]) {
+    if (gid >= p.ncols * p.halfn) return;
+    uint c = gid / p.halfn, i = gid % p.halfn;
+    device const ulong* s = src + 3 * ((ulong)c * p.stride + 2 * i);
+    f3 v = f3{s[0], s[1], s[2]};
+    f3 w = f3{s[3], s[4], s[5]};
+    f3 r = f3add(v, f3mul(f3{p.alpha[0], p.alpha[1], p.alpha[2]}, f3sub(w, v)));
+    device ulong* d = dst + 3 * ((ulong)c * p.stride + i);
+    d[0] = r.a; d[1] = r.b; d[2] = r.c;
+}
+
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
 
 struct NttParams {

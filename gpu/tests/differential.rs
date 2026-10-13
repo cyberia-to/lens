@@ -244,3 +244,39 @@ fn coset_leaves_equal_the_reference() {
         }
     }
 }
+
+#[test]
+fn line_sessions_equal_the_cpu_session() {
+    use cyber_lens_rspcs::backend::{CpuSession, LineSession};
+    use cyber_lens_rspcs::program::{OP_MULB, Program};
+    let mut r = 999u64;
+    for s in backends() {
+        let inputs = 11usize;
+        let consts: Vec<[u64; 3]> = (0..3).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).chain([[5, 0, 0]]).collect();
+        let base = (inputs + consts.len()) as u32;
+        let ops: Vec<(u8, u32, u32)> = (0..150u32)
+            .map(|k| {
+                let code = (rng(&mut r) % 5) as u8;
+                let a = (rng(&mut r) % (base + k) as u64) as u32;
+                let b = if code == OP_MULB { (consts.len() - 1) as u32 } else { (rng(&mut r) % (base + k) as u64) as u32 };
+                (code, a, b)
+            })
+            .collect();
+        let prog = Program::from_slots(&ops, consts, inputs, base + 149);
+        let len = 1usize << 13;
+        let cols: Vec<[u64; 3]> = (0..inputs * len).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+        let Some(mut dev) = s.backend.line_session(&prog, &cols, len) else { continue };
+        let mut cpu = CpuSession::new(&prog, &cols, len);
+        let mut rows = len;
+        while rows >= 2 {
+            let weights: Vec<[u64; 3]> = (0..rows / 2).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
+            let xs = [0u64, 2, 3, 5];
+            assert_eq!(dev.sums(&weights, &xs), cpu.sums(&weights, &xs), "{} rows {rows}", s.backend.name());
+            let alpha = [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P];
+            dev.fold(alpha);
+            cpu.fold(alpha);
+            rows /= 2;
+        }
+        assert_eq!(dev.firsts(), cpu.firsts(), "{}", s.backend.name());
+    }
+}

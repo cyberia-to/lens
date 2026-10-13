@@ -8,7 +8,7 @@
 use std::sync::Mutex;
 
 use aruminium::{Buffer, Gpu, Pipeline, Queue};
-use cyber_lens_rspcs::backend::{Backend, CosetLeaves, Cpu, Inject, State};
+use cyber_lens_rspcs::backend::{Backend, CosetLeaves, Cpu, Inject, LineSession, State};
 use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
 use nebu::Fp3;
 
@@ -29,6 +29,7 @@ struct Inner {
     sponge: Pipeline,
     lines: Pipeline,
     leaves: Pipeline,
+    fold: Pipeline,
     /// coset-leaves buffers (coefficients, values, digests), grown on demand.
     leaf_bufs: Option<(Buffer, Buffer, Buffer)>,
     /// Sponge lanes and digests buffers, grown on demand.
@@ -59,6 +60,88 @@ unsafe impl Sync for Metal {}
 impl core::fmt::Debug for Metal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Metal").field("device", &self.name).finish()
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FoldParams {
+    alpha: [u64; 3],
+    ncols: u32,
+    stride: u32,
+    half: u32,
+    pad: u32,
+}
+
+/// A line session on the GPU: the columns stay in two shared buffers
+/// (ping-pong across folds), the program in two more.
+pub struct MetalSession<'a> {
+    m: &'a Metal,
+    prog: &'a Program,
+    ops: Buffer,
+    consts: Buffer,
+    cols: [Buffer; 2],
+    cur: usize,
+    ncols: usize,
+    stride: usize,
+    len: usize,
+}
+
+impl LineSession for MetalSession<'_> {
+    fn sums(&mut self, weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+        let pairs = self.len / 2;
+        assert_eq!(weights.len(), pairs, "weights");
+        let g = self.m.lock();
+        let wb = g.gpu.buffer((pairs * 24).max(16)).expect("metal: weights");
+        write(&wb, weights);
+        let nx = xs.len();
+        assert!(nx <= 16 && nx > 0);
+        let per = (LINE_DISPATCH / nx).max(1);
+        let outb = g.gpu.buffer(per.min(pairs) * nx * 24).expect("metal: line sums");
+        let mut xa = [0u64; 16];
+        xa[..nx].copy_from_slice(xs);
+        let mut sums = vec![Fp3::ZERO; nx];
+        let mut part = vec![[0u64; 3]; per.min(pairs) * nx];
+        for first in (0..pairs).step_by(per) {
+            let n = per.min(pairs - first);
+            let threads = n * nx;
+            let p = LineParams {
+                nops: self.prog.ops.len() as u32,
+                ncols: self.ncols as u32,
+                len: self.stride as u32,
+                nx: nx as u32,
+                threads: threads as u32,
+                first: first as u32,
+                output: self.prog.output,
+                pad: 0,
+                xs: xa,
+            };
+            run(&g, &g.lines, &[(&self.ops, 0), (&self.consts, 1), (&self.cols[self.cur], 2), (&wb, 3), (&outb, 4)], Some((bytes_of(&p), 5)), threads).expect("metal line sums");
+            read(&outb, &mut part[..threads]);
+            for (t, v) in part[..threads].iter().enumerate() {
+                sums[t % nx] += to_fp3(*v);
+            }
+        }
+        sums.into_iter().map(from_fp3).collect()
+    }
+    fn fold(&mut self, alpha: Limbs) {
+        let half = self.len / 2;
+        let g = self.m.lock();
+        let p = FoldParams { alpha, ncols: self.ncols as u32, stride: self.stride as u32, half: half as u32, pad: 0 };
+        let (src, dst) = (&self.cols[self.cur], &self.cols[1 - self.cur]);
+        run(&g, &g.fold, &[(src, 0), (dst, 1)], Some((bytes_of(&p), 2)), self.ncols * half).expect("metal fold");
+        self.cur = 1 - self.cur;
+        self.len = half;
+    }
+    fn firsts(&mut self) -> Vec<Limbs> {
+        let _g = self.m.lock();
+        let base = self.cols[self.cur].contents_ptr() as *const u64;
+        (0..self.ncols)
+            .map(|c| {
+                // SAFETY: the buffer holds `ncols·stride` limbs triples; no GPU work in flight
+                unsafe { core::array::from_fn(|q| *base.add(3 * c * self.stride + q)) }
+            })
+            .collect()
     }
 }
 
@@ -186,6 +269,7 @@ impl Metal {
         let sponge = pipe("hemera_sponge")?;
         let lines = pipe("prog_lines")?;
         let leaves = pipe("coset_leaves")?;
+        let fold = pipe("fold_cols")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -203,6 +287,7 @@ impl Metal {
                 sponge,
                 lines,
                 leaves,
+                fold,
                 leaf_bufs: None,
                 sponge_bufs: None,
                 twiddles: None,
@@ -385,6 +470,25 @@ impl Backend for Metal {
             }
         }
         sums.into_iter().map(from_fp3).collect()
+    }
+
+    fn line_session<'a>(&'a self, prog: &'a Program, cols: &[Limbs], len: usize) -> Option<Box<dyn LineSession + 'a>> {
+        if prog.regs > MAX_REGS || len < 2 || cols.len() % len != 0 {
+            return None;
+        }
+        let ncols = cols.len() / len;
+        let g = self.lock();
+        let ops: Vec<u8> = prog.ops.iter().flat_map(|o| [o.code as u32, o.a, o.b, o.dst]).flat_map(|x| x.to_le_bytes()).collect();
+        let opsb = g.gpu.buffer(ops.len().max(16)).ok()?;
+        write(&opsb, &ops);
+        let consts: Vec<u64> = prog.consts.as_flattened().to_vec();
+        let constsb = g.gpu.buffer((consts.len() * 8).max(16)).ok()?;
+        write(&constsb, &consts);
+        let a = g.gpu.buffer(cols.len() * 24).ok()?;
+        write(&a, cols);
+        let b = g.gpu.buffer(cols.len() * 24).ok()?;
+        drop(g);
+        Some(Box::new(MetalSession { m: self, prog, ops: opsb, consts: constsb, cols: [a, b], cur: 0, ncols, stride: len, len }))
     }
 
     fn coset_leaves(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {

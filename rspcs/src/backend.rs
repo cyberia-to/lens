@@ -155,6 +155,51 @@ impl CosetLeaves<'_> {
     }
 }
 
+/// A program's line sums over tables that stay with the backend across
+/// rounds: `sums` as [`Backend::line_sums`] over the current tables,
+/// `fold` replaces every column `v` by `v'_i = v_{2i} + α·(v_{2i+1} − v_{2i})`,
+/// `firsts` returns every column's entry 0.
+pub trait LineSession {
+    fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs>;
+    fn fold(&mut self, alpha: crate::program::Limbs);
+    fn firsts(&mut self) -> Vec<crate::program::Limbs>;
+}
+
+/// The CPU reference of a [`LineSession`] (tables in memory).
+#[derive(Debug)]
+pub struct CpuSession<'a> {
+    prog: &'a crate::program::Program,
+    cols: Vec<Vec<crate::program::Limbs>>,
+}
+
+impl<'a> CpuSession<'a> {
+    pub fn new(prog: &'a crate::program::Program, cols: &[crate::program::Limbs], len: usize) -> Self {
+        Self { prog, cols: cols.chunks_exact(len).map(<[_]>::to_vec).collect() }
+    }
+}
+
+impl LineSession for CpuSession<'_> {
+    fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+        let flat: Vec<crate::program::Limbs> = self.cols.iter().flatten().copied().collect();
+        Cpu.line_sums(self.prog, &flat, weights, xs)
+    }
+    fn fold(&mut self, alpha: crate::program::Limbs) {
+        use crate::program::{from_fp3, to_fp3};
+        let a = to_fp3(alpha);
+        for c in &mut self.cols {
+            let half = c.len() / 2;
+            for i in 0..half {
+                let (x, y) = (to_fp3(c[2 * i]), to_fp3(c[2 * i + 1]));
+                c[i] = from_fp3(x + a * (y - x));
+            }
+            c.truncate(half);
+        }
+    }
+    fn firsts(&mut self) -> Vec<crate::program::Limbs> {
+        self.cols.iter().map(|c| c[0]).collect()
+    }
+}
+
 /// The bulk kernels of a prover. Implementations must return exactly what
 /// [`Cpu`] returns.
 pub trait Backend: Send + Sync {
@@ -187,6 +232,12 @@ pub trait Backend: Send + Sync {
     /// Pairs of weight zero contribute nothing.
     fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
         Cpu.line_sums(prog, cols, weights, xs)
+    }
+
+    /// A [`LineSession`] over `cols` (column-major, `len` rows each) on
+    /// the backend's device, or `None` (the caller runs rounds itself).
+    fn line_session<'a>(&'a self, _prog: &'a crate::program::Program, _cols: &[crate::program::Limbs], _len: usize) -> Option<Box<dyn LineSession + 'a>> {
+        None
     }
 
     /// The leaf digests of cosets `cosets` of `job` (coset-major, then
