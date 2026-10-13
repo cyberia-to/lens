@@ -18,6 +18,8 @@ pub use cyber_lens_binius as binius;
 pub use cyber_lens_brakedown as brakedown;
 pub use cyber_lens_ikat as ikat;
 pub use cyber_lens_porphyry as porphyry;
+pub use cyber_lens_rspcs as rspcs;
+pub use cyber_lens_rspcs::{TensorRs, TensorRsParams, Whir, WhirParams};
 
 #[cfg(test)]
 mod integration_tests;

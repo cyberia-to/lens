@@ -27,6 +27,7 @@ cyber-lens-binius = { version = "0.1.1", path = "../binius" }
 cyber-lens-ikat = { version = "0.2.0", path = "../ikat" }
 cyber-lens-assayer = { version = "0.2.0", path = "../assayer" }
 cyber-lens-porphyry = { version = "0.2.0", path = "../porphyry" }
+cyber-lens-rspcs = { version = "0.1.0", path = "../rspcs" }
 
 [dev-dependencies]
 nebu.workspace = true
@@ -36,4 +37,4 @@ genies.workspace = true
 cyber-hemera.workspace = true
 
 [features]
-serde = ["cyber-lens-core/serde"]
+serde = ["cyber-lens-core/serde", "cyber-lens-rspcs/serde"]

@@ -7,7 +7,7 @@
 resolver = "3"
 members = [
     "core",
-    "brakedown", "binius", "ikat", "assayer", "porphyry",
+    "brakedown", "binius", "ikat", "assayer", "porphyry", "rspcs",
     "src",
     "cli",
 ]
