@@ -24,6 +24,7 @@ fn nonce(v: &[u64], bits: u32) -> Result<u64, PcsError> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn verify(
     params: &WhirParams,
     commitment: &Commitment,
@@ -32,6 +33,7 @@ pub fn verify(
     value: Fp3,
     proof: &WhirProof,
     t: &mut Transcript,
+    ext0: bool,
 ) -> Result<(), PcsError> {
     if proof.params != *params {
         return Err(PcsError::ParamsMismatch);
@@ -45,7 +47,7 @@ pub fn verify(
     {
         return Err(PcsError::Shape);
     }
-    prologue(t, params, m, commitment, point, value);
+    prologue(t, params, m, commitment, point, value, ext0);
 
     let mut cons = vec![Constraint {
         round: 0,
@@ -105,7 +107,7 @@ pub fn verify(
         let folded = check_opening(
             &prev_root,
             &prev_spec,
-            i > 1,
+            i > 1 || ext0,
             &idx,
             &rp.opening,
             prev_alphas,
@@ -153,7 +155,7 @@ pub fn verify(
     }
     let idx = prev_spec.sample(t);
     let prev_alphas = &alphas[alphas.len() - prev_spec.fold..];
-    let last_ext = !proof.rounds.is_empty();
+    let last_ext = !proof.rounds.is_empty() || ext0;
     let folded = check_opening(
         &prev_root,
         &prev_spec,

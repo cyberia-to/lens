@@ -14,6 +14,7 @@
 //! clear, final queries and the closing weighted-sum check.
 //! See `specs/whir.md`.
 
+mod access;
 mod config;
 mod fold;
 mod proof;
@@ -23,10 +24,18 @@ mod verifier;
 
 pub use config::{RoundSpec, WhirConfig};
 pub use proof::{Opening, WhirProof, WhirRoundProof};
+pub use access::{LeafLayout, verify_leaves};
 pub use prover::WhirData;
 
 #[cfg(test)]
 pub(crate) use fold::fold_leaf as fold_leaf_for_tests;
+#[cfg(test)]
+pub(crate) fn prover_message_base(
+    evals: Vec<nebu::Goldilocks>,
+    coeffs: Vec<nebu::Goldilocks>,
+) -> prover::Message {
+    prover::Message::Base { evals, coeffs }
+}
 
 use cyber_lens_core::{Commitment, MultilinearPcs, PcsError, Transcript};
 use nebu::{Fp3, Goldilocks};
@@ -118,6 +127,32 @@ impl WhirParams {
 #[derive(Clone, Copy, Debug)]
 pub struct Whir;
 
+impl Whir {
+    /// Commit an Fp3-valued table (`evals.len() = 2^num_vars`). Same
+    /// domain, rate and leaf layout as a base commitment; the code is
+    /// `RS[K, L, 2^m]` and every proven term of `security_bits` holds
+    /// unchanged (all of them are already over `K`).
+    pub fn commit_ext(params: &WhirParams, evals: &[Fp3]) -> (Commitment, WhirData) {
+        prover::commit_ext(params, evals)
+    }
+
+    /// Verify an opening of an Fp3 commitment (`commit_ext`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_ext(
+        params: &WhirParams,
+        commitment: &Commitment,
+        num_vars: usize,
+        point: &[Fp3],
+        value: Fp3,
+        proof: &WhirProof,
+        transcript: &mut Transcript,
+    ) -> Result<(), PcsError> {
+        verifier::verify(
+            params, commitment, num_vars, point, value, proof, transcript, true,
+        )
+    }
+}
+
 impl MultilinearPcs for Whir {
     const NAME: &'static str = "lens-whir-rs-v1";
     type Params = WhirParams;
@@ -147,7 +182,7 @@ impl MultilinearPcs for Whir {
         transcript: &mut Transcript,
     ) -> Result<(), PcsError> {
         verifier::verify(
-            params, commitment, num_vars, point, value, proof, transcript,
+            params, commitment, num_vars, point, value, proof, transcript, false,
         )
     }
 
@@ -163,8 +198,13 @@ pub(crate) fn prologue(
     root: &Commitment,
     point: &[Fp3],
     value: Fp3,
+    ext0: bool,
 ) {
     t.absorb(Whir::NAME.as_bytes());
+    if ext0 {
+        // an Fp3 commitment opens on a transcript no base opening shares
+        t.absorb(b"ext");
+    }
     t.absorb(&params.header());
     t.absorb_u64(m as u64);
     t.absorb(root.as_bytes());

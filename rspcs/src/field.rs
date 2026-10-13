@@ -121,6 +121,22 @@ pub fn mobius_base(a: &mut [Goldilocks]) {
     }
 }
 
+/// As [`mobius_base`] over Fp3.
+pub fn mobius_ext(a: &mut [Fp3]) {
+    let n = a.len();
+    assert!(n.is_power_of_two());
+    let mut step = 1;
+    while step < n {
+        for block in a.chunks_exact_mut(2 * step) {
+            let (lo, hi) = block.split_at_mut(step);
+            for (h, l) in hi.iter_mut().zip(lo.iter()) {
+                *h -= *l;
+            }
+        }
+        step *= 2;
+    }
+}
+
 /// Multilinear evaluation of a monomial-coefficient table at a point:
 /// `f(x) = f_even(x_2..) + x_1 · f_odd(x_2..)`.
 pub fn coeff_ml_eval(coeffs: &[Fp3], point: &[Fp3]) -> Fp3 {

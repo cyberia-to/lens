@@ -151,8 +151,7 @@ fn cheating_prover_commit_f_open_g_rejected() {
         mobius_base(&mut gc);
         let forged = WhirData {
             config: WhirConfig::derive(&p, m).unwrap(),
-            evals: g.clone(),
-            coeffs: gc,
+            message: crate::whir::prover_message_base(g.clone(), gc),
             codeword: df.codeword,
             tree: df.tree,
         };

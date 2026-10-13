@@ -54,6 +54,35 @@ of an index ↔ variable `k`). `f̂(X) = Σ c_i X^i`, so `f̂(x) = f(x, x², x�
 the coset `x_t = ω^j ζ^t`, `ζ = ω^{n₀/2^{k₀}}`, i.e. symbols
 `j + t·n₀/2^{k₀}`, `t < 2^{k₀}`. Commitment = Merkle root.
 
+### Fp3 messages
+
+`Whir::commit_ext` commits an Fp3-valued table `f: {0,1}^m → K`: the
+same Möbius transform (over K), the same domain `L ⊂ F` and leaf layout;
+the codeword `(f̂(ω^j))_j` is encoded limb-wise (the code is F-linear and
+`L ⊂ F`) and every leaf carries `3×u64` symbols. The code is
+`RS[K, L, 2^m]`. Every soundness term below is already stated over `K`,
+so `security_bits` holds unchanged; the base-field remark at the end of
+§ soundness is simply not needed. An Fp3 opening absorbs the extra
+domain string `"ext"` right after the scheme name in step 1 of the
+transcript, so a base and an Fp3 opening never share a transcript; the
+proof bytes have the same layout with `3×u64` symbols in the openings of
+`f_0` (`WhirProof::from_bytes_with(bytes, ext0 = true)`; the serde form
+prefixes such a proof with the byte `0xE3`, which no base proof starts
+with). Base commitments,
+their transcripts and their proof bytes are unchanged.
+
+### leaf access
+
+For protocols that read `f_0` before or instead of an opening (zheng's
+accumulation spot checks): `LeafLayout::derive(params, m)` gives
+`log2 n_0` and `log2 W`; symbol `s` is `f̂_0(ω^s)` and lives in leaf
+`s mod (n_0/W)` at coset position `⌊s/(n_0/W)⌋`. `WhirData::open_leaves`
+returns the deduplicated multi-opening of sorted distinct leaves (the
+same `Opening` as inside a proof, `Opening::to_bytes`/`from_bytes`);
+`verify_leaves(root, layout, ext, leaves, opening)` authenticates it and
+returns every opened symbol. `WhirData::univariate(z)` answers `f̂_0(z)`
+at any `z ∈ K` (out-of-domain samples).
+
 ### tree
 
 Leaf `j` with canonical LE bytes `B`: `hemera::tree::hash_leaf(B, j,
