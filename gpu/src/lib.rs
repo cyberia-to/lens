@@ -26,6 +26,10 @@ mod msl;
 pub mod webgpu;
 #[cfg(feature = "webgpu")]
 mod wgsl;
+#[cfg(feature = "webgpu")]
+mod wgsl2;
+#[cfg(feature = "webgpu")]
+mod webgpu2;
 
 use std::sync::Arc;
 

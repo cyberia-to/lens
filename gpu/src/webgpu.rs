@@ -30,6 +30,9 @@ struct Inner {
     permute: wgpu::ComputePipeline,
     grind: wgpu::ComputePipeline,
     sponge: wgpu::ComputePipeline,
+    ext: crate::webgpu2::Ext,
+    /// Largest storage binding, bytes (uncapped).
+    max_storage: u64,
     lines: wgpu::ComputePipeline,
     /// Largest storage binding, bytes.
     max_binding: u64,
@@ -184,6 +187,8 @@ impl WebGpu {
                 cache: None,
             })
         };
+        let ext = crate::webgpu2::Ext::new(&device);
+        let max_storage = (limits.max_storage_buffer_binding_size as u64).min(limits.max_buffer_size);
         let max_bytes = (limits.max_storage_buffer_binding_size as u64)
             .min(limits.max_buffer_size)
             .min(1 << 28);
@@ -196,6 +201,8 @@ impl WebGpu {
                 permute,
                 grind,
                 sponge,
+                ext,
+                max_storage,
                 lines,
                 max_binding: max_bytes,
                 max_states,
@@ -211,6 +218,13 @@ impl WebGpu {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Run `f` with the device context (the backend locked).
+    pub(crate) fn with_ctx<R>(&self, f: impl FnOnce(&crate::webgpu2::Ctx<'_>) -> R) -> R {
+        let g = self.lock();
+        let c = crate::webgpu2::Ctx { device: &g.device, queue: &g.queue, consts: &g.consts, ext: &g.ext, max_storage: g.max_storage };
+        f(&c)
     }
 }
 
@@ -492,6 +506,26 @@ impl Backend for WebGpu {
             }
         }
         sums.into_iter().map(from_fp3).collect()
+    }
+
+    fn line_session<'a>(&'a self, prog: &'a Program, cols: &[Limbs], len: usize) -> Option<Box<dyn cyber_lens_rspcs::backend::LineSession + 'a>> {
+        let s = self.with_ctx(|c| crate::webgpu2::session(c, self, prog, cols, len))?;
+        Some(Box::new(s))
+    }
+
+    fn coset_leaves(&self, job: &cyber_lens_rspcs::backend::CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+        self.with_ctx(|c| crate::webgpu2::coset_leaves(c, job, cosets))
+    }
+
+    fn merkle_levels(&self, leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+        self.with_ctx(|c| crate::webgpu2::merkle_levels(c, leaves, arities, tag))
+    }
+
+    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
+        if coeffs.len() < 1 << 12 || shifts.is_empty() {
+            return Cpu.coset_ntt(coeffs, shifts);
+        }
+        self.with_ctx(|c| crate::webgpu2::coset_ntt(c, coeffs, shifts)).unwrap_or_else(|| Cpu.coset_ntt(coeffs, shifts))
     }
 
     fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {

@@ -36,6 +36,11 @@ fn backends() -> Vec<cyber_lens_gpu::Selected> {
     v
 }
 
+/// A required backend must run the operation (no silent CPU fallback).
+fn required(name: &str) -> bool {
+    std::env::var("LENS_GPU_REQUIRE").unwrap_or_default().split(',').any(|r| r == name)
+}
+
 fn random_states(n: usize, seed: u64) -> Vec<State> {
     let mut r = seed;
     (0..n)
@@ -237,8 +242,9 @@ fn coset_leaves_equal_the_reference() {
             let job = CosetLeaves { limbs: data.iter().map(|v| v.as_slice()).collect(), limbs_per_member: limbs, log_n, log_width: log_w, init, rate: 9 };
             let cosets = job.cosets();
             for range in [0..cosets, 3..5] {
-                if let Some(got) = s.backend.coset_leaves(&job, range.clone()) {
-                    assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} members {members} limbs {limbs} range {range:?}", s.backend.name());
+                match s.backend.coset_leaves(&job, range.clone()) {
+                    Some(got) => assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} members {members} limbs {limbs} range {range:?}", s.backend.name()),
+                    None => assert!(!required(s.backend.name()), "{}: coset leaves declined", s.backend.name()),
                 }
             }
         }
@@ -265,7 +271,10 @@ fn line_sessions_equal_the_cpu_session() {
         let prog = Program::from_slots(&ops, consts, inputs, base + 149);
         let len = 1usize << 13;
         let cols: Vec<[u64; 3]> = (0..inputs * len).map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]).collect();
-        let Some(mut dev) = s.backend.line_session(&prog, &cols, len) else { continue };
+        let Some(mut dev) = s.backend.line_session(&prog, &cols, len) else {
+            assert!(!required(s.backend.name()), "{}: no line session", s.backend.name());
+            continue;
+        };
         let mut cpu = CpuSession::new(&prog, &cols, len);
         let mut rows = len;
         while rows >= 2 {
@@ -289,8 +298,9 @@ fn merkle_levels_equal_the_reference() {
         for arities in [vec![2usize; 13], vec![4, 4, 4, 4, 4, 4, 2]] {
             let n: usize = arities.iter().product();
             let leaves: Vec<[u64; 4]> = (0..n).map(|_| core::array::from_fn(|_| rng(&mut r) % P)).collect();
-            if let Some(got) = s.backend.merkle_levels(&leaves, &arities, 0x6e6f6465) {
-                assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465), "{} {arities:?}", s.backend.name());
+            match s.backend.merkle_levels(&leaves, &arities, 0x6e6f6465) {
+                Some(got) => assert_eq!(got, merkle_levels_reference(&leaves, &arities, 0x6e6f6465), "{} {arities:?}", s.backend.name()),
+                None => assert!(!required(s.backend.name()), "{}: merkle levels declined", s.backend.name()),
             }
         }
     }
