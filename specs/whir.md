@@ -166,6 +166,34 @@ of the base-field commitment is over F.
 
 `security_bits = min over all terms of (−log2 error + grinding bits)`.
 
+### batched and direct openings
+
+`rspcs::whir::batch`: `m` words of the round-0 code with `J` claims in
+total open together. The claims are batched with powers of `γ`; for
+`m > 1` an `ℓ`-round sumcheck reduces them to one point `ρ` with every
+word's value there, `r` combines `f_0 = Σ r^i f_i`, and WHIR runs on the
+virtual `f_0` (a round-0 query opens its leaf in every word). One word
+takes its claims as WHIR's initial weights directly. Extra rows:
+
+| term | error |
+|---|---|
+| batch γ | `|Λ|·(J−1)/|K|` |
+| batch sumcheck (m > 1) | `2|Λ|/|K|` a round |
+| batch combine (m > 1) | `ε_mca(m−1) + |Λ|(m−1)/|K|`, minus grinding (BCGM Thm 9.2 / Lemma 9.3, powers generator of degree `m − 1`) |
+
+Weights may be any multilinear polynomial the verifier evaluates at the
+folding point — eq and pow points, a row polynomial times a column
+vector, a sparse linear form: the fold term `3ℓ/|K|` holds for weights of
+degree ≤ 1 in every variable (Theorem 5.2, `d* = 3`).
+
+The field-native instantiation (zheng `recursion::whir`, the recursion
+profile) runs this protocol with a duplex sponge over hemera's
+permutation as transcript (challenges are output limbs) and Merkle trees
+hashing field elements (binary, or 4-ary: a node is the truncated
+permutation of its four children); several words may share one tree. The
+code, domain, distance and every term above are unchanged; only the
+hash's binding row differs (zheng `specs/soundness.md`).
+
 ### what the number means
 
 It is the round-by-round soundness of the IOP of proximity, the quantity

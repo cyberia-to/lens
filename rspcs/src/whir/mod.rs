@@ -15,6 +15,7 @@
 //! See `specs/whir.md`.
 
 mod access;
+pub mod batch;
 mod config;
 mod fold;
 mod proof;
