@@ -14,7 +14,7 @@
 //! consumes the list exactly; a short, long or reordered list fails.
 
 use cyber_hemera::Hash;
-use cyber_hemera::tree::{hash_leaf, hash_node};
+use cyber_hemera::tree::{hash_leaf, hash_leaf_batch, hash_node, hash_node_batch};
 use cyber_lens_core::PcsError;
 
 use crate::par::par_map;
@@ -89,29 +89,30 @@ pub fn verify(
     }
     let mut nodes: Vec<(usize, Hash)> = indices.iter().copied().zip(leaves).collect();
     let mut sib_iter = siblings.iter();
+    // Every parent of one level is independent of the others: collect the
+    // level's (left, right) pairs, then hash them in one batched call
+    // (hemera runs 16 compressions interleaved). Siblings are consumed in
+    // the same order as before — level by level, increasing index.
     for level in 0..depth {
         let is_root = level + 1 == depth;
-        let mut next = Vec::with_capacity(nodes.len());
+        let mut idx_next = Vec::with_capacity(nodes.len());
+        let mut pairs = Vec::with_capacity(nodes.len());
         let mut i = 0;
         while i < nodes.len() {
             let (idx, h) = nodes[i];
-            let parent = if i + 1 < nodes.len() && nodes[i + 1].0 == idx ^ 1 {
-                // both children known; idx is even here
-                let h2 = nodes[i + 1].1;
+            if i + 1 < nodes.len() && nodes[i + 1].0 == idx ^ 1 {
+                pairs.push((h, nodes[i + 1].1));
                 i += 2;
-                hash_node(&h, &h2, is_root)
             } else {
                 let s = sib_iter.next().ok_or(PcsError::Merkle)?;
                 i += 1;
-                if idx & 1 == 0 {
-                    hash_node(&h, s, is_root)
-                } else {
-                    hash_node(s, &h, is_root)
-                }
-            };
-            next.push((idx >> 1, parent));
+                pairs.push(if idx & 1 == 0 { (h, *s) } else { (*s, h) });
+            }
+            idx_next.push(idx >> 1);
         }
-        nodes = next;
+        let mut out = vec![Hash::from_bytes([0; 32]); pairs.len()];
+        hash_node_batch(&pairs, is_root, &mut out);
+        nodes = idx_next.into_iter().zip(out).collect();
     }
     if sib_iter.next().is_some() {
         return Err(PcsError::Merkle);
@@ -121,6 +122,15 @@ pub fn verify(
     } else {
         Err(PcsError::Merkle)
     }
+}
+
+/// Leaf digests of opened leaves, `leaves[q] = (bytes, index)`, as the tree
+/// computes them; equal-length leaves are hashed in one batched call.
+pub fn leaf_digests(leaves: &[(&[u8], usize)], count: usize) -> Vec<Hash> {
+    let items: Vec<(&[u8], u64)> = leaves.iter().map(|&(b, i)| (b, i as u64)).collect();
+    let mut out = vec![Hash::from_bytes([0; 32]); items.len()];
+    hash_leaf_batch(&items, count == 1, &mut out);
+    out
 }
 
 /// Leaf digest as the tree computes it.

@@ -13,7 +13,7 @@ use nebu::{Fp3, Goldilocks};
 use super::config::RoundSpec;
 use super::proof::Opening;
 use crate::field::{half, mul_base, root_of_unity};
-use crate::merkle::{self, Tree, leaf_digest};
+use crate::merkle::{self, Tree};
 use crate::wire::Symbols;
 
 /// Merkle tree over the folding cosets of `cw` (`2^log_n` symbols).
@@ -112,11 +112,15 @@ pub fn check_opening(
     if opening.width != width || is_ext != ext || opening.symbols.len() != idx.len() * width {
         return Err(PcsError::Shape);
     }
-    let digests = idx
-        .iter()
-        .enumerate()
-        .map(|(q, &j)| leaf_digest(&opening.symbols.leaf_bytes(q * width, width), j, leaves))
+    let bytes: Vec<Vec<u8>> = (0..idx.len())
+        .map(|q| opening.symbols.leaf_bytes(q * width, width))
         .collect();
+    let opened: Vec<(&[u8], usize)> = bytes
+        .iter()
+        .map(Vec::as_slice)
+        .zip(idx.iter().copied())
+        .collect();
+    let digests = merkle::leaf_digests(&opened, leaves);
     merkle::verify(
         root,
         spec.log_leaves() as usize,

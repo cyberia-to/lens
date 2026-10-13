@@ -6,7 +6,7 @@ use nebu::Fp3;
 use super::prove::powers;
 use super::{TensorConfig, TensorRsParams, TensorRsProof, prologue};
 use crate::field::{eq_table, mul_base, root_of_unity, univariate_ext_at_base};
-use crate::merkle::{self, leaf_digest};
+use crate::merkle;
 use crate::pow;
 use crate::wire::base_bytes;
 
@@ -58,11 +58,13 @@ pub fn verify(
 
     // columns authenticate against the root
     let n = 1usize << c.log_n;
-    let leaves = idx
+    let bytes: Vec<Vec<u8>> = proof.columns.chunks_exact(k1).map(base_bytes).collect();
+    let opened: Vec<(&[u8], usize)> = bytes
         .iter()
-        .zip(proof.columns.chunks_exact(k1))
-        .map(|(&j, col)| leaf_digest(&base_bytes(col), j, n))
+        .map(Vec::as_slice)
+        .zip(idx.iter().copied())
         .collect();
+    let leaves = merkle::leaf_digests(&opened, n);
     merkle::verify(
         &commitment.0,
         c.log_n as usize,
