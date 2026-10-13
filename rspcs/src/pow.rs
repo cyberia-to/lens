@@ -12,8 +12,6 @@
 
 use cyber_lens_core::Transcript;
 
-use crate::par::threads;
-
 fn ok(seed: &[u8; 32], nonce: u64, bits: u32) -> bool {
     let mut input = [0u8; 40];
     input[..32].copy_from_slice(seed);
@@ -23,36 +21,18 @@ fn ok(seed: &[u8; 32], nonce: u64, bits: u32) -> bool {
     limb & ((1u64 << bits) - 1) == 0
 }
 
-/// Grind and absorb; returns the nonce (`None` when `bits = 0`).
+/// Grind and absorb; returns the nonce (`None` when `bits = 0`). The
+/// search runs on the process's [`crate::backend`]; every backend returns
+/// the least passing nonce.
 pub fn grind(t: &mut Transcript, bits: u32) -> Option<u64> {
     if bits == 0 {
         return None;
     }
     assert!(bits < 64);
     let seed = *t.squeeze().as_bytes();
-    let workers = threads() as u64;
-    let batch = 4096u64;
-    let mut base = 0u64;
-    let nonce = loop {
-        let found = std::thread::scope(|s| {
-            let hs: Vec<_> = (0..workers)
-                .map(|w| {
-                    let seed = &seed;
-                    s.spawn(move || {
-                        let start = base + w * batch;
-                        (start..start + batch).find(|&n| ok(seed, n, bits))
-                    })
-                })
-                .collect();
-            hs.into_iter()
-                .filter_map(|h| h.join().expect("worker"))
-                .min()
-        });
-        if let Some(n) = found {
-            break n;
-        }
-        base += workers * batch;
-    };
+    let template = crate::backend::hash40_template(&seed);
+    let nonce = crate::backend::current().grind(&template, crate::backend::Inject::hash40(), bits);
+    debug_assert!(ok(&seed, nonce, bits));
     t.absorb_u64(nonce);
     Some(nonce)
 }

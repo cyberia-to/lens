@@ -16,10 +16,12 @@
 //!
 //! Specifications: `specs/tensor-rs.md`, `specs/whir.md`.
 
+pub mod backend;
 pub mod field;
 pub mod merkle;
 mod par;
 pub mod pow;
+pub mod program;
 pub mod rs;
 pub mod soundness;
 pub mod tensor;
