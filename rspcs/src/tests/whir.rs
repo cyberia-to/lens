@@ -169,3 +169,32 @@ fn serde_roundtrip_is_wire_bytes() {
     let dec: crate::WhirProof = postcard::from_bytes(&enc).unwrap();
     assert_eq!(dec, r.proof);
 }
+
+/// A separate fold budget: the queries keep `pow_bits`, every fold's
+/// grinding stays within `fold_pow_bits`, every term ≥ the target; the
+/// header carries it (version 2) and round-trips; without it the header
+/// and the schedule are version 1's.
+#[test]
+fn a_fold_budget_bounds_the_folds_and_keeps_the_query_grinding() {
+    use crate::whir::WhirConfig;
+    let base = WhirParams { log_inv_rate: 9, pow_bits: 26, ..WhirParams::default() };
+    let split = WhirParams { fold_pow_bits: 22, ..base };
+    let (a, b) = (WhirConfig::derive(&base, 20).unwrap(), WhirConfig::derive(&split, 20).unwrap());
+    assert!(b.rounds.iter().all(|r| r.fold_pow <= 22), "{:?}", b.rounds);
+    assert!(b.rounds.iter().all(|r| r.query_pow == 26 || r.opens_all()));
+    assert!(b.security_bits() >= 128.0, "{}", b.security_bits());
+    assert!(a.rounds.iter().map(|r| r.fold_pow).max() > b.rounds.iter().map(|r| r.fold_pow).max());
+    assert_eq!(WhirParams::from_header(split.header()).unwrap(), split);
+    assert_eq!(split.header()[0], 2);
+    assert_eq!(WhirParams::from_header(base.header()).unwrap(), base);
+    assert_eq!(base.header()[0], 1);
+    // a version-2 header without a fold budget is not canonical
+    let mut h = split.header();
+    h[4] = 0;
+    assert!(WhirParams::from_header(h).is_err());
+    // at rate 1/512, 2^20 and 26 query bits the last round's 14 queries
+    // come from a regime that grinds 25 bits before each fold; within 22
+    // fold bits it needs 15 (zheng audit/wrap-fastverify-2026-10.md §10)
+    let q = |c: &WhirConfig| c.rounds.iter().map(|r| r.queries).collect::<Vec<_>>();
+    assert_eq!((q(&a), q(&b)), (vec![24, 18, 14], vec![24, 18, 15]));
+}

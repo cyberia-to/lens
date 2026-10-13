@@ -60,8 +60,14 @@ pub struct WhirParams {
     pub folding_factor: u8,
     /// Target round-by-round soundness in bits.
     pub security_target: u16,
-    /// Grinding budget per challenge, in bits.
+    /// Grinding budget per challenge, in bits (the queries' and, unless
+    /// [`Self::fold_pow_bits`] sets its own, the folds').
     pub pow_bits: u8,
+    /// Grinding budget per folding challenge, in bits; 0: `pow_bits`. A
+    /// separate budget lets a schedule keep its query grinding (fewer
+    /// queries, fewer bytes) while choosing each round's regime within a
+    /// smaller fold grinding.
+    pub fold_pow_bits: u8,
     pub decoding: Decoding,
     /// Stop committing once at most this many variables remain; the rest
     /// of the polynomial is sent in the clear.
@@ -75,6 +81,7 @@ impl Default for WhirParams {
             folding_factor: 4,
             security_target: 128,
             pow_bits: 16,
+            fold_pow_bits: 0,
             decoding: Decoding::Johnson,
             max_final_vars: 8,
         }
@@ -82,16 +89,30 @@ impl Default for WhirParams {
 }
 
 const VERSION: u8 = 1;
+/// Header version with a separate fold grinding budget.
+const VERSION_FOLD: u8 = 2;
 
 impl WhirParams {
-    /// 8-byte header: version, log_inv_rate, folding_factor, pow_bits,
-    /// target (u16 LE), decoding (0 unique, 1 Johnson), max_final_vars.
+    /// The grinding budget of a folding challenge.
+    pub fn fold_budget(&self) -> u8 {
+        if self.fold_pow_bits == 0 { self.pow_bits } else { self.fold_pow_bits }
+    }
+
+    /// 8-byte header: version 1 — log_inv_rate, folding_factor, pow_bits,
+    /// target (u16 LE), decoding (0 unique, 1 Johnson), max_final_vars;
+    /// version 2 (a fold budget set; target < 256) — log_inv_rate,
+    /// folding_factor, pow_bits, fold_pow_bits, target (u8), decoding,
+    /// max_final_vars.
     pub fn header(&self) -> [u8; 8] {
         let t = self.security_target.to_le_bytes();
         let d = match self.decoding {
             Decoding::Unique => 0,
             Decoding::Johnson => 1,
         };
+        if self.fold_pow_bits != 0 {
+            assert!(self.security_target < 256, "a version-2 header carries the target in one byte");
+            return [VERSION_FOLD, self.log_inv_rate, self.folding_factor, self.pow_bits, self.fold_pow_bits, t[0], d, self.max_final_vars];
+        }
         [
             VERSION,
             self.log_inv_rate,
@@ -110,17 +131,28 @@ impl WhirParams {
             1 => Decoding::Johnson,
             _ => return Err(PcsError::Malformed),
         };
-        if h[0] != VERSION {
-            return Err(PcsError::Malformed);
+        match h[0] {
+            VERSION => Ok(Self {
+                log_inv_rate: h[1],
+                folding_factor: h[2],
+                pow_bits: h[3],
+                fold_pow_bits: 0,
+                security_target: u16::from_le_bytes([h[4], h[5]]),
+                decoding,
+                max_final_vars: h[7],
+            }),
+            // a set fold budget only (0 is version 1's)
+            VERSION_FOLD if h[4] != 0 => Ok(Self {
+                log_inv_rate: h[1],
+                folding_factor: h[2],
+                pow_bits: h[3],
+                fold_pow_bits: h[4],
+                security_target: u16::from(h[5]),
+                decoding,
+                max_final_vars: h[7],
+            }),
+            _ => Err(PcsError::Malformed),
         }
-        Ok(Self {
-            log_inv_rate: h[1],
-            folding_factor: h[2],
-            pow_bits: h[3],
-            security_target: u16::from_le_bytes([h[4], h[5]]),
-            decoding,
-            max_final_vars: h[7],
-        })
     }
 }
 

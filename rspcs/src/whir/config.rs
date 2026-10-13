@@ -117,7 +117,9 @@ impl WhirConfig {
             return Err(PcsError::Shape);
         }
         let target = f64::from(params.security_target);
+        // queries grind up to `pow_bits`; folds up to the fold budget
         let pow_max = u32::from(params.pow_bits);
+        let fold_max = u32::from(params.fold_budget());
 
         // schedule: fold min(k, m) first, keep committing while > max_final_vars remain
         let mut folds = vec![k.min(m)];
@@ -141,7 +143,7 @@ impl WhirConfig {
             for reg in candidates {
                 let fold_bits = -fold_log_err(reg, ri, log_n, f);
                 let fold_pow = (target - fold_bits).ceil().max(0.0) as u32;
-                if fold_pow > pow_max {
+                if fold_pow > fold_max {
                     continue;
                 }
                 let prox = proximity(reg, ri, log_n);
@@ -158,7 +160,7 @@ impl WhirConfig {
                     Decoding::Unique => Regime::Unique,
                     Decoding::Johnson => Regime::Johnson(3),
                 };
-                (0, pow_max, reg)
+                (0, fold_max, reg)
             });
             let log_list = proximity(regime, ri, log_n).log_list;
             let ood = match regime {
