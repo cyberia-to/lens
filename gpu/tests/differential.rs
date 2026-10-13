@@ -223,3 +223,24 @@ fn program_line_sums_equal_cpu() {
         let _ = from_fp3;
     }
 }
+
+#[test]
+fn coset_leaves_equal_the_reference() {
+    use cyber_lens_rspcs::backend::{CosetLeaves, coset_leaves_reference};
+    let mut r = 77u64;
+    for s in backends() {
+        for (members, limbs, log_k, log_n, log_w) in [(2usize, 1usize, 12u32, 16u32, 3u32), (2, 3, 12, 16, 4), (1, 3, 13, 16, 2)] {
+            let k = 1usize << log_k;
+            let data: Vec<Vec<u64>> = (0..members * limbs).map(|_| (0..k).map(|_| rng(&mut r) % P).collect()).collect();
+            let mut init = [0u64; 16];
+            init[9] = 2;
+            let job = CosetLeaves { limbs: data.iter().map(|v| v.as_slice()).collect(), limbs_per_member: limbs, log_n, log_width: log_w, init, rate: 9 };
+            let cosets = job.cosets();
+            for range in [0..cosets, 3..5] {
+                if let Some(got) = s.backend.coset_leaves(&job, range.clone()) {
+                    assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} members {members} limbs {limbs} range {range:?}", s.backend.name());
+                }
+            }
+        }
+    }
+}

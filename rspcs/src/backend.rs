@@ -112,6 +112,49 @@ pub fn hash40_template(seed: &[u8; 32]) -> State {
     s
 }
 
+/// Leaves of a streamed Reed–Solomon commitment: the words' coefficient
+/// limbs (member-major, then limb: one vector for a base word, three for
+/// an Fp3 word; `k` coefficients each) over `2^log_n` points, the domain
+/// split into `n/k` cosets `ω^s·H` (lens `rs`: coset `s` is the NTT of
+/// `c_i·ω^{s·i}`). Leaf `a` of coset `s` hashes, member by member, the
+/// symbols `u = a + t·per` (`t < 2^log_width`, `per` leaves a coset) of
+/// that coset as an overwrite-mode sponge from `init`: symbols packed
+/// `rate / limbs` to a block (one lane a limb), unused lanes zero.
+#[derive(Clone, Debug)]
+pub struct CosetLeaves<'a> {
+    pub limbs: Vec<&'a [u64]>,
+    pub limbs_per_member: usize,
+    pub log_n: u32,
+    pub log_width: u32,
+    pub init: State,
+    pub rate: usize,
+}
+
+impl CosetLeaves<'_> {
+    pub fn k(&self) -> usize {
+        self.limbs[0].len()
+    }
+    pub fn members(&self) -> usize {
+        self.limbs.len() / self.limbs_per_member
+    }
+    pub fn cosets(&self) -> usize {
+        (1usize << self.log_n) / self.k()
+    }
+    pub fn per(&self) -> usize {
+        ((1usize << self.log_n) >> self.log_width) / self.cosets()
+    }
+    /// Symbols a block and blocks a leaf.
+    pub fn blocks(&self) -> (usize, usize) {
+        let spb = self.rate / self.limbs_per_member;
+        let total = self.members() << self.log_width;
+        (spb, total.div_ceil(spb))
+    }
+    /// The coset shifts `ω^s`.
+    pub fn shift(&self, s: usize) -> u64 {
+        crate::field::root_of_unity(self.log_n).exp(s as u64).as_u64()
+    }
+}
+
 /// The bulk kernels of a prover. Implementations must return exactly what
 /// [`Cpu`] returns.
 pub trait Backend: Send + Sync {
@@ -144,6 +187,13 @@ pub trait Backend: Send + Sync {
     /// Pairs of weight zero contribute nothing.
     fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
         Cpu.line_sums(prog, cols, weights, xs)
+    }
+
+    /// The leaf digests of cosets `cosets` of `job` (coset-major, then
+    /// leaf), or `None` where the backend does not run them (the caller
+    /// streams on the CPU then).
+    fn coset_leaves(&self, _job: &CosetLeaves<'_>, _cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+        None
     }
 
     /// For each shift `s` in `shifts`: the NTT (nebu's order) of
@@ -323,6 +373,48 @@ impl Backend for Cpu {
         } else {
             shifts.iter().map(|&s| one(s)).collect()
         }
+    }
+}
+
+/// The definition of [`Backend::coset_leaves`] on the CPU (the reference
+/// the device backends are tested against).
+pub fn coset_leaves_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Vec<[u64; 4]> {
+    let (k, w, per, l) = (job.k(), 1usize << job.log_width, job.per(), job.limbs_per_member);
+    let (spb, blocks) = job.blocks();
+    let mut out = Vec::new();
+    for s in cosets {
+        let vals = Cpu.coset_ntt_one(&job.limbs, job.shift(s));
+        let mut st: Vec<State> = vec![job.init; per];
+        for b in 0..blocks {
+            for (a, x) in st.iter_mut().enumerate() {
+                let mut lane = 0;
+                for j in 0..spb {
+                    let t = b * spb + j;
+                    if t >= job.members() * w {
+                        break;
+                    }
+                    let (m, tt) = (t / w, t % w);
+                    for q in 0..l {
+                        x[lane + q] = vals[m * l + q][a + tt * per];
+                    }
+                    lane += l;
+                }
+                for y in x.iter_mut().take(job.rate).skip(lane) {
+                    *y = 0;
+                }
+            }
+            permute_slice(&mut st);
+        }
+        out.extend(st.iter().map(|x| [x[0], x[1], x[2], x[3]]));
+        let _ = k;
+    }
+    out
+}
+
+impl Cpu {
+    /// One coset of every limb vector.
+    fn coset_ntt_one(&self, limbs: &[&[u64]], shift: u64) -> Vec<Vec<u64>> {
+        limbs.iter().map(|c| self.coset_ntt(c, &[shift]).pop().expect("one coset")).collect()
     }
 }
 

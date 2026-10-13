@@ -314,6 +314,52 @@ kernel void prog_lines(device const uint4* ops [[buffer(0)]],
     out[3 * (ulong)gid + 2] = res.c;
 }
 
+// ── streamed Reed–Solomon leaves: sponges read straight from coset values ──
+
+struct CosetLeafParams {
+    ulong init[16];
+    uint k;        // coset length
+    uint per;      // leaves per coset
+    uint g;        // cosets in this call
+    uint w;        // symbols per member and leaf
+    uint members;
+    uint limbs;    // 1 (base) or 3 (Fp3)
+    uint spb;      // symbols per block
+    uint blocks;
+    uint rate;
+    uint pad;
+};
+
+// vals[((m·L + l)·G + c)·k + u]; leaf (c, a) hashes, member by member,
+// symbols u = a + t·per (t < w) of coset c
+kernel void coset_leaves(device const ulong* vals [[buffer(0)]],
+                         device ulong* out [[buffer(1)]],
+                         constant CosetLeafParams& p [[buffer(2)]],
+                         uint gid [[thread_position_in_grid]]) {
+    if (gid >= p.g * p.per) return;
+    uint c = gid / p.per;
+    uint a = gid % p.per;
+    ulong s[1][16];
+    for (int i = 0; i < 16; i++) s[0][i] = p.init[i];
+    uint total = p.members * p.w;
+    for (uint blk = 0; blk < p.blocks; blk++) {
+        uint lane = 0;
+        for (uint j = 0; j < p.spb; j++) {
+            uint t = blk * p.spb + j;
+            if (t >= total) break;
+            uint m = t / p.w, tt = t % p.w;
+            ulong u = a + (ulong)tt * p.per;
+            for (uint l = 0; l < p.limbs; l++) {
+                s[0][lane + l] = vals[(((ulong)(m * p.limbs + l)) * p.g + c) * p.k + u];
+            }
+            lane += p.limbs;
+        }
+        for (uint i = lane; i < p.rate; i++) s[0][i] = 0;
+        permute_k<1>(s);
+    }
+    for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
+}
+
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
 
 struct NttParams {

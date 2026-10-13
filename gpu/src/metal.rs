@@ -8,7 +8,7 @@
 use std::sync::Mutex;
 
 use aruminium::{Buffer, Gpu, Pipeline, Queue};
-use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State};
+use cyber_lens_rspcs::backend::{Backend, CosetLeaves, Cpu, Inject, State};
 use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
 use nebu::Fp3;
 
@@ -28,6 +28,9 @@ struct Inner {
     stage: Pipeline,
     sponge: Pipeline,
     lines: Pipeline,
+    leaves: Pipeline,
+    /// coset-leaves buffers (coefficients, values, digests), grown on demand.
+    leaf_bufs: Option<(Buffer, Buffer, Buffer)>,
     /// Sponge lanes and digests buffers, grown on demand.
     sponge_bufs: Option<(Buffer, Buffer)>,
     /// Twiddles `ω_{2h}^i` at `h + i` for the last coset length used.
@@ -57,6 +60,22 @@ impl core::fmt::Debug for Metal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Metal").field("device", &self.name).finish()
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CosetLeafParams {
+    init: [u64; 16],
+    k: u32,
+    per: u32,
+    g: u32,
+    w: u32,
+    members: u32,
+    limbs: u32,
+    spb: u32,
+    blocks: u32,
+    rate: u32,
+    pad: u32,
 }
 
 #[repr(C)]
@@ -166,6 +185,7 @@ impl Metal {
         let stage = pipe("ntt_stage")?;
         let sponge = pipe("hemera_sponge")?;
         let lines = pipe("prog_lines")?;
+        let leaves = pipe("coset_leaves")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -182,6 +202,8 @@ impl Metal {
                 stage,
                 sponge,
                 lines,
+                leaves,
+                leaf_bufs: None,
                 sponge_bufs: None,
                 twiddles: None,
                 states: None,
@@ -363,6 +385,94 @@ impl Backend for Metal {
             }
         }
         sums.into_iter().map(from_fp3).collect()
+    }
+
+    fn coset_leaves(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+        let (k, per, g) = (job.k(), job.per(), cosets.len());
+        if k < MIN_NTT || job.rate > 16 || g == 0 || !k.is_power_of_two() {
+            return None;
+        }
+        let log_k = k.trailing_zeros();
+        let ml = job.limbs.len();
+        let (spb, blocks) = job.blocks();
+        let mut gd = self.lock();
+        if gd.twiddles.as_ref().is_none_or(|(l, _)| *l != log_k) {
+            gd.twiddles = None;
+            let tw = twiddles(k);
+            let b = gd.gpu.buffer(k * 8).expect("metal: twiddles");
+            write(&b, &tw);
+            gd.twiddles = Some((log_k, b));
+        }
+        let (need_c, need_v, need_o) = (ml * k * 8, ml * g * k * 8, g * per * 32);
+        if gd.leaf_bufs.as_ref().is_none_or(|(c, v, o)| c.size() < need_c || v.size() < need_v || o.size() < need_o) {
+            gd.leaf_bufs = None;
+            let c = gd.gpu.buffer(need_c.next_power_of_two()).expect("metal: coefficients");
+            let v = gd.gpu.buffer(need_v.next_power_of_two()).expect("metal: coset values");
+            let o = gd.gpu.buffer(need_o.next_power_of_two()).expect("metal: leaf digests");
+            gd.leaf_bufs = Some((c, v, o));
+        }
+        let inner = &*gd;
+        let (cbuf, vbuf, obuf) = inner.leaf_bufs.as_ref().expect("leaf buffers");
+        for (j, l) in job.limbs.iter().enumerate() {
+            // SAFETY: shared buffer of at least `ml·k` u64; no GPU work in flight
+            unsafe { core::ptr::copy_nonoverlapping(l.as_ptr(), (cbuf.contents_ptr() as *mut u64).add(j * k), k) };
+        }
+        let shifts: Vec<u64> = cosets.clone().map(|s| job.shift(s)).collect();
+        let sbuf = inner.gpu.buffer(g * 8).expect("metal: shifts");
+        write(&sbuf, &shifts);
+        let tw = &inner.twiddles.as_ref().expect("twiddles").1;
+        let lp = CosetLeafParams {
+            init: job.init,
+            k: k as u32,
+            per: per as u32,
+            g: g as u32,
+            w: 1 << job.log_width,
+            members: job.members() as u32,
+            limbs: job.limbs_per_member as u32,
+            spb: spb as u32,
+            blocks: blocks as u32,
+            rate: job.rate as u32,
+            pad: 0,
+        };
+        aruminium::autorelease_pool(|| {
+            let cmd = inner.queue.commands().expect("metal: commands");
+            let enc = cmd.encoder().expect("metal: encoder");
+            let group = |p: &Pipeline| {
+                let w = p.thread_execution_width().max(1);
+                ((p.max_total_threads_per_threadgroup() / w).max(1) * w).min(256)
+            };
+            for j in 0..ml {
+                let p0 = NttParams { log_n: log_k, span: 0, cosets: g as u32, pad: 0 };
+                enc.bind(&inner.scatter);
+                enc.bind_buffer(cbuf, j * k * 8, 0);
+                enc.bind_buffer(vbuf, j * g * k * 8, 1);
+                enc.bind_buffer(&sbuf, 0, 2);
+                enc.push(bytes_of(&p0), 3);
+                enc.launch((g * k, 1, 1), (group(&inner.scatter), 1, 1));
+                enc.bind(&inner.stage);
+                enc.bind_buffer(vbuf, j * g * k * 8, 0);
+                enc.bind_buffer(tw, 0, 1);
+                for st in 0..log_k {
+                    let p = NttParams { log_n: log_k, span: 1 << st, cosets: g as u32, pad: 0 };
+                    enc.push(bytes_of(&p), 2);
+                    enc.launch((g * k / 2, 1, 1), (group(&inner.stage), 1, 1));
+                }
+            }
+            enc.bind(&inner.leaves);
+            enc.bind_buffer(vbuf, 0, 0);
+            enc.bind_buffer(obuf, 0, 1);
+            enc.push(bytes_of(&lp), 2);
+            enc.launch((g * per, 1, 1), (group(&inner.leaves), 1, 1));
+            enc.finish();
+            cmd.submit();
+            cmd.wait();
+            if let Some(e) = cmd.error() {
+                panic!("metal coset leaves: {e}");
+            }
+        });
+        let mut out = vec![[0u64; 4]; g * per];
+        read(obuf, &mut out);
+        Some(out)
     }
 
     fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
