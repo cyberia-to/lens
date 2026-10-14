@@ -23,6 +23,8 @@ pub mod profile;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 pub mod metal;
 #[cfg(all(feature = "metal", target_os = "macos"))]
+mod metal_cache;
+#[cfg(all(feature = "metal", target_os = "macos"))]
 mod msl;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod msl_tree;

@@ -7,7 +7,13 @@
 
 use std::sync::Mutex;
 
-use aruminium::{Buffer, Gpu, Pipeline, Queue};
+use aruminium::{Buffer, Gpu, Queue};
+
+use crate::metal_cache::Pipe as Pipeline;
+pub use crate::metal_cache::{ArchiveUse, ShaderCache, Startup};
+
+/// Compute pipelines the backend builds (the archive holds one per kernel).
+pub const KERNEL_COUNT: usize = crate::metal_cache::KERNELS.len();
 use cyber_lens_rspcs::backend::{Backend, ByteTree, CosetLeaves, Cpu, Inject, LineSession, State};
 use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
 use nebu::Fp3;
@@ -54,6 +60,37 @@ pub struct Metal {
     inner: Mutex<Inner>,
     k: usize,
     name: String,
+    startup: Startup,
+}
+
+/// How [`Metal`] builds its kernels.
+#[derive(Clone, Debug)]
+pub struct Options {
+    /// States per GPU thread ([`PER_THREAD`]).
+    pub per_thread: usize,
+    /// The binary-archive cache ([`ShaderCache::from_env`]).
+    pub cache: ShaderCache,
+    /// Create the twelve pipelines on parallel threads (default on;
+    /// `LENS_SHADER_SERIAL=1` turns it off).
+    pub concurrent: bool,
+    /// Diagnostics only: an unused argument named after this text is added
+    /// to every kernel, so neither the OS shader cache nor an archive has
+    /// seen the source — a kernel change, for measurements
+    /// (`LENS_SHADER_NONCE`). Changes no kernel output.
+    pub nonce: Option<String>,
+}
+
+impl Options {
+    /// Defaults, with `LENS_SHADER_CACHE`, `LENS_SHADER_SERIAL` and
+    /// `LENS_SHADER_NONCE` from the environment.
+    pub fn from_env() -> Self {
+        Options {
+            per_thread: PER_THREAD,
+            cache: ShaderCache::from_env(),
+            concurrent: std::env::var("LENS_SHADER_SERIAL").map_or(true, |v| v.is_empty() || v == "0"),
+            nonce: std::env::var("LENS_SHADER_NONCE").ok().filter(|v| !v.is_empty()),
+        }
+    }
 }
 
 // SAFETY: every Metal object lives in `inner` behind the mutex; one thread
@@ -316,41 +353,50 @@ fn read<T: Copy>(buf: &Buffer, out: &mut [T]) {
 
 impl Metal {
     /// Open the default Metal device and compile the kernels
-    /// ([`PER_THREAD`] states per GPU thread).
+    /// ([`PER_THREAD`] states per GPU thread), with the shader cache and
+    /// diagnostics from the environment ([`Options::from_env`]).
     pub fn new() -> Result<Self, String> {
-        Self::with_states_per_thread(PER_THREAD)
+        Self::with_options(Options::from_env())
     }
 
     /// As [`Self::new`] with `k` states per GPU thread (`k ≥ 1`; their
     /// partial-round inversions are shared).
     pub fn with_states_per_thread(k: usize) -> Result<Self, String> {
+        Self::with_options(Options {
+            per_thread: k,
+            ..Options::from_env()
+        })
+    }
+
+    /// As [`Self::new`] with explicit [`Options`].
+    pub fn with_options(o: Options) -> Result<Self, String> {
+        let k = o.per_thread;
         assert!(k >= 1);
         let gpu = Gpu::open().map_err(|e| format!("metal: {e:?}"))?;
         let queue = gpu
             .new_command_queue()
             .map_err(|e| format!("metal queue: {e:?}"))?;
-        let lib = gpu
-            .compile(&crate::msl::source(k))
-            .map_err(|e| format!("metal compile: {e:?}"))?;
-        let pipe = |name: &str| -> Result<Pipeline, String> {
-            let f = lib
-                .function(name)
-                .map_err(|e| format!("metal {name}: {e:?}"))?;
-            gpu.pipeline(&f)
-                .map_err(|e| format!("metal pipeline {name}: {e:?}"))
-        };
-        let permute = pipe("hemera_permute")?;
-        let grind = pipe("hemera_grind")?;
-        let scatter = pipe("ntt_scatter")?;
-        let stage = pipe("ntt_stage")?;
-        let block = pipe("ntt_block")?;
-        let sponge = pipe("hemera_sponge")?;
-        let lines = pipe("prog_lines")?;
-        let leaves = pipe("coset_leaves")?;
-        let fold = pipe("fold_cols")?;
-        let level = pipe("merkle_level")?;
-        let byte_leaves = pipe("byte_leaves")?;
-        let tree_nodes = pipe("tree_nodes")?;
+        let mut source = crate::msl::source(k);
+        if let Some(n) = &o.nonce {
+            source = crate::msl::with_nonce(&source, n);
+        }
+        let (pipes, startup) = crate::metal_cache::build(&gpu, &source, &o.cache, o.concurrent)?;
+        let [
+            permute,
+            grind,
+            scatter,
+            stage,
+            block,
+            sponge,
+            lines,
+            leaves,
+            fold,
+            level,
+            byte_leaves,
+            tree_nodes,
+        ]: [Pipeline; 12] = pipes
+            .try_into()
+            .map_err(|_| "metal: pipeline count".to_string())?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -384,7 +430,14 @@ impl Metal {
             }),
             name,
             k,
+            startup,
         })
+    }
+
+    /// How the kernels were obtained at construction (library source,
+    /// archive use, timings).
+    pub fn startup(&self) -> &Startup {
+        &self.startup
     }
 
     /// The device's name.
@@ -407,7 +460,7 @@ fn run(
     aruminium::autorelease_pool(|| {
         let cmd = inner.queue.commands().map_err(|e| format!("{e:?}"))?;
         let enc = cmd.encoder().map_err(|e| format!("{e:?}"))?;
-        enc.bind(pipe);
+        pipe.bind(&enc);
         for &(b, i) in bufs {
             enc.bind_buffer(b, 0, i);
         }
@@ -646,7 +699,7 @@ impl Backend for Metal {
         aruminium::autorelease_pool(|| {
             let cmd = g.queue.commands().expect("metal: commands");
             let enc = cmd.encoder().expect("metal: encoder");
-            enc.bind(&g.level);
+            g.level.bind(&enc);
             let w = g.level.thread_execution_width().max(1);
             let grp = ((g.level.max_total_threads_per_threadgroup() / w).max(1) * w).min(256);
             let mut src = 0usize;
@@ -718,7 +771,7 @@ impl Backend for Metal {
         let failed = aruminium::autorelease_pool(|| {
             let cmd = inner.queue.commands().expect("metal: commands");
             let enc = cmd.encoder().expect("metal: encoder");
-            enc.bind(&inner.byte_leaves);
+            inner.byte_leaves.bind(&enc);
             let p = ByteLeafParams {
                 leaves: n as u32,
                 width: job.width as u32,
@@ -731,7 +784,7 @@ impl Backend for Metal {
             enc.bind_buffer(db, 0, 1);
             enc.push(bytes_of(&p), 2);
             launch(&enc, &inner.byte_leaves, n);
-            enc.bind(&inner.tree_nodes);
+            inner.tree_nodes.bind(&enc);
             let mut src = 0usize;
             for &c in &counts[1..] {
                 let dst = src + 2 * c;
@@ -818,7 +871,7 @@ impl Backend for Metal {
                 cosets,
                 pad: 0,
             };
-            enc.bind(&inner.scatter);
+            inner.scatter.bind(&enc);
             enc.bind_buffer(&cbuf, 0, 0);
             enc.bind_buffer(&data, 0, 1);
             enc.bind_buffer(&sbuf, 0, 2);
@@ -970,7 +1023,7 @@ impl Metal {
                     cosets: g as u32,
                     pad: 0,
                 };
-                enc.bind(&inner.scatter);
+                inner.scatter.bind(&enc);
                 enc.bind_buffer(cbuf, j * k * 8, 0);
                 enc.bind_buffer(vbuf, j * g * k * 8, 1);
                 enc.bind_buffer(&sbuf, 0, 2);
@@ -978,7 +1031,7 @@ impl Metal {
                 enc.launch((g * k, 1, 1), (group(&inner.scatter), 1, 1));
                 stages(inner, &enc, vbuf, j * g * k * 8, tw, log_k, g, &group);
             }
-            enc.bind(&inner.leaves);
+            inner.leaves.bind(&enc);
             enc.bind_buffer(vbuf, 0, 0);
             enc.bind_buffer(obuf, 0, 1);
             enc.push(bytes_of(&lp), 2);
@@ -1018,7 +1071,7 @@ fn stages(
     let max_t = inner.block.max_total_threads_per_threadgroup().max(1);
     let fused = log_n.min(BLOCK_LOG).min(max_t.ilog2() + 1);
     if fused >= 1 {
-        enc.bind(&inner.block);
+        inner.block.bind(&enc);
         enc.bind_buffer(buf, off, 0);
         enc.bind_buffer(tw, 0, 1);
         let p = NttParams {
@@ -1030,7 +1083,7 @@ fn stages(
         enc.push(bytes_of(&p), 2);
         enc.launch_groups((total >> fused, 1, 1), (1 << (fused - 1), 1, 1));
     }
-    enc.bind(&inner.stage);
+    inner.stage.bind(&enc);
     enc.bind_buffer(buf, off, 0);
     enc.bind_buffer(tw, 0, 1);
     for st in fused..log_n {

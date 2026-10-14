@@ -39,5 +39,14 @@ webgpu = ["dep:wgpu", "dep:pollster"]
 [[example]]
 name = "gpu_bench"
 
+[[example]]
+name = "metal_cold"
+required-features = ["metal"]
+
+# build.rs regenerates the MSL to embed an offline-compiled metallib when
+# `xcrun metal` exists on the build machine
+[build-dependencies]
+cyber-hemera.workspace = true
+
 [dev-dependencies]
 pollster = "0.4"
