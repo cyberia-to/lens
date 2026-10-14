@@ -671,6 +671,8 @@ kernel void ntt_stage(device ulong* data [[buffer(0)]],
 }
 "#;
 
+
+
 /// The whole library source, `k` states per thread.
 pub fn source(k: usize) -> String {
     let mut s = String::new();
@@ -694,5 +696,6 @@ pub fn source(k: usize) -> String {
     let d0p1 = (u128::from(consts::diag()[0]) + 1) % 0xFFFF_FFFF_0000_0001u128;
     writeln!(s, "constant ulong D0P1 = 0x{d0p1:016x}UL;").expect("fmt");
     s.push_str(FIELD);
+    s.push_str(crate::msl_tree::BYTE_TREE);
     s
 }

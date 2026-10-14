@@ -262,6 +262,32 @@ impl WhirConfig {
             .fold(f64::INFINITY, f64::min)
     }
 
+    /// The same schedule's bound with every grinding term removed: what
+    /// the queries, OOD samples and field size prove on their own. Stated
+    /// beside [`Self::security_bits`] in the ledgers, never instead of it.
+    pub fn security_bits_without_grinding(&self) -> f64 {
+        let mut bare = self.clone();
+        for round in &mut bare.rounds {
+            round.query_pow = 0;
+            round.fold_pow = 0;
+        }
+        bare.security_bits()
+    }
+
+    /// Hemera evaluations the honest prover expects to spend grinding:
+    /// `2^bits` per grinding challenge (each folding challenge with a
+    /// positive `fold_pow`, each round's query challenge).
+    pub fn expected_grinding_hashes(&self) -> f64 {
+        self.rounds
+            .iter()
+            .map(|r| {
+                let fold = if r.fold_pow > 0 { r.fold as f64 * f64::from(r.fold_pow).exp2() } else { 0.0 };
+                let query = if r.query_pow > 0 { f64::from(r.query_pow).exp2() } else { 0.0 };
+                fold + query
+            })
+            .sum()
+    }
+
     /// Offset of round `i`'s first folding challenge in the full α vector.
     pub fn alpha_offset(&self, i: usize) -> usize {
         self.rounds[..i].iter().map(|r| r.fold).sum()

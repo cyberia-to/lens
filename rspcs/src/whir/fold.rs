@@ -20,6 +20,28 @@ use crate::wire::Symbols;
 pub fn coset_tree(cw: &Symbols, log_n: u32, fold: usize) -> Tree {
     let width = 1usize << fold;
     let leaves = (1usize << log_n) / width;
+    let backend = crate::backend::current();
+    if backend.name() != "cpu" && leaves >= 1 << 12 {
+        // the whole tree on the device: leaves cut from the codeword there
+        let limbs: Vec<u64>;
+        let (symbols, per): (&[u64], usize) = match cw {
+            Symbols::Base(v) => {
+                limbs = crate::par::par_map(v.len(), |i| v[i].as_u64());
+                (&limbs, 1)
+            }
+            Symbols::Ext(v) => {
+                limbs = crate::par::par_map(3 * v.len(), |i| {
+                    let x = v[i / 3];
+                    [x.c0, x.c1, x.c2][i % 3].as_u64()
+                });
+                (&limbs, 3)
+            }
+        };
+        let job = crate::backend::ByteTree { symbols, limbs: per, width, leaves };
+        if let Some(levels) = backend.byte_tree(&job) {
+            return Tree::from_lanes(levels);
+        }
+    }
     Tree::build(leaves, |j| coset(cw, leaves, width, j).leaf_bytes(0, width))
 }
 
