@@ -41,6 +41,38 @@ still hits (pipelines 1.7 ms), because the function bitcode is unchanged.
 
 ## results
 
+### sweep 2 (load 37–48) — the reference table
+
+| round | scenario | load | Metal::new ms | library ms | pipelines ms | archive ms (load / save) | hits |
+|---|---|---|---|---|---|---|---|
+| 0 | cold OS cache, serial, no archive (old path) | 38.6 | 4177 | 130 | 4003 | – | 0 |
+| 0 | warm OS cache, serial, no archive | 37.6 | 29 | 0.7 | 1.3 | – | 0 |
+| 0 | cold OS cache, concurrent, no archive | 37.6 | 2345 | 117 | 2187 | – | 0 |
+| 0 | warm OS cache, concurrent, no archive | 37.6 | 27 | 0.7 | 1.3 | – | 0 |
+| 0 | cold OS cache, concurrent, archive absent (writes it) | 37.6 | 2102 | 124 | 1905 | 0.0 / 33 | 0 |
+| 0 | warm OS cache, archive hit | 36.7 | 28 | 0.7 | 0.5 | 0.7 / 0 | 12 |
+| 0 | **cold OS cache, archive hit** | 36.7 | **153** | 116 | **0.6** | 0.9 / 0 | 12 |
+| 0 | cold OS cache, archive hit, serial | 36.7 | 144 | 108 | 0.6 | 1.0 / 0 | 12 |
+| 1 | cold OS cache, serial, no archive (old path) | 36.7 | 4111 | 113 | 3959 | – | 0 |
+| 1 | warm OS cache, serial, no archive | 39.2 | 30 | 0.7 | 1.3 | – | 0 |
+| 1 | cold OS cache, concurrent, no archive | 39.2 | 2238 | 116 | 2088 | – | 0 |
+| 1 | warm OS cache, concurrent, no archive | 41.4 | 29 | 0.7 | 1.3 | – | 0 |
+| 1 | cold OS cache, concurrent, archive absent (writes it) | 41.4 | 1968 | 113 | 1788 | 0.0 / 31 | 0 |
+| 1 | warm OS cache, archive hit | 41.4 | 33 | 0.7 | 0.7 | 0.8 / 0 | 12 |
+| 1 | **cold OS cache, archive hit** | 41.4 | **148** | 111 | **0.5** | 1.0 / 0 | 12 |
+| 1 | cold OS cache, archive hit, serial | 41.4 | 150 | 110 | 0.6 | 1.2 / 0 | 12 |
+| 2 | cold OS cache, serial, no archive (old path) | 44.8 | 4034 | 112 | 3886 | – | 0 |
+| 2 | warm OS cache, serial, no archive | 44.8 | 27 | 0.7 | 1.3 | – | 0 |
+| 2 | cold OS cache, concurrent, no archive | 44.8 | 1936 | 111 | 1790 | – | 0 |
+| 2 | warm OS cache, concurrent, no archive | 47.7 | 28 | 1.1 | 1.5 | – | 0 |
+| 2 | cold OS cache, concurrent, archive absent (writes it) | 47.7 | 1943 | 110 | 1768 | 0.0 / 29 | 0 |
+| 2 | warm OS cache, archive hit | 47.7 | 28 | 0.6 | 0.6 | 0.6 / 0 | 12 |
+| 2 | **cold OS cache, archive hit** | 47.7 | **148** | 110 | **0.5** | 1.0 / 0 | 12 |
+| 2 | cold OS cache, archive hit, serial | 47.7 | 144 | 108 | 0.6 | 0.9 / 0 | 12 |
+
+Summary (sweep 2): first run of the shipped source 4.0–4.2 s (old path) →
+1.9–2.3 s (concurrent) → 0.15 s (archive present); warm 27–33 ms.
+
 ### sweep 1 (load 90–109)
 
 | round | scenario | load | Metal::new ms | library ms | pipelines ms | archive ms (load / save) | hits |
@@ -90,14 +122,14 @@ still hits (pipelines 1.7 ms), because the function bitcode is unchanged.
   pipelines at load ~28–100 (the ~0.7 s figure was an idle machine); the
   front end is 0.11–0.14 s.
 - **Concurrent pipelines** halve it when the machine has idle cores
-  (4.1–4.4 s → 1.8–2.3 s at load ~29); at load 90–110 the Metal compiler
+  (4.0–4.2 s → 1.9–2.3 s at load 37–48, the same at ~29); at load 90–110 the Metal compiler
   service has no spare cores and the gain disappears (3.5–12 s, noisy).
   This is the only help a *new* kernel source gets (no archive can exist
   for it yet).
 - **Archive hit with a cold OS cache**: pipelines 0.6–4 ms, `Metal::new`
-  0.16–0.25 s, of which the front end is 0.11–0.19 s. Independent of load.
-  Writing the archive costs 35–40 ms once (1.7 MB file).
-- Warm OS cache: 30–100 ms either way (mostly `Gpu::open`); the archive
+  0.14–0.16 s at load 37–48 (0.19–0.30 s at load ~100), of which the
+  front end is 0.11 s. Writing the archive costs 29–40 ms once (1.7 MB).
+- Warm OS cache: 27–33 ms at load 37–48 (up to ~100 ms at load ~100) either way (mostly `Gpu::open`); the archive
   adds ~1 ms to load.
 - When does the archive hit while the OS cache is cold? The OS cache is
   shared by all unbundled binaries and is size-bounded (264 MB here, five
