@@ -368,6 +368,7 @@ pub fn coset_leaves(
     c: &Ctx<'_>,
     job: &CosetLeaves<'_>,
     cosets: core::ops::Range<usize>,
+    values: Option<&mut [u64]>,
 ) -> Option<Vec<[u64; 4]>> {
     let (k, per, g) = (job.k(), job.per(), cosets.len());
     let ml = job.limbs.len();
@@ -443,6 +444,13 @@ pub fn coset_leaves(
         c.device
             .poll(wgpu::PollType::wait_indefinitely())
             .expect("webgpu: poll");
+    }
+    if let Some(v) = values {
+        assert_eq!(v.len(), ml * g * k, "coset values");
+        let raw = c.submit_read(c.encoder(), &vals, 0, vals_bytes);
+        for (x, b) in v.iter_mut().zip(raw.chunks_exact(8)) {
+            *x = u64::from_le_bytes(b.try_into().expect("8"));
+        }
     }
     let enc = c.encoder();
     let raw = c.submit_read(enc, &out, 0, (g * per * 32) as u64);
@@ -652,6 +660,26 @@ impl LineSession for Session<'_> {
         });
         self.cur = 1 - self.cur;
         self.len = half;
+    }
+    fn columns(&mut self) -> Vec<Limbs> {
+        self.w.with_ctx(|c| {
+            let bytes = (self.ncols * self.len * 24) as u64;
+            let all = c.empty(bytes);
+            let mut enc = c.encoder();
+            for col in 0..self.ncols {
+                enc.copy_buffer_to_buffer(
+                    &self.cols[self.cur],
+                    (col * self.stride * 24) as u64,
+                    &all,
+                    (col * self.len * 24) as u64,
+                    (self.len * 24) as u64,
+                );
+            }
+            let raw = c.submit_read(enc, &all, 0, bytes);
+            raw.chunks_exact(24)
+                .map(|v| core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))))
+                .collect()
+        })
     }
     fn firsts(&mut self) -> Vec<Limbs> {
         self.w.with_ctx(|c| {

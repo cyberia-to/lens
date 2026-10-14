@@ -23,6 +23,11 @@ backend.
 | `permute(states)` | hemera's permutation (`hemera/rs/src/permutation.rs`, profile `HEMERA`) of every 16-lane state, in place |
 | `grind(template, inject, bits)` | the least `n ≥ 0` such that output lane 0 of `permute(inject(template, n))` has its low `bits` bits zero, `1 ≤ bits < 64` |
 | `coset_ntt(coeffs, shifts)` | for each shift `s`: `ntt(c_i · s^i)` in nebu's order (`nebu::ntt::ntt`: natural-order evaluations on the subgroup of order `coeffs.len()`) |
+| `sponge(init, rate, blocks, lanes)` | an overwrite-mode sponge per item from `init`, digest lanes `0..4` |
+| `merkle_levels(leaves, arities, tag)` | every tree level above `leaves` (binary or 4-ary nodes), `None` where not run |
+| `coset_leaves(job, cosets)` | the leaf digests of a streamed Reed–Solomon commitment's cosets (`CosetLeaves`: coset NTTs, then the leaf sponges over the coset values), `None` where not run |
+| `coset_leaves_kept(job, cosets, values)` | `coset_leaves`, and the coset values written to `values` (limb vector, then coset, then `η^u` order) — a held codeword committed in one pass; `None` where not run |
+| `line_sums`, `line_session` | a compiled constraint program's weighted sums along lines (zerocheck rounds), the columns resident across rounds in a session |
 
 `inject(template, n)` adds `(n mod 2^lo_bits) · 2^lo_shift` to lane `lo`
 and `⌊n / 2^hi_shift⌋` to lane `hi` (field additions; values below `2^56`):
@@ -35,6 +40,9 @@ and `⌊n / 2^hi_shift⌋` to lane `hi` (field additions; values below `2^56`):
 
 The least-nonce rule makes grinding deterministic: a backend searches in
 any order but returns the minimum over every nonce below the first hit.
+The device backends search in dispatches of consecutive nonces, the first
+of `2^bits` (the expected position of the least), each next one twice the
+last, up to `2^22`.
 
 ## selection
 
@@ -42,7 +50,10 @@ The process holds one current backend (`backend::current`,
 `backend::install`), `Cpu` until a binary installs another; library code
 never chooses. `cyber_lens_gpu::{select, install}` resolve `auto`
 (Metal, else WebGPU, else CPU), `cpu`, `metal`, `webgpu`; joy exposes it as
-`joy prove --backend`.
+`joy prove --backend`. Debugging wrappers: `check-*` (every operation
+against the CPU), `spot-*`, `record-*` (call hashes to `LENS_RECORD`) and
+`prof-*` (wall time per operation, `profile::report`;
+`LENS_PROFILE_EACH=1` prints every call).
 
 ## call sites
 

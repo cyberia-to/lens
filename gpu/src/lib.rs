@@ -19,6 +19,7 @@
 
 pub mod checked;
 pub mod consts;
+pub mod profile;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 pub mod metal;
 #[cfg(all(feature = "metal", target_os = "macos"))]
@@ -51,6 +52,9 @@ pub enum Choice {
     /// A device backend recording every call's input and output hashes
     /// to the file `LENS_RECORD`.
     Record(Inner),
+    /// A backend whose operations' wall times are added up per kind
+    /// ([`profile::report`]).
+    Profile(Option<Inner>),
 }
 
 /// The device a [`Choice::Check`] runs.
@@ -74,6 +78,9 @@ impl core::str::FromStr for Choice {
             "spot-webgpu" => Ok(Choice::Spot(Inner::WebGpu)),
             "record-metal" => Ok(Choice::Record(Inner::Metal)),
             "record-webgpu" => Ok(Choice::Record(Inner::WebGpu)),
+            "prof-cpu" => Ok(Choice::Profile(None)),
+            "prof-metal" => Ok(Choice::Profile(Some(Inner::Metal))),
+            "prof-webgpu" => Ok(Choice::Profile(Some(Inner::WebGpu))),
             _ => Err(format!("unknown backend `{s}` (auto, cpu, metal, webgpu)")),
         }
     }
@@ -181,6 +188,17 @@ pub fn select(choice: Choice) -> Result<Selected, String> {
             Ok(Selected {
                 device: s.device,
                 backend: Arc::new(checked::Record(s.backend, std::sync::Mutex::new(f))),
+            })
+        }
+        Choice::Profile(i) => {
+            let s = match i {
+                None => cpu(),
+                Some(Inner::Metal) => metal()?,
+                Some(Inner::WebGpu) => webgpu()?,
+            };
+            Ok(Selected {
+                device: s.device,
+                backend: Arc::new(profile::Profile(s.backend)),
             })
         }
         Choice::Auto => Ok(metal().or_else(|_| webgpu()).unwrap_or_else(|_| cpu())),

@@ -120,18 +120,18 @@ fn grinding_finds_the_cpu_nonce() {
 
 #[test]
 fn grinding_past_the_first_dispatch() {
-    // 20 bits: the least nonce lies beyond the first 2^16 dispatch with
-    // probability 1 − 2^-... ≈ 94%; both backends must still return the least
-    let seed = [7u8; 32];
-    let t = hash40_template(&seed);
-    let want = Cpu.grind(&t, Inject::hash40(), 20);
-    for s in backends() {
-        assert_eq!(
-            s.backend.grind(&t, Inject::hash40(), 20),
-            want,
-            "{}",
-            s.backend.name()
-        );
+    // dispatches start at 2^bits and double: over 32 seeds at 12 and 20
+    // bits the least nonce lies beyond the first dispatch in about a third
+    // of the cases (several dispatches); every backend returns the least
+    for bits in [12u32, 20] {
+        let seeds = if bits == 12 { 32u8 } else { 4 };
+        for seed in 0..seeds {
+            let t = hash40_template(&[seed.wrapping_mul(29).wrapping_add(7); 32]);
+            let want = Cpu.grind(&t, Inject::hash40(), bits);
+            for s in backends() {
+                assert_eq!(s.backend.grind(&t, Inject::hash40(), bits), want, "{} bits {bits} seed {seed} (nonce {want})", s.backend.name());
+            }
+        }
     }
 }
 
@@ -251,7 +251,7 @@ fn program_line_sums_equal_cpu() {
 
 #[test]
 fn coset_leaves_equal_the_reference() {
-    use cyber_lens_rspcs::backend::{CosetLeaves, coset_leaves_reference};
+    use cyber_lens_rspcs::backend::{CosetLeaves, coset_leaves_reference, coset_values_reference};
     let mut r = 77u64;
     for s in backends() {
         for (members, limbs, log_k, log_n, log_w) in [
@@ -275,6 +275,14 @@ fn coset_leaves_equal_the_reference() {
             };
             let cosets = job.cosets();
             for range in [0..cosets, 3..5] {
+                let mut vals = vec![0u64; job.limbs.len() * range.len() * k];
+                match s.backend.coset_leaves_kept(&job, range.clone(), &mut vals) {
+                    Some(got) => {
+                        assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} kept leaves {range:?}", s.backend.name());
+                        assert!(vals == coset_values_reference(&job, range.clone()), "{} kept values {range:?}", s.backend.name());
+                    }
+                    None => assert!(!required(s.backend.name()), "{}: kept coset leaves declined", s.backend.name()),
+                }
                 match s.backend.coset_leaves(&job, range.clone()) {
                     Some(got) => assert_eq!(
                         got,
@@ -347,6 +355,7 @@ fn line_sessions_equal_the_cpu_session() {
             dev.fold(alpha);
             cpu.fold(alpha);
             rows /= 2;
+            assert_eq!(dev.columns(), cpu.columns(), "{} columns at {rows} rows", s.backend.name());
         }
         assert_eq!(dev.firsts(), cpu.firsts(), "{}", s.backend.name());
     }
