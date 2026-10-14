@@ -24,6 +24,8 @@ pub mod profile;
 pub mod metal;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod msl;
+#[cfg(all(feature = "metal", target_os = "macos"))]
+mod msl_tree;
 #[cfg(feature = "webgpu")]
 pub mod webgpu;
 #[cfg(feature = "webgpu")]
