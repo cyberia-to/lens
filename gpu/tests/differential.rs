@@ -229,8 +229,11 @@ fn program_line_sums_equal_cpu() {
         }
         let prog = Program::from_slots(&ops, consts, inputs, base + 399);
         let pairs = 3000usize;
+        // random limbs, and runs of edge limbs (p − 1, p − 2^32, 0, 1):
+        // the Fp3 product's wide sums at their largest
+        let edge = [P - 1, P - (1 << 32), 0, 1, P - 1, P - 1];
         let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs)
-            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .map(|j| if j % 7 < 3 { [edge[j % 6], edge[(j + 1) % 6], edge[(j + 4) % 6]] } else { [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P] })
             .collect();
         let mut weights: Vec<[u64; 3]> = (0..pairs)
             .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
@@ -463,5 +466,117 @@ fn ragged_coset_groups_equal_the_reference() {
             "{}: ragged NTT",
             s.backend.name()
         );
+    }
+}
+
+/// States whose first partial S-box input is zero (0⁻¹ = 0 in hemera),
+/// built backwards from the target through the first four full rounds and
+/// the initial external layer; placed among ordinary states so a batched
+/// inversion (K states a thread, Montgomery's trick) meets one zero among
+/// nonzero lanes at every position of a batch.
+#[test]
+fn a_zero_partial_sbox_input_inverts_to_zero_in_every_batch_position() {
+    use nebu::Goldilocks as G;
+    let rc = cyber_lens_gpu::consts::round_constants();
+    let mat4 = |x: [G; 4]| -> [G; 4] {
+        let t01 = x[0] + x[1];
+        let t23 = x[2] + x[3];
+        let t0123 = t01 + t23;
+        let t01123 = t0123 + x[1];
+        let t01233 = t0123 + x[3];
+        [t01123 + t01, t01123 + x[2] + x[2], t01233 + t23, t01233 + x[0] + x[0]]
+    };
+    let external = |s: [G; 16]| -> [G; 16] {
+        let mut y = [G::ZERO; 16];
+        for c in 0..4 {
+            let m = mat4([s[4 * c], s[4 * c + 1], s[4 * c + 2], s[4 * c + 3]]);
+            y[4 * c..4 * c + 4].copy_from_slice(&m);
+        }
+        let mut out = y;
+        for k in 0..4 {
+            let sum = y[k] + y[4 + k] + y[8 + k] + y[12 + k];
+            for c in 0..4 {
+                out[4 * c + k] = y[4 * c + k] + sum;
+            }
+        }
+        out
+    };
+    // the external layer's inverse by Gauss–Jordan on its matrix
+    let mut m = [[G::ZERO; 32]; 16];
+    for j in 0..16 {
+        let mut e = [G::ZERO; 16];
+        e[j] = G::ONE;
+        let col = external(e);
+        for i in 0..16 {
+            m[i][j] = col[i];
+        }
+        m[j][16 + j] = G::ONE;
+    }
+    for c in 0..16 {
+        let piv = (c..16).find(|&r| m[r][c] != G::ZERO).expect("invertible");
+        m.swap(c, piv);
+        let inv = m[c][c].inv();
+        for x in m[c].iter_mut() {
+            *x *= inv;
+        }
+        for r in 0..16 {
+            if r != c && m[r][c] != G::ZERO {
+                let f = m[r][c];
+                let row = m[c];
+                for (x, y) in m[r].iter_mut().zip(row) {
+                    *x -= f * y;
+                }
+            }
+        }
+    }
+    let inv_external = |s: [G; 16]| -> [G; 16] { core::array::from_fn(|i| (0..16).fold(G::ZERO, |a, j| a + m[i][16 + j] * s[j])) };
+    // 7⁻¹ mod p − 1
+    let pm1 = (P - 1) as i128;
+    let e7 = {
+        let (mut a, mut b, mut x0, mut x1) = (7i128, pm1, 1i128, 0i128);
+        while b != 0 {
+            let q = a / b;
+            (a, b) = (b, a - q * b);
+            (x0, x1) = (x1, x0 - q * x1);
+        }
+        assert_eq!(a, 1);
+        x0.rem_euclid(pm1)
+    };
+    let root7 = |x: G| x.exp(e7 as u64);
+    let mut r = 0x2e70u64;
+    let crafted = |r: &mut u64| -> State {
+        let mut t: [G; 16] = core::array::from_fn(|_| G::new(rng(r) % P));
+        t[0] = G::ZERO - G::new(rc[128]);
+        let mut s = t;
+        for round in (0..4).rev() {
+            s = inv_external(s);
+            for i in 0..16 {
+                s[i] = root7(s[i]) - G::new(rc[round * 16 + i]);
+            }
+        }
+        s = inv_external(s);
+        // forward check: lane 0 + c₀ is zero before the first partial S-box
+        let mut f = external(s);
+        for round in 0..4 {
+            for i in 0..16 {
+                f[i] = (f[i] + G::new(rc[round * 16 + i])).exp(7);
+            }
+            f = external(f);
+        }
+        assert_eq!(f[0] + G::new(rc[128]), G::ZERO);
+        core::array::from_fn(|i| s[i].as_u64())
+    };
+    for sb in backends() {
+        for pos in 0..8 {
+            let mut states = random_states(4099, 7 + pos as u64);
+            for k in 0..64 {
+                states[pos + 8 * k] = crafted(&mut r);
+            }
+            let mut want = states.clone();
+            Cpu.permute(&mut want);
+            let mut got = states;
+            sb.backend.permute(&mut got);
+            assert_eq!(got, want, "{} zero at batch position {pos}", sb.backend.name());
+        }
     }
 }
