@@ -208,6 +208,20 @@ impl LineSession for CpuSession<'_> {
 
 /// The bulk kernels of a prover. Implementations must return exactly what
 /// [`Cpu`] returns.
+/// A hemera byte tree (lens [`crate::merkle::Tree`]) over leaves cut
+/// from a codeword: leaf `j` is the little-endian bytes of symbols
+/// `j + t·leaves` (`t < width`), each symbol `limbs` u64 limbs taken from
+/// `symbols` (symbol-major; any representative of the residue, reduced by
+/// the backend). Leaves hash as `hemera::tree::hash_leaf(bytes, j, false)`,
+/// nodes as `hash_node` with the root flag at the top.
+#[derive(Clone, Copy, Debug)]
+pub struct ByteTree<'a> {
+    pub symbols: &'a [u64],
+    pub limbs: usize,
+    pub width: usize,
+    pub leaves: usize,
+}
+
 pub trait Backend: Send + Sync {
     /// A short name for reports (`cpu`, `metal`, `webgpu`).
     fn name(&self) -> &'static str;
@@ -269,6 +283,13 @@ pub trait Backend: Send + Sync {
     /// one pass. `None` where the backend does not run it (`values`
     /// untouched).
     fn coset_leaves_kept(&self, _job: &CosetLeaves<'_>, _cosets: core::ops::Range<usize>, _values: &mut [u64]) -> Option<Vec<[u64; 4]>> {
+        None
+    }
+
+    /// Every level of the byte tree `job` (leaf digests first, the root
+    /// last), or `None` where the backend does not build it (the caller
+    /// hashes on the CPU or through [`Backend::permute`] then).
+    fn byte_tree(&self, _job: &ByteTree<'_>) -> Option<Vec<Vec<[u64; 4]>>> {
         None
     }
 

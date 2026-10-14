@@ -8,7 +8,7 @@
 use std::sync::Mutex;
 
 use aruminium::{Buffer, Gpu, Pipeline, Queue};
-use cyber_lens_rspcs::backend::{Backend, CosetLeaves, Cpu, Inject, LineSession, State};
+use cyber_lens_rspcs::backend::{Backend, ByteTree, CosetLeaves, Cpu, Inject, LineSession, State};
 use cyber_lens_rspcs::program::{Limbs, Program, from_fp3, to_fp3};
 use nebu::Fp3;
 
@@ -32,6 +32,10 @@ struct Inner {
     leaves: Pipeline,
     fold: Pipeline,
     level: Pipeline,
+    byte_leaves: Pipeline,
+    tree_nodes: Pipeline,
+    /// byte-tree buffers (symbols, every level's digests), grown on demand.
+    tree_bufs: Option<(Buffer, Buffer)>,
     /// coset-leaves buffers (coefficients, values, digests), grown on demand.
     leaf_bufs: Option<(Buffer, Buffer, Buffer)>,
     /// Sponge lanes and digests buffers, grown on demand.
@@ -72,6 +76,29 @@ struct LevelParams {
     arity: u32,
     tag: u64,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ByteLeafParams {
+    leaves: u32,
+    width: u32,
+    limbs: u32,
+    bytes: u32,
+    flags: u32,
+    pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NodeParams {
+    count: u32,
+    flags: u32,
+}
+
+/// hemera tree flags (`hemera/rs/src/tree.rs`)
+const FLAG_ROOT: u32 = 1;
+const FLAG_PARENT: u32 = 2;
+const FLAG_CHUNK: u32 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -322,6 +349,8 @@ impl Metal {
         let leaves = pipe("coset_leaves")?;
         let fold = pipe("fold_cols")?;
         let level = pipe("merkle_level")?;
+        let byte_leaves = pipe("byte_leaves")?;
+        let tree_nodes = pipe("tree_nodes")?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
@@ -342,6 +371,9 @@ impl Metal {
                 leaves,
                 fold,
                 level,
+                byte_leaves,
+                tree_nodes,
+                tree_bufs: None,
                 leaf_bufs: None,
                 sponge_bufs: None,
                 twiddles: None,
@@ -648,6 +680,88 @@ impl Backend for Metal {
             at += n;
         }
         Some(out)
+    }
+
+    fn byte_tree(&self, job: &ByteTree<'_>) -> Option<Vec<Vec<[u64; 4]>>> {
+        let n = job.leaves;
+        let bytes = job.width * job.limbs * 8;
+        if n < MIN_BATCH
+            || !n.is_power_of_two()
+            || job.symbols.len() != n * job.width * job.limbs
+            || bytes > u32::MAX as usize
+        {
+            return None;
+        }
+        let mut g = self.lock();
+        let (need_s, need_d) = (job.symbols.len() * 8, 2 * n * 32);
+        if g.tree_bufs
+            .as_ref()
+            .is_none_or(|(a, b)| a.size() < need_s || b.size() < need_d)
+        {
+            g.tree_bufs = None;
+            let a = g.gpu.buffer(need_s.next_power_of_two()).ok()?;
+            let b = g.gpu.buffer(need_d.next_power_of_two()).ok()?;
+            g.tree_bufs = Some((a, b));
+        }
+        let inner = &*g;
+        let (sb, db) = inner.tree_bufs.as_ref().expect("tree buffers");
+        write(sb, job.symbols);
+        let mut counts = vec![n];
+        while *counts.last().expect("leaves") > 1 {
+            counts.push(counts.last().expect("level") / 2);
+        }
+        let launch = |enc: &aruminium::Encoder, pipe: &Pipeline, threads: usize| {
+            let w = pipe.thread_execution_width().max(1);
+            let grp = ((pipe.max_total_threads_per_threadgroup() / w).max(1) * w).min(256);
+            enc.launch((threads, 1, 1), (grp, 1, 1));
+        };
+        let failed = aruminium::autorelease_pool(|| {
+            let cmd = inner.queue.commands().expect("metal: commands");
+            let enc = cmd.encoder().expect("metal: encoder");
+            enc.bind(&inner.byte_leaves);
+            let p = ByteLeafParams {
+                leaves: n as u32,
+                width: job.width as u32,
+                limbs: job.limbs as u32,
+                bytes: bytes as u32,
+                flags: FLAG_CHUNK,
+                pad: 0,
+            };
+            enc.bind_buffer(sb, 0, 0);
+            enc.bind_buffer(db, 0, 1);
+            enc.push(bytes_of(&p), 2);
+            launch(&enc, &inner.byte_leaves, n);
+            enc.bind(&inner.tree_nodes);
+            let mut src = 0usize;
+            for &c in &counts[1..] {
+                let dst = src + 2 * c;
+                let p = NodeParams {
+                    count: c as u32,
+                    flags: FLAG_PARENT | if c == 1 { FLAG_ROOT } else { 0 },
+                };
+                enc.bind_buffer(db, src * 32, 0);
+                enc.bind_buffer(db, dst * 32, 1);
+                enc.push(bytes_of(&p), 2);
+                launch(&enc, &inner.tree_nodes, c);
+                src = dst;
+            }
+            enc.finish();
+            cmd.submit();
+            cmd.wait();
+            cmd.error()
+        });
+        if let Some(e) = failed {
+            panic!("metal byte tree: {e}");
+        }
+        let mut all = vec![[0u64; 4]; 2 * n - 1];
+        read(db, &mut all);
+        let mut levels = Vec::with_capacity(counts.len());
+        let mut at = 0;
+        for &c in &counts {
+            levels.push(all[at..at + c].to_vec());
+            at += c;
+        }
+        Some(levels)
     }
 
     fn coset_leaves(

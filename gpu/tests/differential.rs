@@ -580,3 +580,41 @@ fn a_zero_partial_sbox_input_inverts_to_zero_in_every_batch_position() {
         }
     }
 }
+
+#[test]
+fn byte_trees_equal_the_cpu_tree() {
+    use cyber_lens_rspcs::backend::ByteTree;
+    use cyber_lens_rspcs::merkle::Tree;
+    let mut r = 77u64;
+    for s in backends() {
+        for (limbs, width, leaves) in [(1usize, 16usize, 1usize << 12), (3, 16, 1 << 12), (1, 32, 1 << 13), (3, 32, 1 << 12)] {
+            // canonical limbs plus a few non-canonical representatives (v + p)
+            let symbols: Vec<u64> = (0..limbs * width * leaves)
+                .map(|i| {
+                    let v = rng(&mut r) % P;
+                    if i % 97 == 0 && v < u64::MAX - P { v + P } else { v }
+                })
+                .collect();
+            let job = ByteTree { symbols: &symbols, limbs, width, leaves };
+            let Some(levels) = s.backend.byte_tree(&job) else {
+                assert!(s.backend.name() != "metal" || !required("metal"), "metal: byte tree declined");
+                continue;
+            };
+            let want = Tree::build_on_cpu(leaves, |j| {
+                let mut b = Vec::with_capacity(width * limbs * 8);
+                for t in 0..width {
+                    for l in 0..limbs {
+                        b.extend_from_slice(&(symbols[(j + t * leaves) * limbs + l] % P).to_le_bytes());
+                    }
+                }
+                b
+            });
+            let root = levels.last().expect("root")[0];
+            let mut rb = [0u8; 32];
+            for i in 0..4 {
+                rb[8 * i..8 * i + 8].copy_from_slice(&root[i].to_le_bytes());
+            }
+            assert_eq!(rb, *want.root().as_bytes(), "{} limbs {limbs} width {width}", s.backend.name());
+        }
+    }
+}

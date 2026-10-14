@@ -14,7 +14,9 @@
 //! consumes the list exactly; a short, long or reordered list fails.
 
 use cyber_hemera::Hash;
-use cyber_hemera::tree::{hash_leaf, hash_leaf_batch, hash_node, hash_node_batch};
+use cyber_hemera::tree::{hash_leaf, hash_leaf_batch, hash_node_batch};
+#[cfg(test)]
+use cyber_hemera::tree::hash_node;
 use cyber_lens_core::PcsError;
 
 use crate::par::{par_map, par_map_min};
@@ -62,6 +64,16 @@ impl Tree {
             levels.push(next);
         }
         Self { levels }
+    }
+
+    /// A tree whose levels a backend built ([`crate::backend::Backend::byte_tree`]).
+    pub(crate) fn from_lanes(levels: Vec<Vec<[u64; 4]>>) -> Self {
+        Self {
+            levels: levels
+                .into_iter()
+                .map(|l| l.iter().map(|d| lanes_digest(d)).collect())
+                .collect(),
+        }
     }
 
     pub fn root(&self) -> Hash {
