@@ -15,7 +15,7 @@ use nebu::Fp3;
 /// Fewer states than this run on the CPU backend.
 pub const MIN_BATCH: usize = 1 << 12;
 /// States per GPU thread by default (measured: `examples/gpu_bench`).
-pub const PER_THREAD: usize = 1;
+pub const PER_THREAD: usize = 4;
 /// The largest grinding dispatch, in nonces (the first tries 2^bits).
 const GRIND_DISPATCH: u64 = 1 << 22;
 
@@ -468,7 +468,7 @@ impl Backend for Metal {
             &inner.sponge,
             &[(inb, 0), (outb, 1)],
             Some((bytes_of(&p), 2)),
-            items,
+            items.div_ceil(self.k),
         )
         .expect("metal sponge");
         let mut out = vec![[0u64; 4]; items];
@@ -628,7 +628,7 @@ impl Backend for Metal {
                 enc.bind_buffer(&buf, src * 32, 0);
                 enc.bind_buffer(&buf, dst * 32, 1);
                 enc.push(bytes_of(&p), 2);
-                enc.launch((n, 1, 1), (grp, 1, 1));
+                enc.launch((n.div_ceil(self.k), 1, 1), (grp, 1, 1));
                 src = dst;
                 dst += n;
             }
@@ -868,7 +868,7 @@ impl Metal {
             enc.bind_buffer(vbuf, 0, 0);
             enc.bind_buffer(obuf, 0, 1);
             enc.push(bytes_of(&lp), 2);
-            enc.launch((g * per, 1, 1), (group(&inner.leaves), 1, 1));
+            enc.launch(((g * per).div_ceil(self.k), 1, 1), (group(&inner.leaves), 1, 1));
             enc.finish();
             cmd.submit();
             cmd.wait();

@@ -123,7 +123,7 @@ static inline void full_round(thread ulong* s, int r) {
 // K states at once: the partial rounds' inversions share one field
 // inversion (Montgomery's trick; a zero input inverts to zero).
 template <int KK>
-static inline void permute_k(thread ulong (*s)[16]) {
+static inline void permute_ref(thread ulong (*s)[16]) {
     for (int k = 0; k < KK; k++) {
         external(s[k]);
         for (int r = 0; r < 4; r++) full_round(s[k], r);
@@ -152,6 +152,164 @@ static inline void permute_k(thread ulong (*s)[16]) {
     }
     for (int k = 0; k < KK; k++) {
         for (int r = 4; r < 8; r++) full_round(s[k], r);
+    }
+}
+
+
+// ── the fast permutation: hemera's CPU kernel structure on the GPU ──
+// Representatives stay below 2^64 (not canonical) between operations:
+// one reduction per product, sums accumulated wide (64-bit low word and a
+// small high count) and reduced once, the partial rounds' next S-box
+// input carried as x' = (d0+1)·y + (Σ_{i≥1} s_i + c), K states' partial
+// inversions batched (Montgomery's trick; zero ↦ zero by masks). Field-
+// equal to `permute_ref`; outputs canonical.
+
+static inline ulong rwide(ulong lo, ulong hi) {
+    ulong hh = hi >> 32;
+    ulong hl = hi & EPS;
+    ulong t0 = lo - hh;
+    if (lo < hh) t0 -= EPS;
+    ulong t1 = (hl << 32) - hl;
+    ulong r = t0 + t1;
+    if (r < t1) r += EPS;
+    return r;
+}
+static inline void prod(ulong a, ulong b, thread ulong& lo, thread ulong& hi) {
+    uint a0 = (uint)a, a1 = (uint)(a >> 32), b0 = (uint)b, b1 = (uint)(b >> 32);
+    ulong p00 = (ulong)a0 * b0;
+    ulong p01 = (ulong)a0 * b1;
+    ulong p10 = (ulong)a1 * b0;
+    ulong p11 = (ulong)a1 * b1;
+    ulong mid = p01 + p10;
+    ulong mc = mid < p01 ? (1UL << 32) : 0;
+    lo = p00 + (mid << 32);
+    hi = p11 + (mid >> 32) + mc + (lo < p00 ? 1 : 0);
+}
+static inline ulong fmul(ulong a, ulong b) { ulong lo, hi; prod(a, b, lo, hi); return rwide(lo, hi); }
+static inline ulong fsqr(ulong a) {
+    uint a0 = (uint)a, a1 = (uint)(a >> 32);
+    ulong p00 = (ulong)a0 * a0;
+    ulong p01 = (ulong)a0 * a1;
+    ulong p11 = (ulong)a1 * a1;
+    ulong lo = p00 + (p01 << 33);
+    ulong hi = p11 + (p01 >> 31) + (lo < p00 ? 1 : 0);
+    return rwide(lo, hi);
+}
+static inline ulong fsqn(ulong x, int n) { for (int i = 0; i < n; i++) x = fsqr(x); return x; }
+static inline ulong fmuladd(ulong a, ulong b, ulong c) {
+    ulong lo, hi;
+    prod(a, b, lo, hi);
+    ulong l2 = lo + c;
+    hi += (l2 < lo) ? 1 : 0;
+    return rwide(l2, hi);
+}
+// any representatives
+static inline ulong fadd(ulong a, ulong b) {
+    ulong s = a + b;
+    ulong s2 = s + ((s < a) ? EPS : 0);
+    return s2 + ((s2 < s) ? EPS : 0);
+}
+// c < p
+static inline ulong faddc(ulong a, ulong c) {
+    ulong s = a + c;
+    return s + ((s < a) ? EPS : 0);
+}
+static inline ulong fcanon(ulong x) { return x >= P ? x - P : x; }
+// a wide sum: lo + hi·2^64, hi ≤ 2^32 − 1
+struct w2 { ulong l; uint h; };
+static inline w2 wadd(w2 a, w2 b) { ulong l = a.l + b.l; return w2{l, a.h + b.h + (l < a.l ? 1u : 0u)}; }
+static inline w2 wof(ulong x) { return w2{x, 0u}; }
+static inline ulong wred(w2 a) { ulong h = a.h; return faddc(a.l, (h << 32) - h); }
+
+static inline ulong finv(ulong x) {   // x^(p−2), lazy
+    ulong t2 = fmul(fsqr(x), x);
+    ulong t3 = fmul(fsqr(t2), x);
+    ulong t6 = fmul(fsqn(t3, 3), t3);
+    ulong t12 = fmul(fsqn(t6, 6), t6);
+    ulong t24 = fmul(fsqn(t12, 12), t12);
+    ulong t30 = fmul(fsqn(t24, 6), t6);
+    ulong t31 = fmul(fsqr(t30), x);
+    ulong u = fsqr(t31);
+    ulong c = fmul(u, x);
+    return fmul(fsqn(u, 32), c);
+}
+static inline ulong fpow7(ulong x) {
+    ulong x2 = fsqr(x);
+    ulong x3 = fmul(x2, x);
+    ulong x4 = fsqr(x2);
+    return fmul(x3, x4);
+}
+static inline void fexternal(thread ulong* s) {
+    w2 y[16];
+    for (int c = 0; c < 4; c++) {
+        thread ulong* x = s + 4 * c;
+        w2 t01 = wadd(wof(x[0]), wof(x[1]));
+        w2 t23 = wadd(wof(x[2]), wof(x[3]));
+        w2 t0123 = wadd(t01, t23);
+        w2 t01123 = wadd(t0123, wof(x[1]));
+        w2 t01233 = wadd(t0123, wof(x[3]));
+        y[4 * c] = wadd(t01123, t01);
+        y[4 * c + 1] = wadd(t01123, wadd(wof(x[2]), wof(x[2])));
+        y[4 * c + 2] = wadd(t01233, t23);
+        y[4 * c + 3] = wadd(t01233, wadd(wof(x[0]), wof(x[0])));
+    }
+    for (int k = 0; k < 4; k++) {
+        w2 sum = wadd(wadd(y[k], y[4 + k]), wadd(y[8 + k], y[12 + k]));
+        for (int c = 0; c < 4; c++) s[4 * c + k] = wred(wadd(y[4 * c + k], sum));
+    }
+}
+static inline void ffull(thread ulong* s, int r) {
+    for (int i = 0; i < 16; i++) s[i] = fpow7(faddc(s[i], RC[r * 16 + i]));
+    fexternal(s);
+}
+static inline ulong frest(thread const ulong* s) {
+    w2 a = wof(s[1]);
+    for (int i = 2; i < 16; i++) a = wadd(a, wof(s[i]));
+    return wred(a);
+}
+
+template <int KK>
+static inline void permute_k(thread ulong (*s)[16]) {
+    for (int k = 0; k < KK; k++) {
+        fexternal(s[k]);
+        for (int r = 0; r < 4; r++) ffull(s[k], r);
+    }
+    ulong x[KK], y[KK], rest[KK];
+    for (int k = 0; k < KK; k++) {
+        x[k] = faddc(s[k][0], RC[128]);
+        rest[k] = frest(s[k]);
+    }
+    for (int r = 0; r < 16; r++) {
+        // y = x⁻¹ (0 ↦ 0) for the K states, one inversion
+        ulong pre[KK];
+        ulong acc = 1;
+        for (int k = 0; k < KK; k++) {
+            ulong a = fcanon(x[k]) == 0 ? 1 : x[k];
+            pre[k] = acc;
+            acc = fmul(acc, a);
+        }
+        ulong inv = finv(acc);
+        for (int k = KK - 1; k >= 0; k--) {
+            bool z = fcanon(x[k]) == 0;
+            ulong a = z ? 1 : x[k];
+            ulong ik = fmul(inv, pre[k]);
+            inv = fmul(inv, a);
+            y[k] = z ? 0 : ik;
+        }
+        for (int k = 0; k < KK; k++) {
+            ulong sum = fadd(y[k], rest[k]);
+            for (int i = 1; i < 16; i++) s[k][i] = fmuladd(s[k][i], DIAG[i], sum);
+            if (r + 1 < 16) {
+                x[k] = fmuladd(y[k], D0P1, faddc(rest[k], RC[128 + r + 1]));
+                rest[k] = frest(s[k]);
+            } else {
+                s[k][0] = fmuladd(y[k], D0P1, rest[k]);
+            }
+        }
+    }
+    for (int k = 0; k < KK; k++) {
+        for (int r = 4; r < 8; r++) ffull(s[k], r);
+        for (int i = 0; i < 16; i++) s[k][i] = fcanon(s[k][i]);
     }
 }
 
@@ -228,17 +386,25 @@ kernel void hemera_sponge(device const ulong* lanes [[buffer(0)]],
                           device ulong* out [[buffer(1)]],
                           constant SpongeParams& p [[buffer(2)]],
                           uint gid [[thread_position_in_grid]]) {
-    if (gid >= p.items) return;
-    ulong s[1][16];
-    for (int i = 0; i < 16; i++) s[0][i] = p.init[i];
-    device const ulong* src = lanes + (ulong)gid * p.rate * p.blocks;
+    // K items a thread, item gid + k·T (T threads): one batched inversion
+    uint T = (p.items + K - 1) / K;
+    if (gid >= T) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) for (int i = 0; i < 16; i++) s[k][i] = p.init[i];
     for (uint b = 0; b < p.blocks; b++) {
-        for (uint i = 0; i < 16; i++) {
-            if (i < p.rate) s[0][i] = src[b * p.rate + i];
+        for (int k = 0; k < K; k++) {
+            uint it = min(gid + (uint)k * T, p.items - 1);
+            device const ulong* src = lanes + (ulong)it * p.rate * p.blocks;
+            for (uint i = 0; i < 16; i++) {
+                if (i < p.rate) s[k][i] = src[b * p.rate + i];
+            }
         }
-        permute_k<1>(s);
+        permute_k<K>(s);
     }
-    for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
+    for (int k = 0; k < K; k++) {
+        uint it = gid + (uint)k * T;
+        if (it < p.items) for (int i = 0; i < 4; i++) out[4 * (ulong)it + i] = s[k][i];
+    }
 }
 
 // ── straight-line Fp3 programs along lines (zerocheck rounds) ──
@@ -336,28 +502,37 @@ kernel void coset_leaves(device const ulong* vals [[buffer(0)]],
                          device ulong* out [[buffer(1)]],
                          constant CosetLeafParams& p [[buffer(2)]],
                          uint gid [[thread_position_in_grid]]) {
-    if (gid >= p.g * p.per) return;
-    uint c = gid / p.per;
-    uint a = gid % p.per;
-    ulong s[1][16];
-    for (int i = 0; i < 16; i++) s[0][i] = p.init[i];
+    // K leaves a thread, leaf gid + k·T (T threads)
+    uint n = p.g * p.per;
+    uint T = (n + K - 1) / K;
+    if (gid >= T) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) for (int i = 0; i < 16; i++) s[k][i] = p.init[i];
     uint total = p.members * p.w;
     for (uint blk = 0; blk < p.blocks; blk++) {
-        uint lane = 0;
-        for (uint j = 0; j < p.spb; j++) {
-            uint t = blk * p.spb + j;
-            if (t >= total) break;
-            uint m = t / p.w, tt = t % p.w;
-            ulong u = a + (ulong)tt * p.per;
-            for (uint l = 0; l < p.limbs; l++) {
-                s[0][lane + l] = vals[(((ulong)(m * p.limbs + l)) * p.g + c) * p.k + u];
+        for (int k = 0; k < K; k++) {
+            uint it = min(gid + (uint)k * T, n - 1);
+            uint c = it / p.per;
+            uint a = it % p.per;
+            uint lane = 0;
+            for (uint j = 0; j < p.spb; j++) {
+                uint t = blk * p.spb + j;
+                if (t >= total) break;
+                uint m = t / p.w, tt = t % p.w;
+                ulong u = a + (ulong)tt * p.per;
+                for (uint l = 0; l < p.limbs; l++) {
+                    s[k][lane + l] = vals[(((ulong)(m * p.limbs + l)) * p.g + c) * p.k + u];
+                }
+                lane += p.limbs;
             }
-            lane += p.limbs;
+            for (uint i = lane; i < p.rate; i++) s[k][i] = 0;
         }
-        for (uint i = lane; i < p.rate; i++) s[0][i] = 0;
-        permute_k<1>(s);
+        permute_k<K>(s);
     }
-    for (int i = 0; i < 4; i++) out[4 * (ulong)gid + i] = s[0][i];
+    for (int k = 0; k < K; k++) {
+        uint it = gid + (uint)k * T;
+        if (it < n) for (int i = 0; i < 4; i++) out[4 * (ulong)it + i] = s[k][i];
+    }
 }
 
 // column folds of a line session: dst[c·stride + i] = v + α·(w − v),
@@ -395,14 +570,22 @@ kernel void merkle_level(device const ulong* src [[buffer(0)]],
                          device ulong* dst [[buffer(1)]],
                          constant LevelParams& p [[buffer(2)]],
                          uint gid [[thread_position_in_grid]]) {
-    if (gid >= p.count) return;
-    ulong s[1][16];
-    for (int i = 0; i < 16; i++) s[0][i] = 0;
-    device const ulong* c = src + 4 * (ulong)p.arity * gid;
-    for (uint i = 0; i < 4 * p.arity; i++) s[0][i] = c[i];
-    if (p.arity == 2) s[0][8] = p.tag;
-    permute_k<1>(s);
-    for (int i = 0; i < 4; i++) dst[4 * (ulong)gid + i] = s[0][i];
+    // K nodes a thread, node gid + k·T (T threads)
+    uint T = (p.count + K - 1) / K;
+    if (gid >= T) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) {
+        uint it = min(gid + (uint)k * T, p.count - 1);
+        for (int i = 0; i < 16; i++) s[k][i] = 0;
+        device const ulong* c = src + 4 * (ulong)p.arity * it;
+        for (uint i = 0; i < 4 * p.arity; i++) s[k][i] = c[i];
+        if (p.arity == 2) s[k][8] = p.tag;
+    }
+    permute_k<K>(s);
+    for (int k = 0; k < K; k++) {
+        uint it = gid + (uint)k * T;
+        if (it < p.count) for (int i = 0; i < 4; i++) dst[4 * (ulong)it + i] = s[k][i];
+    }
 }
 
 // ── coset NTT (nebu's radix-2 DIT: bit-reversed input, natural output) ──
@@ -508,6 +691,8 @@ pub fn source(k: usize) -> String {
         write!(s, "0x{c:016x}UL").expect("fmt");
     }
     s.push_str("};\n");
+    let d0p1 = (u128::from(consts::diag()[0]) + 1) % 0xFFFF_FFFF_0000_0001u128;
+    writeln!(s, "constant ulong D0P1 = 0x{d0p1:016x}UL;").expect("fmt");
     s.push_str(FIELD);
     s
 }
