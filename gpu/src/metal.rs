@@ -4,6 +4,17 @@
 //!
 //! Batches below [`MIN_BATCH`] states stay on the CPU (a dispatch costs
 //! ~0.2 ms); the NTT runs on the CPU backend (no Metal NTT yet).
+//!
+//! Start-up: the twelve pipelines are created concurrently and cached in a
+//! `MTLBinaryArchive` under `$LENS_SHADER_CACHE` (default
+//! `~/Library/Caches/cyber-lens`, `off` disables), keyed by source, device,
+//! OS and crate version; a build with the offline Metal compiler embeds a
+//! metallib. With a cold OS shader cache the archive turns seconds of
+//! back-end compilation into about a millisecond; any failure (absent,
+//! corrupt or foreign archive, unwritable directory) falls back to
+//! compiling, and no path changes what the kernels compute.
+//! [`Metal::startup`] reports what happened; `examples/metal_cold` measures
+//! it (`audit/metal-shader-cache-2026-10.md`).
 
 use std::sync::Mutex;
 
