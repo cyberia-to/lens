@@ -352,9 +352,11 @@ impl Backend for WebGpu {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            let (_, _, row) = grid(chunk.len());
+            // two states a thread
+            let threads = chunk.len().div_ceil(2);
+            let (_, _, row) = grid(threads);
             let p = bytes(&[chunk.len() as u32, row, 0, 0]);
-            let out = g.run(&g.permute, &io, &p, chunk.len(), &read);
+            let out = g.run(&g.permute, &io, &p, threads, &read);
             for (s, w) in chunk.as_flattened_mut().iter_mut().zip(out.chunks_exact(8)) {
                 *s = u64::from_le_bytes(w.try_into().expect("8 bytes"));
             }
@@ -393,7 +395,8 @@ impl Backend for WebGpu {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            let (x, y, row) = grid(n);
+            // two items a thread
+            let (x, y, row) = grid(n.div_ceil(2));
             let mut p = u32s(init);
             p.extend([rate as u32, blocks as u32, n as u32, row]);
             let ub = g
@@ -670,7 +673,9 @@ impl Backend for WebGpu {
         let mut count = 1u64 << bits.clamp(12, GRIND_DISPATCH.trailing_zeros());
         loop {
             g.queue.write_buffer(&found, 0, &u32::MAX.to_le_bytes());
-            let (_, _, row) = grid(count as usize);
+            // two nonces a thread (`permute2`)
+            let threads = (count as usize).div_ceil(2);
+            let (_, _, row) = grid(threads);
             let mut p = u32s(template);
             p.extend(u32s(&[base, mask, lo_mask]));
             p.extend([
@@ -681,7 +686,7 @@ impl Backend for WebGpu {
                 count as u32,
                 row,
             ]);
-            let out = g.run(&g.grind, &found, &bytes(&p), count as usize, &read);
+            let out = g.run(&g.grind, &found, &bytes(&p), threads, &read);
             let f = u32::from_le_bytes(out[..4].try_into().expect("4 bytes"));
             if f != u32::MAX {
                 return base + f as u64;
