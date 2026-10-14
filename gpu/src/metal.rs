@@ -16,7 +16,7 @@ use nebu::Fp3;
 pub const MIN_BATCH: usize = 1 << 12;
 /// States per GPU thread by default (measured: `examples/gpu_bench`).
 pub const PER_THREAD: usize = 1;
-/// Nonces per grinding dispatch (the first dispatch tries 2^16).
+/// The largest grinding dispatch, in nonces (the first tries 2^bits).
 const GRIND_DISPATCH: u64 = 1 << 22;
 
 struct Inner {
@@ -644,6 +644,128 @@ impl Backend for Metal {
         job: &CosetLeaves<'_>,
         cosets: core::ops::Range<usize>,
     ) -> Option<Vec<[u64; 4]>> {
+        self.leaves_of(job, cosets, None)
+    }
+
+    fn coset_leaves_kept(
+        &self,
+        job: &CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+        values: &mut [u64],
+    ) -> Option<Vec<[u64; 4]>> {
+        self.leaves_of(job, cosets, Some(values))
+    }
+
+    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
+        let n = coeffs.len();
+        if n < MIN_NTT || shifts.is_empty() {
+            return Cpu.coset_ntt(coeffs, shifts);
+        }
+        assert!(n.is_power_of_two() && n <= 1 << 31);
+        let log_n = n.trailing_zeros();
+        let mut g = self.lock();
+        if g.twiddles.as_ref().is_none_or(|(l, _)| *l != log_n) {
+            g.twiddles = None;
+            let tw = twiddles(n);
+            let b = g.gpu.buffer(n * 8).expect("metal: twiddles");
+            write(&b, &tw);
+            g.twiddles = Some((log_n, b));
+        }
+        let inner = &*g;
+        let tw = &inner.twiddles.as_ref().expect("twiddles").1;
+        let total = n * shifts.len();
+        let cbuf = inner.gpu.buffer(n * 8).expect("metal: coefficients");
+        write(&cbuf, coeffs);
+        let sbuf = inner.gpu.buffer(shifts.len() * 8).expect("metal: shifts");
+        write(&sbuf, shifts);
+        let data = inner.gpu.buffer(total * 8).expect("metal: cosets");
+        let cosets = shifts.len() as u32;
+        aruminium::autorelease_pool(|| {
+            let cmd = inner.queue.commands().expect("metal: commands");
+            let enc = cmd.encoder().expect("metal: encoder");
+            let group = |p: &Pipeline| {
+                let w = p.thread_execution_width().max(1);
+                ((p.max_total_threads_per_threadgroup() / w).max(1) * w).min(256)
+            };
+            let p0 = NttParams {
+                log_n,
+                span: 0,
+                cosets,
+                pad: 0,
+            };
+            enc.bind(&inner.scatter);
+            enc.bind_buffer(&cbuf, 0, 0);
+            enc.bind_buffer(&data, 0, 1);
+            enc.bind_buffer(&sbuf, 0, 2);
+            enc.push(bytes_of(&p0), 3);
+            enc.launch((total, 1, 1), (group(&inner.scatter), 1, 1));
+            stages(inner, &enc, &data, 0, tw, log_n, cosets as usize, &group);
+            enc.finish();
+            cmd.submit();
+            cmd.wait();
+            if let Some(e) = cmd.error() {
+                panic!("metal ntt: {e}");
+            }
+        });
+        let mut flat = vec![0u64; total];
+        read(&data, &mut flat);
+        flat.chunks_exact(n).map(<[u64]>::to_vec).collect()
+    }
+
+    fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
+        assert!((1..64).contains(&bits), "grinding bits in 1..64");
+        let g = self.lock();
+        write(&g.tpl, template);
+        let mut base = 0u64;
+        // the least nonce is expected near 2^bits: dispatches start
+        // there and double (a fixed 2^22 after a 2^16 probe cost a
+        // 16-bit grind 4M nonces in a third of the calls)
+        let mut count = 1u64 << bits.clamp(12, GRIND_DISPATCH.trailing_zeros());
+        loop {
+            write(&g.found, &[u32::MAX]);
+            let p = GrindParams {
+                base,
+                mask: (1u64 << bits) - 1,
+                lo_mask: if inject.lo_bits >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << inject.lo_bits) - 1
+                },
+                lo: inject.lo as u32,
+                lo_shift: inject.lo_shift,
+                hi: inject.hi as u32,
+                hi_shift: inject.hi_shift,
+                count: count as u32,
+                pad: 0,
+            };
+            write(&g.params, &[p]);
+            run(
+                &g,
+                &g.grind,
+                &[(&g.tpl, 0), (&g.found, 1), (&g.params, 2)],
+                None,
+                (count as usize).div_ceil(self.k),
+            )
+            .expect("metal grind");
+            let mut f = [0u32];
+            read(&g.found, &mut f);
+            if f[0] != u32::MAX {
+                return base + f[0] as u64;
+            }
+            base += count;
+            count = (2 * count).min(GRIND_DISPATCH);
+        }
+    }
+}
+
+impl Metal {
+    /// [`Backend::coset_leaves`]; with `values`, the coset values copied out.
+    fn leaves_of(
+        &self,
+        job: &CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+        values: Option<&mut [u64]>,
+    ) -> Option<Vec<[u64; 4]>> {
         let (k, per, g) = (job.k(), job.per(), cosets.len());
         if k < MIN_NTT || job.rate > 16 || g == 0 || !k.is_power_of_two() {
             return None;
@@ -745,105 +867,11 @@ impl Backend for Metal {
         });
         let mut out = vec![[0u64; 4]; g * per];
         read(obuf, &mut out);
+        if let Some(v) = values {
+            assert_eq!(v.len(), ml * g * k, "coset values");
+            read(vbuf, v);
+        }
         Some(out)
-    }
-
-    fn coset_ntt(&self, coeffs: &[u64], shifts: &[u64]) -> Vec<Vec<u64>> {
-        let n = coeffs.len();
-        if n < MIN_NTT || shifts.is_empty() {
-            return Cpu.coset_ntt(coeffs, shifts);
-        }
-        assert!(n.is_power_of_two() && n <= 1 << 31);
-        let log_n = n.trailing_zeros();
-        let mut g = self.lock();
-        if g.twiddles.as_ref().is_none_or(|(l, _)| *l != log_n) {
-            g.twiddles = None;
-            let tw = twiddles(n);
-            let b = g.gpu.buffer(n * 8).expect("metal: twiddles");
-            write(&b, &tw);
-            g.twiddles = Some((log_n, b));
-        }
-        let inner = &*g;
-        let tw = &inner.twiddles.as_ref().expect("twiddles").1;
-        let total = n * shifts.len();
-        let cbuf = inner.gpu.buffer(n * 8).expect("metal: coefficients");
-        write(&cbuf, coeffs);
-        let sbuf = inner.gpu.buffer(shifts.len() * 8).expect("metal: shifts");
-        write(&sbuf, shifts);
-        let data = inner.gpu.buffer(total * 8).expect("metal: cosets");
-        let cosets = shifts.len() as u32;
-        aruminium::autorelease_pool(|| {
-            let cmd = inner.queue.commands().expect("metal: commands");
-            let enc = cmd.encoder().expect("metal: encoder");
-            let group = |p: &Pipeline| {
-                let w = p.thread_execution_width().max(1);
-                ((p.max_total_threads_per_threadgroup() / w).max(1) * w).min(256)
-            };
-            let p0 = NttParams {
-                log_n,
-                span: 0,
-                cosets,
-                pad: 0,
-            };
-            enc.bind(&inner.scatter);
-            enc.bind_buffer(&cbuf, 0, 0);
-            enc.bind_buffer(&data, 0, 1);
-            enc.bind_buffer(&sbuf, 0, 2);
-            enc.push(bytes_of(&p0), 3);
-            enc.launch((total, 1, 1), (group(&inner.scatter), 1, 1));
-            stages(inner, &enc, &data, 0, tw, log_n, cosets as usize, &group);
-            enc.finish();
-            cmd.submit();
-            cmd.wait();
-            if let Some(e) = cmd.error() {
-                panic!("metal ntt: {e}");
-            }
-        });
-        let mut flat = vec![0u64; total];
-        read(&data, &mut flat);
-        flat.chunks_exact(n).map(<[u64]>::to_vec).collect()
-    }
-
-    fn grind(&self, template: &State, inject: Inject, bits: u32) -> u64 {
-        assert!((1..64).contains(&bits), "grinding bits in 1..64");
-        let g = self.lock();
-        write(&g.tpl, template);
-        let mut base = 0u64;
-        let mut count = 1u64 << 16;
-        loop {
-            write(&g.found, &[u32::MAX]);
-            let p = GrindParams {
-                base,
-                mask: (1u64 << bits) - 1,
-                lo_mask: if inject.lo_bits >= 64 {
-                    u64::MAX
-                } else {
-                    (1u64 << inject.lo_bits) - 1
-                },
-                lo: inject.lo as u32,
-                lo_shift: inject.lo_shift,
-                hi: inject.hi as u32,
-                hi_shift: inject.hi_shift,
-                count: count as u32,
-                pad: 0,
-            };
-            write(&g.params, &[p]);
-            run(
-                &g,
-                &g.grind,
-                &[(&g.tpl, 0), (&g.found, 1), (&g.params, 2)],
-                None,
-                (count as usize).div_ceil(self.k),
-            )
-            .expect("metal grind");
-            let mut f = [0u32];
-            read(&g.found, &mut f);
-            if f[0] != u32::MAX {
-                return base + f[0] as u64;
-            }
-            base += count;
-            count = GRIND_DISPATCH;
-        }
     }
 }
 

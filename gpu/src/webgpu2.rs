@@ -368,6 +368,7 @@ pub fn coset_leaves(
     c: &Ctx<'_>,
     job: &CosetLeaves<'_>,
     cosets: core::ops::Range<usize>,
+    values: Option<&mut [u64]>,
 ) -> Option<Vec<[u64; 4]>> {
     let (k, per, g) = (job.k(), job.per(), cosets.len());
     let ml = job.limbs.len();
@@ -443,6 +444,13 @@ pub fn coset_leaves(
         c.device
             .poll(wgpu::PollType::wait_indefinitely())
             .expect("webgpu: poll");
+    }
+    if let Some(v) = values {
+        assert_eq!(v.len(), ml * g * k, "coset values");
+        let raw = c.submit_read(c.encoder(), &vals, 0, vals_bytes);
+        for (x, b) in v.iter_mut().zip(raw.chunks_exact(8)) {
+            *x = u64::from_le_bytes(b.try_into().expect("8"));
+        }
     }
     let enc = c.encoder();
     let raw = c.submit_read(enc, &out, 0, (g * per * 32) as u64);

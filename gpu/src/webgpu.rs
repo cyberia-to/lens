@@ -20,7 +20,7 @@ pub const MIN_BATCH: usize = 1 << 12;
 const WG: u32 = 64;
 /// Workgroups along x before a dispatch wraps into y.
 const ROW_GROUPS: u32 = 1 << 15;
-/// Nonces per grinding dispatch after the first (2^16).
+/// The largest grinding dispatch, in nonces (the first tries 2^bits).
 const GRIND_DISPATCH: u64 = 1 << 22;
 
 struct Inner {
@@ -612,7 +612,15 @@ impl Backend for WebGpu {
         job: &cyber_lens_rspcs::backend::CosetLeaves<'_>,
         cosets: core::ops::Range<usize>,
     ) -> Option<Vec<[u64; 4]>> {
-        self.with_ctx(|c| crate::webgpu2::coset_leaves(c, job, cosets))
+        self.with_ctx(|c| crate::webgpu2::coset_leaves(c, job, cosets, None))
+    }
+    fn coset_leaves_kept(
+        &self,
+        job: &cyber_lens_rspcs::backend::CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+        values: &mut [u64],
+    ) -> Option<Vec<[u64; 4]>> {
+        self.with_ctx(|c| crate::webgpu2::coset_leaves(c, job, cosets, Some(values)))
     }
 
     fn merkle_levels(
@@ -656,7 +664,10 @@ impl Backend for WebGpu {
             (1u64 << inject.lo_bits) - 1
         };
         let mut base = 0u64;
-        let mut count = 1u64 << 16;
+        // the least nonce is expected near 2^bits: dispatches start
+        // there and double (a fixed 2^22 after a 2^16 probe cost a
+        // 16-bit grind 4M nonces in a third of the calls)
+        let mut count = 1u64 << bits.clamp(12, GRIND_DISPATCH.trailing_zeros());
         loop {
             g.queue.write_buffer(&found, 0, &u32::MAX.to_le_bytes());
             let (_, _, row) = grid(count as usize);
@@ -676,7 +687,7 @@ impl Backend for WebGpu {
                 return base + f as u64;
             }
             base += count;
-            count = GRIND_DISPATCH;
+            count = (2 * count).min(GRIND_DISPATCH);
         }
     }
 }

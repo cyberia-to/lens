@@ -256,6 +256,16 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    /// [`Backend::coset_leaves`], also writing the coset values to
+    /// `values` (limb-major, then coset, then `η^u` order: entry
+    /// `(j·g + c)·k + u` is limb vector `j`'s coset `cosets.start + c` at
+    /// `u`; `values.len() = limbs · g · k`) — a held codeword committed in
+    /// one pass. `None` where the backend does not run it (`values`
+    /// untouched).
+    fn coset_leaves_kept(&self, _job: &CosetLeaves<'_>, _cosets: core::ops::Range<usize>, _values: &mut [u64]) -> Option<Vec<[u64; 4]>> {
+        None
+    }
+
     /// For each shift `s` in `shifts`: the NTT (nebu's order) of
     /// `coeffs[i] · s^i`; output `j` is `cosets[j]` (`coeffs.len()` a power
     /// of two).
@@ -492,6 +502,18 @@ pub fn coset_leaves_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<us
         }
         out.extend(st.iter().map(|x| [x[0], x[1], x[2], x[3]]));
         let _ = k;
+    }
+    out
+}
+
+/// The coset values [`Backend::coset_leaves_kept`] writes, on the CPU.
+pub fn coset_values_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Vec<u64> {
+    let (k, g) = (job.k(), cosets.len());
+    let mut out = vec![0u64; job.limbs.len() * g * k];
+    for (c, s) in cosets.enumerate() {
+        for (j, v) in Cpu.coset_ntt_one(&job.limbs, job.shift(s)).into_iter().enumerate() {
+            out[(j * g + c) * k..(j * g + c + 1) * k].copy_from_slice(&v);
+        }
     }
     out
 }
