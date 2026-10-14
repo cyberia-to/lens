@@ -48,6 +48,11 @@ impl LineSession for CheckedSession<'_> {
         assert_eq!(d, self.cpu.firsts(), "line session firsts");
         d
     }
+    fn columns(&mut self) -> Vec<Limbs> {
+        let d = self.dev.columns();
+        assert_eq!(d, self.cpu.columns(), "line session columns, round {}", self.round);
+        d
+    }
 }
 
 impl Backend for Checked {

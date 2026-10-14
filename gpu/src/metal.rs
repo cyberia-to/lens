@@ -172,6 +172,17 @@ impl LineSession for MetalSession<'_> {
         self.cur = 1 - self.cur;
         self.len = half;
     }
+    fn columns(&mut self) -> Vec<Limbs> {
+        let _g = self.m.lock();
+        let base = self.cols[self.cur].contents_ptr() as *const [u64; 3];
+        let mut out = Vec::with_capacity(self.ncols * self.len);
+        for c in 0..self.ncols {
+            // SAFETY: column `c` holds `stride ≥ len` limb triples from
+            // `c·stride`; no GPU work in flight (every submit is waited for)
+            out.extend_from_slice(unsafe { core::slice::from_raw_parts(base.add(c * self.stride), self.len) });
+        }
+        out
+    }
     fn firsts(&mut self) -> Vec<Limbs> {
         let _g = self.m.lock();
         let base = self.cols[self.cur].contents_ptr() as *const u64;

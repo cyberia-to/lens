@@ -355,6 +355,7 @@ fn line_sessions_equal_the_cpu_session() {
             dev.fold(alpha);
             cpu.fold(alpha);
             rows /= 2;
+            assert_eq!(dev.columns(), cpu.columns(), "{} columns at {rows} rows", s.backend.name());
         }
         assert_eq!(dev.firsts(), cpu.firsts(), "{}", s.backend.name());
     }

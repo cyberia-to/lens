@@ -60,6 +60,12 @@ impl LineSession for ProfSession<'_> {
     fn firsts(&mut self) -> Vec<Limbs> {
         self.0.firsts()
     }
+    fn columns(&mut self) -> Vec<Limbs> {
+        let t = Instant::now();
+        let r = self.0.columns();
+        add("session.columns", t, r.len() as u64);
+        r
+    }
 }
 
 impl Backend for Profile {

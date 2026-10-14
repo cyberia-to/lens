@@ -661,6 +661,26 @@ impl LineSession for Session<'_> {
         self.cur = 1 - self.cur;
         self.len = half;
     }
+    fn columns(&mut self) -> Vec<Limbs> {
+        self.w.with_ctx(|c| {
+            let bytes = (self.ncols * self.len * 24) as u64;
+            let all = c.empty(bytes);
+            let mut enc = c.encoder();
+            for col in 0..self.ncols {
+                enc.copy_buffer_to_buffer(
+                    &self.cols[self.cur],
+                    (col * self.stride * 24) as u64,
+                    &all,
+                    (col * self.len * 24) as u64,
+                    (self.len * 24) as u64,
+                );
+            }
+            let raw = c.submit_read(enc, &all, 0, bytes);
+            raw.chunks_exact(24)
+                .map(|v| core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))))
+                .collect()
+        })
+    }
     fn firsts(&mut self) -> Vec<Limbs> {
         self.w.with_ctx(|c| {
             let all = c.empty((self.ncols * 24) as u64);

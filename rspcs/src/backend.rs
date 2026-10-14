@@ -163,6 +163,9 @@ pub trait LineSession {
     fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs>;
     fn fold(&mut self, alpha: crate::program::Limbs);
     fn firsts(&mut self) -> Vec<crate::program::Limbs>;
+    /// Every column at its current length, column-major (a caller taking
+    /// the small last rounds back to the CPU).
+    fn columns(&mut self) -> Vec<crate::program::Limbs>;
 }
 
 /// The CPU reference of a [`LineSession`] (tables in memory).
@@ -197,6 +200,9 @@ impl LineSession for CpuSession<'_> {
     }
     fn firsts(&mut self) -> Vec<crate::program::Limbs> {
         self.cols.iter().map(|c| c[0]).collect()
+    }
+    fn columns(&mut self) -> Vec<crate::program::Limbs> {
+        self.cols.iter().flatten().copied().collect()
     }
 }
 
