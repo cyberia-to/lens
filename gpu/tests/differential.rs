@@ -229,8 +229,11 @@ fn program_line_sums_equal_cpu() {
         }
         let prog = Program::from_slots(&ops, consts, inputs, base + 399);
         let pairs = 3000usize;
+        // random limbs, and runs of edge limbs (p − 1, p − 2^32, 0, 1):
+        // the Fp3 product's wide sums at their largest
+        let edge = [P - 1, P - (1 << 32), 0, 1, P - 1, P - 1];
         let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs)
-            .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
+            .map(|j| if j % 7 < 3 { [edge[j % 6], edge[(j + 1) % 6], edge[(j + 4) % 6]] } else { [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P] })
             .collect();
         let mut weights: Vec<[u64; 3]> = (0..pairs)
             .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
