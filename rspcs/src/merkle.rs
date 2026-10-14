@@ -31,10 +31,20 @@ impl Tree {
     /// batched kernel on the CPU, [`crate::backend::Backend::permute`]
     /// batches on a device (`leaf_digests_device`).
     pub fn build(count: usize, leaf: impl Fn(usize) -> Vec<u8> + Sync) -> Self {
+        Self::build_with(count, leaf, true)
+    }
+
+    /// [`Self::build`] on the CPU whatever backend is installed: for
+    /// verifier-side digests, which never reach a device.
+    pub fn build_on_cpu(count: usize, leaf: impl Fn(usize) -> Vec<u8> + Sync) -> Self {
+        Self::build_with(count, leaf, false)
+    }
+
+    fn build_with(count: usize, leaf: impl Fn(usize) -> Vec<u8> + Sync, allow_device: bool) -> Self {
         assert!(count.is_power_of_two(), "leaf count must be a power of two");
         let single = count == 1;
         let backend = crate::backend::current();
-        let device = backend.name() != "cpu";
+        let device = allow_device && backend.name() != "cpu";
         let leaves = if device && count >= DEVICE_MIN {
             leaf_digests_device(&*backend, count, &leaf, single)
         } else {
