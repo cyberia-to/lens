@@ -80,6 +80,30 @@ against the CPU), `spot-*`, `record-*` (call hashes to `LENS_RECORD`) and
 Batches below 4096 states and NTTs below 2^12 stay on the CPU (a dispatch
 costs about 0.2 ms).
 
+## shader start-up
+
+A process pays shader compilation once, when it opens a GPU backend. The
+requirement: start-up caching may only change how long that takes, never
+what any kernel computes, and every cache failure falls back to compiling.
+
+- Metal: the MSL library (front end, ~0.1 s cold) and twelve compute
+  pipelines (back end, seconds cold). Pipelines are created concurrently.
+  Their GPU binaries are cached in a `MTLBinaryArchive` file in
+  `$LENS_SHADER_CACHE` (default `~/Library/Caches/cyber-lens`; `off`
+  disables), one file per MSL source × device × OS version × crate version,
+  written atomically (temp file + rename); a hit skips the back end
+  (`MTLPipelineOptionFailOnBinaryArchiveMiss`), a miss or a rejected file
+  compiles and rewrites it. A build machine with the offline compiler
+  (`xcrun metal`) embeds a metallib, used only when its source hash equals
+  the runtime source. `LENS_SHADER_SERIAL=1` and `LENS_SHADER_NONCE`
+  (an unused kernel argument, so no cache has seen the source) are for
+  measurement. `gpu/tests/shader_cache.rs` checks archive hits, corrupt and
+  truncated archives and an unwritable directory against the CPU.
+- WebGPU: wgpu 28 offers a `PipelineCache` on Vulkan only (not Metal or
+  DX12); not used yet.
+
+Measurements: `audit/metal-shader-cache-2026-10.md`.
+
 ## verification
 
 `gpu/tests/differential.rs` checks every built backend against `Cpu` on

@@ -671,8 +671,6 @@ kernel void ntt_stage(device ulong* data [[buffer(0)]],
 }
 "#;
 
-
-
 /// The whole library source, `k` states per thread.
 pub fn source(k: usize) -> String {
     let mut s = String::new();
@@ -698,4 +696,27 @@ pub fn source(k: usize) -> String {
     s.push_str(FIELD);
     s.push_str(crate::msl_tree::BYTE_TREE);
     s
+}
+
+/// `source` with a diagnostic nonce: every kernel gains an unused
+/// `[[thread_index_in_simdgroup]]` argument named after the nonce, so both
+/// the OS front-end cache (source text) and back-end cache (function
+/// bitcode) have never seen it. Cold-start measurements only; outputs are
+/// unchanged (the argument is never read).
+pub fn with_nonce(source: &str, nonce: &str) -> String {
+    let clean: String = nonce
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let arg = format!("uint lens_nonce_{clean} [[thread_index_in_simdgroup]], ");
+    let mut out = String::with_capacity(source.len() + 64 * 16);
+    let mut rest = source;
+    while let Some(i) = rest.find("kernel void ") {
+        let open = i + rest[i..].find('(').expect("kernel signature") + 1;
+        out.push_str(&rest[..open]);
+        out.push_str(&arg);
+        rest = &rest[open..];
+    }
+    out.push_str(rest);
+    out
 }
