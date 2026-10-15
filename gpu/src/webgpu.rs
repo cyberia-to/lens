@@ -29,6 +29,7 @@ struct Inner {
     consts: wgpu::Buffer,
     permute: wgpu::ComputePipeline,
     grind: wgpu::ComputePipeline,
+    mine: wgpu::ComputePipeline,
     sponge: wgpu::ComputePipeline,
     ext: crate::webgpu2::Ext,
     /// Largest storage binding, bytes (uncapped).
@@ -157,6 +158,7 @@ impl WebGpu {
         };
         let permute = pipeline(crate::wgsl::SOURCE, "hemera_permute");
         let grind = pipeline(&crate::wgsl::grind_source(), "hemera_grind");
+        let mine = pipeline(&crate::wgsl::mine_source(), "hemera_mine");
         let auto = |src: String, entry: &str| {
             let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(entry),
@@ -201,6 +203,7 @@ impl WebGpu {
                 consts,
                 permute,
                 grind,
+                mine,
                 sponge,
                 ext,
                 max_storage,
@@ -210,6 +213,52 @@ impl WebGpu {
             }),
             adapter: format!("{} ({:?})", info.name, info.backend),
         })
+    }
+
+    /// [`crate::mine`] on the adapter: the least `i < count` whose nonce
+    /// `base + i` hashes below the job's target, or `None`. One dispatch of
+    /// `count` nonces (two a thread); the host splits ranges so
+    /// `base + count` never carries into the high word
+    /// ([`crate::mine::no_carry`]).
+    pub fn mine(
+        &self,
+        job: &crate::mine::Job,
+        base: u128,
+        count: u32,
+    ) -> Result<Option<u32>, String> {
+        assert!(
+            crate::mine::no_carry(base, count),
+            "mine: nonce range crosses 2^64"
+        );
+        if count == 0 {
+            return Ok(None);
+        }
+        let g = self.lock();
+        let found = g.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("found"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let read = g.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 4,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        g.queue.write_buffer(&found, 0, &u32::MAX.to_le_bytes());
+        let threads = (count as usize).div_ceil(2);
+        let (_, _, row) = grid(threads);
+        let mut p = u32s(&job.init);
+        p.extend(u32s(job.blocks.as_flattened()));
+        p.extend(u32s(&job.target));
+        p.extend(u32s(&[base as u64, (base >> 64) as u64, job.tail]));
+        p.extend([job.tail_lane as u32, count, row, 0, 0, 0]);
+        let out = g.run(&g.mine, &found, &bytes(&p), threads, &read);
+        let f = u32::from_le_bytes(out[..4].try_into().expect("4 bytes"));
+        Ok((f != u32::MAX).then_some(f))
     }
 
     /// The adapter's name and native API.

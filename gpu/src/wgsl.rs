@@ -281,6 +281,97 @@ fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
     )
 }
 
+/// The header-mining module (`mine.rs`): the flat sponge over 168 bytes
+/// with the nonce at bytes 24..40, four permutations, two nonces a thread
+/// (bindings: 0 constants, 1 the found index (atomic), 2 parameters).
+pub fn mine_source() -> String {
+    let field = &SOURCE[..SOURCE.find("struct PermParams").expect("marker")];
+    format!(
+        "{field}{}",
+        r#"
+struct MineParams {
+    init: array<vec4<u32>, 8>,      // 16 limbs
+    blocks: array<vec4<u32>, 16>,   // four rate blocks of eight limbs
+    goal: array<vec4<u32>, 2>,      // four words, word 3 most significant
+    base_lo: vec2<u32>,             // first nonce of the dispatch, low word
+    base_hi: vec2<u32>,             // high word, constant over the dispatch
+    tail: vec2<u32>,                // written to lane tail_lane before the last permutation
+    tail_lane: u32,
+    count: u32,
+    row: u32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
+};
+
+@group(0) @binding(1) var<storage, read_write> FOUND: atomic<u32>;
+@group(0) @binding(2) var<uniform> M: MineParams;
+
+fn lt64(a: vec2<u32>, b: vec2<u32>) -> bool {
+    return a.y < b.y || (a.y == b.y && a.x < b.x);
+}
+
+fn below256(s: ptr<function, array<vec2<u32>, 16>>) -> bool {
+    let t3 = M.goal[1].zw;
+    let t2 = M.goal[1].xy;
+    let t1 = M.goal[0].zw;
+    let t0 = M.goal[0].xy;
+    if any((*s)[3] != t3) { return lt64((*s)[3], t3); }
+    if any((*s)[2] != t2) { return lt64((*s)[2], t2); }
+    if any((*s)[1] != t1) { return lt64((*s)[1], t1); }
+    return lt64((*s)[0], t0);
+}
+
+fn seed(i: u32, s: ptr<function, array<vec2<u32>, 16>>) {
+    let lo = add64(M.base_lo, vec2<u32>(i, 0u)).xy;
+    let hi = M.base_hi;
+    let a3 = vec2<u32>(lo.x << 24u, lo.x >> 8u);
+    let a4 = vec2<u32>(lo.y, hi.x & 0x00ffffffu);
+    let a5 = vec2<u32>((hi.x >> 24u) | (hi.y << 8u), (hi.y >> 24u) & 0xffu);
+    for (var l = 0u; l < 8u; l++) {
+        (*s)[2u * l] = M.init[l].xy;
+        (*s)[2u * l + 1u] = M.init[l].zw;
+    }
+    for (var l = 0u; l < 4u; l++) {
+        (*s)[2u * l] = gadd((*s)[2u * l], M.blocks[l].xy);
+        (*s)[2u * l + 1u] = gadd((*s)[2u * l + 1u], M.blocks[l].zw);
+    }
+    (*s)[3] = gadd((*s)[3], a3);
+    (*s)[4] = gadd((*s)[4], a4);
+    (*s)[5] = gadd((*s)[5], a5);
+}
+
+fn absorb(b: u32, s: ptr<function, array<vec2<u32>, 16>>) {
+    for (var l = 0u; l < 4u; l++) {
+        (*s)[2u * l] = gadd((*s)[2u * l], M.blocks[4u * b + l].xy);
+        (*s)[2u * l + 1u] = gadd((*s)[2u * l + 1u], M.blocks[4u * b + l].zw);
+    }
+    if b == 3u { (*s)[M.tail_lane] = M.tail; }
+}
+
+@compute @workgroup_size(64)
+fn hemera_mine(@builtin(global_invocation_id) id: vec3<u32>) {
+    // two nonces a thread: gid and gid + half
+    let gid = id.x + id.y * M.row;
+    let half = (M.count + 1u) / 2u;
+    if gid >= half { return; }
+    var s: array<vec2<u32>, 16>;
+    var t: array<vec2<u32>, 16>;
+    seed(gid, &s);
+    seed(gid + half, &t);
+    permute2(&s, &t);
+    for (var b = 1u; b < 4u; b++) {
+        absorb(b, &s);
+        absorb(b, &t);
+        permute2(&s, &t);
+    }
+    if below256(&s) { atomicMin(&FOUND, gid); }
+    if gid + half < M.count && below256(&t) { atomicMin(&FOUND, gid + half); }
+}
+"#
+    )
+}
+
 /// The sponge module: per item, overwrite the rate lanes block by block
 /// and permute (bindings: 0 constants, 1 lanes, 2 parameters, 3 digests —
 /// three storage buffers).
