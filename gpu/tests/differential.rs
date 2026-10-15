@@ -618,3 +618,102 @@ fn byte_trees_equal_the_cpu_tree() {
         }
     }
 }
+
+/// A header-mining job of a 168-byte message as hemera hashes it (zero
+/// state, 7-byte limbs, length in lane 10, pad block `0x01 ‖ 0…`), the
+/// nonce bytes 24..40 zeroed in block 0.
+fn mine_job(msg: &[u8; 168], target: [u64; 4]) -> cyber_lens_gpu::mine::Job {
+    let limb = |b: &[u8]| {
+        let mut w = [0u8; 8];
+        w[..b.len()].copy_from_slice(b);
+        u64::from_le_bytes(w)
+    };
+    let mut blocks = [[0u64; 8]; 4];
+    for (b, block) in blocks.iter_mut().enumerate().take(3) {
+        for (i, l) in block.iter_mut().enumerate() {
+            *l = limb(&msg[b * 56 + i * 7..b * 56 + i * 7 + 7]);
+        }
+    }
+    blocks[3][0] = 1;
+    blocks[0][3] &= 0x00ff_ffff;
+    blocks[0][4] = 0;
+    blocks[0][5] &= !0xff_ffff_ffff;
+    cyber_lens_gpu::mine::Job {
+        init: [0; 16],
+        blocks,
+        tail_lane: 10,
+        tail: 168,
+        target,
+    }
+}
+
+fn mine_on(
+    s: &cyber_lens_gpu::Selected,
+    job: &cyber_lens_gpu::mine::Job,
+    base: u128,
+    count: u32,
+) -> Option<u32> {
+    match s.backend.name() {
+        #[cfg(all(feature = "metal", target_os = "macos"))]
+        "metal" => cyber_lens_gpu::metal::Metal::new()
+            .expect("metal")
+            .mine(job, base, count)
+            .expect("metal mine"),
+        #[cfg(feature = "webgpu")]
+        "webgpu" => cyber_lens_gpu::webgpu::WebGpu::new()
+            .expect("webgpu")
+            .mine(job, base, count)
+            .expect("webgpu mine"),
+        other => panic!("no mine on {other}"),
+    }
+}
+
+#[test]
+fn mining_finds_the_cpu_nonce_and_hemera_agrees() {
+    use cyber_lens_gpu::mine::{below, cpu, digest};
+    let mut r = 0x1234_5678_9abc_u64;
+    let devices = backends();
+    for round in 0..8 {
+        let mut msg = [0u8; 168];
+        for b in msg.iter_mut() {
+            *b = rng(&mut r) as u8;
+        }
+        // targets 2^244 .. 2^251: one in 4096 .. one in 32 digests pass
+        let target = [0, 0, 0, 1u64 << (52 + round % 8)];
+        let job = mine_job(&msg, target);
+        // bases across the low word, the high word, and a 2^64 boundary neighbourhood
+        let base: u128 = match round % 3 {
+            0 => rng(&mut r) as u128 % (1 << 40),
+            1 => ((rng(&mut r) as u128) << 64) | (rng(&mut r) as u128 % (1 << 40)),
+            _ => ((rng(&mut r) as u128) << 64) | (u64::MAX as u128 - 70_000),
+        };
+        let count = 1u32 << 16;
+        let want = cpu(&job, base, count);
+        let i = want.expect("a nonce in 2^16 at 2^244 or easier");
+        // the digest is hemera's hash of the header with that nonce
+        let n = base + i as u128;
+        msg[24..40].copy_from_slice(&n.to_le_bytes());
+        let d = digest(&job, n);
+        let bytes: Vec<u8> = d.iter().flat_map(|w| w.to_le_bytes()).collect();
+        assert_eq!(bytes, cyber_hemera::hash(&msg).as_bytes(), "round {round}");
+        assert!(below(&d, &target));
+        for s in &devices {
+            let got = mine_on(s, &job, base, count);
+            assert_eq!(
+                got,
+                want,
+                "{} round {round} base {base:#x}",
+                s.backend.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn mining_reports_none_when_nothing_passes() {
+    let job = mine_job(&[0x77; 168], [0, 0, 0, 0]);
+    assert_eq!(cyber_lens_gpu::mine::cpu(&job, 5, 4096), None);
+    for s in backends() {
+        assert_eq!(mine_on(&s, &job, 5, 4096), None, "{}", s.backend.name());
+    }
+}

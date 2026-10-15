@@ -16,20 +16,26 @@
 //! Both compute exactly what the CPU backend computes (canonical limbs,
 //! least grinding nonce); `tests/differential.rs` checks them on random
 //! inputs. [`install`] picks one for the process.
+//!
+//! [`mine`] is header mining (soft3's chain): the flat sponge over a
+//! 168-byte header with a 16-byte nonce, searched below a 256-bit target
+//! on either device (`Metal::mine`, `WebGpu::mine`), byte-identical to
+//! `hemera::hash`.
 
 pub mod checked;
 pub mod consts;
-pub mod profile;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 pub mod metal;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod metal_cache;
 #[cfg(all(target_os = "macos", feature = "metal"))]
 mod metal_objc;
+pub mod mine;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod msl;
 #[cfg(all(feature = "metal", target_os = "macos"))]
 mod msl_tree;
+pub mod profile;
 #[cfg(feature = "webgpu")]
 pub mod webgpu;
 #[cfg(feature = "webgpu")]

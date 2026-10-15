@@ -8,7 +8,7 @@
 //!    `.metallib` and embeds it; it is used only if the source it was built
 //!    from hashes equal to the source this process would compile.
 //! 2. **binary archive** — a `MTLBinaryArchive` on disk (the cache directory,
-//!    [`ShaderCache`]) holding the GPU binaries of the twelve pipelines. On a
+//!    [`ShaderCache`]) holding the GPU binaries of the thirteen pipelines. On a
 //!    hit, pipeline creation skips the backend compiler entirely
 //!    (`MTLPipelineOptionFailOnBinaryArchiveMiss` reports a miss instead of
 //!    compiling); on a miss or a rejected file the pipelines compile as
@@ -33,9 +33,10 @@ use aruminium::Gpu;
 use aruminium::ffi::{NSUInteger, ObjcId, ObjcSel, nsstring_to_rust, objc_msgSend, release};
 
 /// The kernels, in the order [`build`] returns their pipelines.
-pub(crate) const KERNELS: [&str; 12] = [
+pub(crate) const KERNELS: [&str; 13] = [
     "hemera_permute",
     "hemera_grind",
+    "hemera_mine",
     "ntt_scatter",
     "ntt_stage",
     "ntt_block",
@@ -97,7 +98,7 @@ pub struct Startup {
     pub library: Duration,
     /// Opening the archive file (zero when absent or off).
     pub archive_load: Duration,
-    /// All twelve pipelines.
+    /// All thirteen pipelines.
     pub pipelines: Duration,
     /// Pipelines that came from the archive.
     pub archive_hits: usize,

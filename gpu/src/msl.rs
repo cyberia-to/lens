@@ -372,6 +372,65 @@ kernel void hemera_grind(constant ulong* tpl [[buffer(0)]],
     }
 }
 
+// ── header mining: the flat sponge over 168 bytes, nonce at bytes 24..40 ──
+// (`mine.rs`: four permutations, blocks added lane-wise, the length lane set
+// before the last one; a digest passes when its four limbs read as a
+// little-endian 256-bit integer below the target)
+
+struct MineParams {
+    ulong init[16];
+    ulong blocks[32];    // four rate blocks of eight limbs, nonce bits zero
+    ulong target[4];
+    ulong base_lo;       // first nonce of the dispatch, low word
+    ulong base_hi;       // high word, constant over the dispatch
+    ulong tail;          // written to lane tail_lane before the last permutation
+    uint tail_lane;
+    uint count;          // nonces in the dispatch
+};
+
+static inline bool below256(thread const ulong* d, constant const ulong* t) {
+    for (int i = 3; i >= 0; i--) {
+        if (d[i] != t[i]) return d[i] < t[i];
+    }
+    return false;
+}
+
+// thread t tries nonces base + K·t + k
+kernel void hemera_mine(constant MineParams& p [[buffer(0)]],
+                        device atomic_uint* found [[buffer(1)]],
+                        uint gid [[thread_position_in_grid]]) {
+    uint first = gid * K;
+    if (first >= p.count) return;
+    ulong s[K][16];
+    for (int k = 0; k < K; k++) {
+        ulong lo = p.base_lo + first + k;
+        ulong hi = p.base_hi;
+        ulong a3 = (lo & 0xffffffffUL) << 24;
+        ulong a4 = ((lo >> 32) | (hi << 32)) & 0x00ffffffffffffffUL;
+        ulong a5 = (hi >> 24) & 0xffffffffffUL;
+        for (int i = 0; i < 16; i++) {
+            ulong v = p.init[i];
+            if (i < 8) v = gadd(v, p.blocks[i]);
+            if (i == 3) v = gadd(v, a3);
+            if (i == 4) v = gadd(v, a4);
+            if (i == 5) v = gadd(v, a5);
+            s[k][i] = v;
+        }
+    }
+    permute_k<K>(s);
+    for (int b = 1; b < 4; b++) {
+        for (int k = 0; k < K; k++) {
+            for (int i = 0; i < 8; i++) s[k][i] = gadd(s[k][i], p.blocks[8 * b + i]);
+            if (b == 3) s[k][p.tail_lane] = p.tail;
+        }
+        permute_k<K>(s);
+    }
+    for (int k = 0; k < K; k++) {
+        if (first + k < p.count && below256(s[k], p.target))
+            atomic_fetch_min_explicit(found, first + k, memory_order_relaxed);
+    }
+}
+
 // ── overwrite sponge per item (Merkle leaves) ──
 
 struct SpongeParams {

@@ -5,7 +5,7 @@
 //! Batches below [`MIN_BATCH`] states stay on the CPU (a dispatch costs
 //! ~0.2 ms); the NTT runs on the CPU backend (no Metal NTT yet).
 //!
-//! Start-up: the twelve pipelines are created concurrently and cached in a
+//! Start-up: the thirteen pipelines are created concurrently and cached in a
 //! `MTLBinaryArchive` under `$LENS_SHADER_CACHE` (default
 //! `~/Library/Caches/cyber-lens`, `off` disables), keyed by source, device,
 //! OS and crate version; a build with the offline Metal compiler embeds a
@@ -41,6 +41,7 @@ struct Inner {
     queue: Queue,
     permute: Pipeline,
     grind: Pipeline,
+    mine: Pipeline,
     scatter: Pipeline,
     stage: Pipeline,
     block: Pipeline,
@@ -64,6 +65,7 @@ struct Inner {
     tpl: Buffer,
     found: Buffer,
     params: Buffer,
+    mine_params: Buffer,
 }
 
 /// Hemera kernels on the Metal GPU.
@@ -81,7 +83,7 @@ pub struct Options {
     pub per_thread: usize,
     /// The binary-archive cache ([`ShaderCache::from_env`]).
     pub cache: ShaderCache,
-    /// Create the twelve pipelines on parallel threads (default on;
+    /// Create the thirteen pipelines on parallel threads (default on;
     /// `LENS_SHADER_SERIAL=1` turns it off).
     pub concurrent: bool,
     /// Diagnostics only: an unused argument named after this text is added
@@ -98,8 +100,11 @@ impl Options {
         Options {
             per_thread: PER_THREAD,
             cache: ShaderCache::from_env(),
-            concurrent: std::env::var("LENS_SHADER_SERIAL").map_or(true, |v| v.is_empty() || v == "0"),
-            nonce: std::env::var("LENS_SHADER_NONCE").ok().filter(|v| !v.is_empty()),
+            concurrent: std::env::var("LENS_SHADER_SERIAL")
+                .map_or(true, |v| v.is_empty() || v == "0"),
+            nonce: std::env::var("LENS_SHADER_NONCE")
+                .ok()
+                .filter(|v| !v.is_empty()),
         }
     }
 }
@@ -254,7 +259,9 @@ impl LineSession for MetalSession<'_> {
         for c in 0..self.ncols {
             // SAFETY: column `c` holds `stride ≥ len` limb triples from
             // `c·stride`; no GPU work in flight (every submit is waited for)
-            out.extend_from_slice(unsafe { core::slice::from_raw_parts(base.add(c * self.stride), self.len) });
+            out.extend_from_slice(unsafe {
+                core::slice::from_raw_parts(base.add(c * self.stride), self.len)
+            });
         }
         out
     }
@@ -341,6 +348,19 @@ struct GrindParams {
     pad: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MineParams {
+    init: [u64; 16],
+    blocks: [u64; 32],
+    target: [u64; 4],
+    base_lo: u64,
+    base_hi: u64,
+    tail: u64,
+    tail_lane: u32,
+    count: u32,
+}
+
 fn bytes_of<T: Copy>(v: &T) -> &[u8] {
     // SAFETY: `T` is a plain `repr(C)` value without padding-sensitive
     // invariants; the bytes are only copied into a GPU buffer.
@@ -395,6 +415,7 @@ impl Metal {
         let [
             permute,
             grind,
+            mine,
             scatter,
             stage,
             block,
@@ -405,13 +426,16 @@ impl Metal {
             level,
             byte_leaves,
             tree_nodes,
-        ]: [Pipeline; 12] = pipes
+        ]: [Pipeline; 13] = pipes
             .try_into()
             .map_err(|_| "metal: pipeline count".to_string())?;
         let tpl = gpu.buffer(16 * 8).map_err(|e| format!("{e:?}"))?;
         let found = gpu.buffer(4).map_err(|e| format!("{e:?}"))?;
         let params = gpu
             .buffer(core::mem::size_of::<GrindParams>())
+            .map_err(|e| format!("{e:?}"))?;
+        let mine_params = gpu
+            .buffer(core::mem::size_of::<MineParams>())
             .map_err(|e| format!("{e:?}"))?;
         let name = gpu.name();
         Ok(Self {
@@ -420,6 +444,7 @@ impl Metal {
                 queue,
                 permute,
                 grind,
+                mine,
                 scatter,
                 stage,
                 block,
@@ -438,6 +463,7 @@ impl Metal {
                 tpl,
                 found,
                 params,
+                mine_params,
             }),
             name,
             k,
@@ -948,6 +974,53 @@ impl Backend for Metal {
 }
 
 impl Metal {
+    /// [`crate::mine`] on the GPU: the least `i < count` whose nonce
+    /// `base + i` hashes below the job's target, or `None`. `count` is one
+    /// dispatch (`K` nonces a thread); the host picks it for its latency
+    /// budget and splits ranges so `base + count` never carries into the
+    /// high word ([`crate::mine::no_carry`]).
+    pub fn mine(
+        &self,
+        job: &crate::mine::Job,
+        base: u128,
+        count: u32,
+    ) -> Result<Option<u32>, String> {
+        assert!(
+            crate::mine::no_carry(base, count),
+            "mine: nonce range crosses 2^64"
+        );
+        if count == 0 {
+            return Ok(None);
+        }
+        let g = self.lock();
+        write(&g.found, &[u32::MAX]);
+        let mut blocks = [0u64; 32];
+        for (b, block) in job.blocks.iter().enumerate() {
+            blocks[8 * b..8 * b + 8].copy_from_slice(block);
+        }
+        let p = MineParams {
+            init: job.init,
+            blocks,
+            target: job.target,
+            base_lo: base as u64,
+            base_hi: (base >> 64) as u64,
+            tail: job.tail,
+            tail_lane: job.tail_lane as u32,
+            count,
+        };
+        write(&g.mine_params, &[p]);
+        run(
+            &g,
+            &g.mine,
+            &[(&g.mine_params, 0), (&g.found, 1)],
+            None,
+            (count as usize).div_ceil(self.k),
+        )?;
+        let mut f = [0u32];
+        read(&g.found, &mut f);
+        Ok((f[0] != u32::MAX).then_some(f[0]))
+    }
+
     /// [`Backend::coset_leaves`]; with `values`, the coset values copied out.
     fn leaves_of(
         &self,
@@ -1046,7 +1119,10 @@ impl Metal {
             enc.bind_buffer(vbuf, 0, 0);
             enc.bind_buffer(obuf, 0, 1);
             enc.push(bytes_of(&lp), 2);
-            enc.launch(((g * per).div_ceil(self.k), 1, 1), (group(&inner.leaves), 1, 1));
+            enc.launch(
+                ((g * per).div_ceil(self.k), 1, 1),
+                (group(&inner.leaves), 1, 1),
+            );
             enc.finish();
             cmd.submit();
             cmd.wait();
