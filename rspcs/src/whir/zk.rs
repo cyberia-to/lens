@@ -322,3 +322,7 @@ pub fn zk_security_bits(params: &WhirParams, m: usize) -> f64 {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod lemma;
+#[cfg(test)]
+mod lemma_prod;
