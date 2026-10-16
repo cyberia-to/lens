@@ -5,9 +5,9 @@
 //! for the trait; they depend on a specific construction crate only when
 //! instantiating it.
 
+pub mod fri;
 mod transcript;
 mod types;
-pub mod fri;
 
 pub use fri::fri_fold;
 pub use strata_proof::Reduce;
