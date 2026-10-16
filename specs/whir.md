@@ -10,8 +10,9 @@ WHIR of Arnon, Chiesa, Fenzi, Yogev ("WHIR: Reed–Solomon Proximity Testing
 with Super-Fast Verification", eprint 2024/1586; theorem numbers below refer
 to it) as a multilinear PCS. Field `F` = Goldilocks, challenges in
 `K = Fp3`. Implements `MultilinearPcs` (`core/src/pcs.rs`), name
-`lens-whir-rs-v1`, crate `cyber-lens-rspcs`. Hash: hemera only. Not zero
-knowledge.
+`lens-whir-rs-v1`, crate `cyber-lens-rspcs`. Hash: hemera only. The plain
+opening is not zero knowledge; § zero-knowledge opening adds a hiding
+round 0 for callers that supply the masks.
 
 ## parameters
 
@@ -131,6 +132,56 @@ impossible and would be rejected, never reduced): bias 0.
 
 The verifier also rejects on header ≠ params, any length ≠ the schedule's,
 non-canonical encodings, and trailing bytes.
+
+## zero-knowledge opening
+
+`Whir::commit_zk` / `open_zk` / `verify_zk` (`whir::zk`). The caller
+supplies the masks and owns the zero-knowledge argument (zheng
+`specs/execution.md` § veil-W); lens fixes the commitment, the transcript
+and the checks.
+
+Commit. Inputs: the base table `c: {0,1}^m → F`, a mask table
+`G: {0,1}^{m−k₀} → K` and one salt `s_j ∈ F^4` per round-0 leaf. The
+virtual word is `g(x) = G(x_{k₀+1}, …, x_m)` — monomial coefficients
+`G`'s at indices whose low `k₀` bits are zero — so `ĝ(X) = Ĝ(X^{2^{k₀}})` is
+constant on every folding coset: on leaf `j` it is `Ĝ(y_j)`,
+`y_j = ω^{j·2^{k₀}}` (the shift point). Leaf `j` holds `2^{k₀} + 7` base
+symbols: the coset of `ĉ`, the three limbs of `Ĝ(y_j)`, the four salt
+limbs. Tree and root as § tree.
+
+Weight. A claim is a linear functional `Λ` given as
+`Σ_e coef_e·eq(q_e, ·) + Σ_i v_i·[· = b_i]` (eq terms and explicit entries
+at hypercube points `b_i`); its value on a table `t` is `Σ_b Λ(b)·t(b)`.
+
+Open (transcript order):
+
+1. absorb `"lens-whir-rs-v1"`, `"zk"`, header, `m`, root, then for each eq
+   term its point and coefficient, then the number of explicit entries
+   and each `(b_i, v_i)`, then `v = Λ(c)` and `u = Λ(g)`;
+2. grind `comb_pow` bits (the two-word combination's grinding, `zk_terms`;
+   the nonce travels with the caller, 0 when no grinding is required),
+   then `β ← squeeze_fp3`. WHIR runs on the virtual word `h = c + β·g` with
+   initial weight `Λ` and `σ = v + β·u` — steps 2–7 of § open / verify
+   with `f₀ = h`: OOD answers are `ĥ(ζ) = ĉ(ζ) + β·Ĝ(ζ^{2^{k₀}})`; an opened
+   round-0 leaf is authenticated over its `2^{k₀} + 7` symbols and its
+   coset of `h` is `c_t + β·Ĝ(y_j)`; the closing sum runs over every eq
+   term and every explicit entry (`q = b_i`).
+
+Rank check (`whir::zk::check`, when the mask names a block `2^ρ` at the
+top of the table): after the opening the prover reduces every round-0
+message — `Λ` on the block, `u`, the OOD answers, the `2k₀` sumcheck
+values, each a linear form in the block once `Ĝ` absorbs `Fold(Δc)` —
+modulo the opened cosets (basis `Z·Y^i` of each sub-polynomial's kernel)
+and requires `F_p`-rank `3·(E − 1)`, `E = 2 + s₀ + 2k₀`; otherwise
+`open_zk` answers `Resample` and the caller recommits with fresh masks. The
+event depends on public coins only.
+
+The proof bytes are a `WhirProof` whose round-0 openings carry
+`2^{k₀} + 7` base symbols per leaf; `u` travels with the caller.
+Soundness: the rows of § soundness for `h`, plus § batched openings with
+`m = 2` words (`c`, `g`) and one claim, plus `|Λ|²/|K|` for `u` (fixed
+before `β`: a pair of list elements with `(Λ(c*), Λ(g*)) ≠ (v, u)` passes
+`Λ(c*) + β·Λ(g*) = v + β·u` for at most one `β`).
 
 ## soundness
 
