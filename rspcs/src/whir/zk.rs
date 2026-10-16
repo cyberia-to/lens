@@ -93,13 +93,27 @@ pub struct ZkRound0 {
     g_coeffs: Vec<Fp3>,
     g_codeword: Vec<Fp3>,
     salts: Vec<Goldilocks>,
+    block: Option<usize>,
 }
 
 /// Masks the caller draws: `g` over `m − k₀` variables, `SALT_LIMBS` salt
-/// limbs per round-0 leaf (leaf-major).
+/// limbs per round-0 leaf (leaf-major), and optionally `log2` of the
+/// caller's masking block at the top of the table: then [`open_zk`] runs
+/// the round-0 rank check (`check`) and answers [`ZkOutcome::Resample`]
+/// when the coins fail it.
 pub struct ZkMask {
     pub g: Vec<Fp3>,
     pub salts: Vec<Goldilocks>,
+    pub block: Option<usize>,
+}
+
+/// What [`open_zk`] produced.
+#[derive(Debug)]
+pub enum ZkOutcome {
+    Opened(ZkValues, WhirProof),
+    /// The round-0 coins fail the masking lemma's rank condition: commit
+    /// again with fresh masks and salts (never output this proof).
+    Resample,
 }
 
 /// `(k₀, log2 leaves)` of round 0 for `(params, m)`.
@@ -138,11 +152,15 @@ pub fn commit_zk(params: &WhirParams, evals: &[Goldilocks], mask: ZkMask) -> Res
     mobius_ext(&mut g_coeffs);
     // Ĝ on the shift points y_j = ω^{j·2^{k₀}}: the order-(n₀/2^{k₀}) subgroup
     let g_codeword = encode_ext(&g_coeffs, spec.log_leaves());
+    if mask.block.is_some_and(|rho| rho < spec.fold || rho >= m) {
+        return Err(PcsError::Shape);
+    }
     let zk = ZkRound0 {
         g_evals: mask.g,
         g_coeffs,
         g_codeword,
         salts: mask.salts,
+        block: mask.block,
     };
     let tree = Tree::build(leaves, |j| base_bytes(&leaf_symbols(&cw, &spec, &zk, j)));
     let root = Commitment(tree.root());
@@ -191,7 +209,7 @@ pub fn comb_pow(params: &WhirParams, m: usize) -> Result<u32, PcsError> {
 }
 
 /// Open the claim `Λ`.
-pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Transcript) -> Result<(ZkValues, WhirProof), PcsError> {
+pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Transcript) -> Result<ZkOutcome, PcsError> {
     let cfg = &data.config;
     let m = cfg.num_vars;
     if WhirConfig::derive(params, m).as_ref() != Ok(cfg) {
@@ -227,8 +245,15 @@ pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Tr
         symbols: Symbols::Base(idx.iter().flat_map(|&j| leaf_symbols(cw, &spec0, zk, j)).collect()),
         siblings: data.tree.open(idx),
     };
-    let proof = prove_rounds(params, cfg, t, f, Coeffs::Ext(hc), weight.table(m), &univariate0, &open0);
-    Ok((ZkValues { v, u, nonce }, proof))
+    let table = weight.table(m);
+    let lambda_block = zk.block.map(|rho| table[(1 << m) - (1 << rho)..].to_vec());
+    let (proof, coins0) = prove_rounds(params, cfg, t, f, Coeffs::Ext(hc), table, &univariate0, &open0);
+    if let (Some(rho), Some(lambda)) = (zk.block, lambda_block) {
+        if !check::rank_ok(&spec0, m, rho, &lambda, beta, &coins0) {
+            return Ok(ZkOutcome::Resample);
+        }
+    }
+    Ok(ZkOutcome::Opened(ZkValues { v, u, nonce }, proof))
 }
 
 /// Verify a zero-knowledge opening of `Λ` with values `vals`.
@@ -320,6 +345,7 @@ pub fn zk_security_bits(params: &WhirParams, m: usize) -> f64 {
     zk_terms(params, m).map_or(0.0, |t| t.into_iter().map(|(_, b)| b).fold(f64::INFINITY, f64::min))
 }
 
+mod check;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

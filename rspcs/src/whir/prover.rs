@@ -141,7 +141,7 @@ pub fn open(
         Message::Ext { evals, coeffs } => (evals.clone(), Coeffs::Ext(coeffs.clone())),
     };
     let spec0 = cfg.rounds[0];
-    let proof = prove_rounds(
+    let (proof, _) = prove_rounds(
         params,
         cfg,
         t,
@@ -168,7 +168,7 @@ pub(crate) fn prove_rounds(
     mut w: Vec<Fp3>,
     univariate0: &(dyn Fn(Fp3) -> Fp3 + Sync),
     open0: &(dyn Fn(&[usize]) -> Opening + Sync),
-) -> WhirProof {
+) -> (WhirProof, Round0Coins) {
     // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
     let m = cfg.num_vars;
     let spec0 = cfg.rounds[0];
@@ -187,6 +187,7 @@ pub(crate) fn prove_rounds(
         add_scaled_eq(&mut w, &pow_point(z, m), g);
         g *= gamma;
     }
+    let mut coins0 = Round0Coins { ood: ood_points.clone(), gamma, alphas: vec![], leaves: vec![] };
 
     let mut sumcheck0 = Vec::new();
     let mut fold_nonces0 = Vec::new();
@@ -200,6 +201,7 @@ pub(crate) fn prove_rounds(
         &mut fold_nonces0,
         |a| coeffs.fold(a),
     );
+    coins0.alphas = alphas.clone();
 
     // the previously committed function after f_0: (codeword, tree)
     let mut prev_owned: Option<(Symbols, Tree)> = None;
@@ -230,6 +232,9 @@ pub(crate) fn prove_rounds(
         let idx = prev_spec.sample(t);
         let gamma = t.squeeze_fp3();
         let opening = open_prev(&prev_owned, &prev_spec, &idx);
+        if prev_owned.is_none() {
+            coins0.leaves = idx.clone();
+        }
 
         let mut g = gamma;
         for &z in &zs {
@@ -272,8 +277,11 @@ pub(crate) fn prove_rounds(
     let final_nonce: Vec<u64> = pow::grind(t, prev_spec.query_pow).into_iter().collect();
     let idx = prev_spec.sample(t);
     let final_opening = open_prev(&prev_owned, &prev_spec, &idx);
+    if prev_owned.is_none() {
+        coins0.leaves = idx;
+    }
 
-    WhirProof {
+    let proof = WhirProof {
         params: *params,
         ood0,
         sumcheck0,
@@ -282,5 +290,15 @@ pub(crate) fn prove_rounds(
         final_poly,
         final_nonce,
         final_opening,
-    }
+    };
+    (proof, coins0)
+}
+
+/// Round 0's coins, for a caller's zero-knowledge check: the OOD points,
+/// `γ`, the folding challenges and the opened leaves of `f_0`.
+pub(crate) struct Round0Coins {
+    pub ood: Vec<Fp3>,
+    pub gamma: Fp3,
+    pub alphas: Vec<Fp3>,
+    pub leaves: Vec<usize>,
 }

@@ -21,6 +21,7 @@ fn case(rng: &mut Rng, p: WhirParams, m: usize) -> Case {
     let mask = ZkMask {
         g: (0..1usize << (m - k0)).map(|_| rng.e()).collect(),
         salts: (0..SALT_LIMBS << log_leaves).map(|_| rng.g()).collect(),
+        block: None,
     };
     let (root, data) = commit_zk(&p, &c, mask).unwrap();
     let mut weight = Weight::default();
@@ -34,7 +35,10 @@ fn case(rng: &mut Rng, p: WhirParams, m: usize) -> Case {
 }
 
 fn prove(c: &Case) -> (ZkValues, WhirProof) {
-    open_zk(&c.p, &c.data, &c.weight, &mut Transcript::new(DOMAIN)).unwrap()
+    match open_zk(&c.p, &c.data, &c.weight, &mut Transcript::new(DOMAIN)).unwrap() {
+        ZkOutcome::Opened(v, p) => (v, p),
+        ZkOutcome::Resample => unreachable!("no block named"),
+    }
 }
 
 fn verify(c: &Case, vals: ZkValues, proof: &WhirProof) -> Result<(), PcsError> {
@@ -135,5 +139,49 @@ fn zk_bits_at_the_device_shapes() {
         let p = WhirParams { log_inv_rate: 6, folding_factor: 4, pow_bits: 16, ..WhirParams::default() };
         let b = zk_security_bits(&p, m);
         assert!(b >= 128.0, "2^{m}: {b} — {:?}", zk_terms(&p, m));
+    }
+}
+
+/// `∏_{i ≥ ρ} q_i` as one eq term at `(q_{<ρ}, 1…1)`.
+fn block_term(q: &[Fp3], rho: usize, scale: Fp3) -> (Vec<Fp3>, Fp3) {
+    let coef = q[rho..].iter().fold(scale, |a, &x| a * x);
+    (q[..rho].iter().copied().chain(core::iter::repeat_n(Fp3::ONE, q.len() - rho)).collect(), coef)
+}
+
+/// A table with a masking block at the top and a claim shaped as veil-W's:
+/// `a0·eq(q, ·)` off the block, plus `Ψ` on the block — uniform weights
+/// (`random`) or one geometric point.
+fn block_case(seed: u64, random: bool) -> ZkOutcome {
+    let mut rng = Rng::new(seed);
+    let m = 12;
+    let p = WhirParams { log_inv_rate: 6, folding_factor: 4, pow_bits: 0, ..WhirParams::default() };
+    let (k0, log_leaves) = round0_shape(&p, m).unwrap();
+    let rho = 10;
+    let mask = ZkMask {
+        g: (0..1usize << (m - k0)).map(|_| rng.e()).collect(),
+        salts: (0..SALT_LIMBS << log_leaves).map(|_| rng.g()).collect(),
+        block: Some(rho),
+    };
+    let c = rng.evals(m);
+    let (_, data) = commit_zk(&p, &c, mask).unwrap();
+    let q = rng.point(m);
+    let a0 = rng.e();
+    let mut weight = Weight { eq: vec![(q.clone(), a0), block_term(&q, rho, -a0)], explicit: vec![] };
+    let start = (1 << m) - (1 << rho);
+    if random {
+        weight.explicit.extend((0..1 << rho).map(|k| (start + k, rng.e())));
+    } else {
+        let z = rng.e();
+        let pp: Vec<Fp3> = (0..m).scan(z, |s, _| { let v = *s; *s = *s * *s; Some(v) }).collect();
+        weight.eq.push(block_term(&pp, rho, rng.e()));
+    }
+    open_zk(&p, &data, &weight, &mut Transcript::new(DOMAIN)).unwrap()
+}
+
+#[test]
+fn the_rank_check_passes_random_block_weights_and_catches_a_geometric_one() {
+    for seed in 0..3 {
+        assert!(matches!(block_case(seed, true), ZkOutcome::Opened(..)), "random ξ, seed {seed}");
+        assert!(matches!(block_case(seed, false), ZkOutcome::Resample), "geometric Ψ, seed {seed}");
     }
 }
