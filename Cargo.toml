@@ -31,6 +31,6 @@ trop = { version = "0.1.0", path = "../strata/trop/rs", package = "strata-trop" 
 genies = { version = "0.1.0", path = "../strata/genies/rs", package = "strata-genies" }
 
 # external
-cyber-hemera = { version = "0.3", path = "../hemera/rs" }
+cyber-hemera = { version = "0.4", path = "../hemera/rs" }
 acpu = "0.2"
 criterion = "0.5"

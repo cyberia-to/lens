@@ -1,6 +1,7 @@
 //! Metal Shading Language source: Goldilocks over native `ulong` (`mulhi`
-//! for the high product), hemera's permutation with its constants inlined
-//! (the compiler sees them as literals), and the kernels.
+//! for the high product), hemera's permutation (0.4: x⁷ in all 60 rounds,
+//! the Poseidon2 reference 4×4 block) with its 240 constants inlined (the
+//! compiler sees them as literals), and the kernels.
 //!
 //! Every value a kernel stores is canonical (`< p`), matching the CPU.
 
@@ -65,25 +66,6 @@ static inline ulong gsqr(ulong a) {
     return red(lo, hi);
 }
 
-static inline ulong gsqn(ulong x, int n) {
-    for (int i = 0; i < n; i++) x = gsqr(x);
-    return x;
-}
-
-// x^(p-2) by an addition chain (72 multiplications); 0 maps to 0
-static inline ulong ginv(ulong x) {
-    ulong t2 = gmul(gsqr(x), x);           // 2^2-1
-    ulong t3 = gmul(gsqr(t2), x);         // 2^3-1
-    ulong t6 = gmul(gsqn(t3, 3), t3);         // 2^6-1
-    ulong t12 = gmul(gsqn(t6, 6), t6);        // 2^12-1
-    ulong t24 = gmul(gsqn(t12, 12), t12);     // 2^24-1
-    ulong t30 = gmul(gsqn(t24, 6), t6);       // 2^30-1
-    ulong t31 = gmul(gsqr(t30), x);      // 2^31-1
-    ulong u = gsqr(t31);                 // 2^32-2
-    ulong c = gmul(u, x);                     // 2^32-1
-    return gmul(gsqn(u, 32), c);              // (2^32-2)·2^32 + 2^32-1 = p-2
-}
-
 static inline ulong pow7(ulong x) {
     ulong x2 = gsqr(x);
     ulong x3 = gmul(x2, x);
@@ -91,17 +73,21 @@ static inline ulong pow7(ulong x) {
     return gmul(x3, x4);
 }
 
+// the Poseidon2 reference block [[5,7,1,3],[4,6,1,1],[1,3,5,7],[1,1,4,6]]
+// (hemera `apply_mat4`: eight additions, four doublings)
 static inline void mat4(thread ulong* x) {
-    ulong t01 = gadd(x[0], x[1]);
-    ulong t23 = gadd(x[2], x[3]);
-    ulong t0123 = gadd(t01, t23);
-    ulong t01123 = gadd(t0123, x[1]);
-    ulong t01233 = gadd(t0123, x[3]);
-    ulong x0 = x[0], x2 = x[2];
-    x[3] = gadd(t01233, gadd(x0, x0));
-    x[1] = gadd(t01123, gadd(x2, x2));
-    x[0] = gadd(t01123, t01);
-    x[2] = gadd(t01233, t23);
+    ulong t0 = gadd(x[0], x[1]);
+    ulong t1 = gadd(x[2], x[3]);
+    ulong t2 = gadd(gadd(x[1], x[1]), t1);
+    ulong t3 = gadd(gadd(x[3], x[3]), t0);
+    ulong t1d = gadd(t1, t1);
+    ulong t0d = gadd(t0, t0);
+    ulong t4 = gadd(gadd(t1d, t1d), t3);
+    ulong t5 = gadd(gadd(t0d, t0d), t2);
+    x[0] = gadd(t3, t5);
+    x[1] = t5;
+    x[2] = gadd(t2, t4);
+    x[3] = t4;
 }
 
 static inline void external(thread ulong* s) {
@@ -120,39 +106,19 @@ static inline void full_round(thread ulong* s, int r) {
     external(s);
 }
 
-// K states at once: the partial rounds' inversions share one field
-// inversion (Montgomery's trick; a zero input inverts to zero).
-template <int KK>
-static inline void permute_ref(thread ulong (*s)[16]) {
-    for (int k = 0; k < KK; k++) {
-        external(s[k]);
-        for (int r = 0; r < 4; r++) full_round(s[k], r);
+// the definitional permutation, one state: M_E, 6 full rounds, 48 partial
+// rounds (x⁷ on lane 0, M_I = 1 + diag(d)), 6 full rounds; canonical
+// throughout. The kernels run `permute_k`; this is its readable twin.
+static inline void permute_ref(thread ulong* s) {
+    external(s);
+    for (int r = 0; r < 6; r++) full_round(s, r);
+    for (int r = 0; r < 48; r++) {
+        s[0] = pow7(gadd(s[0], RC[192 + r]));
+        ulong sum = s[0];
+        for (int i = 1; i < 16; i++) sum = gadd(sum, s[i]);
+        for (int i = 0; i < 16; i++) s[i] = gadd(gmul(s[i], DIAG[i]), sum);
     }
-    for (int r = 0; r < 16; r++) {
-        ulong x[KK];
-        ulong pre[KK];
-        ulong acc = 1;
-        for (int k = 0; k < KK; k++) {
-            x[k] = gadd(s[k][0], RC[128 + r]);
-            pre[k] = acc;
-            acc = gmul(acc, x[k] == 0 ? 1 : x[k]);
-        }
-        ulong inv = ginv(acc);
-        for (int k = KK - 1; k >= 0; k--) {
-            ulong xk = x[k] == 0 ? 1 : x[k];
-            ulong ik = gmul(inv, pre[k]);
-            inv = gmul(inv, xk);
-            s[k][0] = x[k] == 0 ? 0 : ik;
-        }
-        for (int k = 0; k < KK; k++) {
-            ulong sum = s[k][0];
-            for (int i = 1; i < 16; i++) sum = gadd(sum, s[k][i]);
-            for (int i = 0; i < 16; i++) s[k][i] = gadd(gmul(s[k][i], DIAG[i]), sum);
-        }
-    }
-    for (int k = 0; k < KK; k++) {
-        for (int r = 4; r < 8; r++) full_round(s[k], r);
-    }
+    for (int r = 6; r < 12; r++) full_round(s, r);
 }
 
 
@@ -160,9 +126,10 @@ static inline void permute_ref(thread ulong (*s)[16]) {
 // Representatives stay below 2^64 (not canonical) between operations:
 // one reduction per product, sums accumulated wide (64-bit low word and a
 // small high count) and reduced once, the partial rounds' next S-box
-// input carried as x' = (d0+1)·y + (Σ_{i≥1} s_i + c), K states' partial
-// inversions batched (Montgomery's trick; zero ↦ zero by masks). Field-
-// equal to `permute_ref`; outputs canonical.
+// input carried as x' = (d0+1)·y + (Σ_{i≥1} s_i + c), K independent
+// states interleaved round by round (instruction-level parallelism only:
+// x⁷ shares nothing across states). Field-equal to `permute_ref`; outputs
+// canonical.
 
 static inline ulong rwide(ulong lo, ulong hi) {
     ulong hh = hi >> 32;
@@ -221,37 +188,29 @@ static inline w2 wadd(w2 a, w2 b) { ulong l = a.l + b.l; return w2{l, a.h + b.h 
 static inline w2 wof(ulong x) { return w2{x, 0u}; }
 static inline ulong wred(w2 a) { ulong h = a.h; return faddc(a.l, (h << 32) - h); }
 
-static inline ulong finv(ulong x) {   // x^(p−2), lazy
-    ulong t2 = fmul(fsqr(x), x);
-    ulong t3 = fmul(fsqr(t2), x);
-    ulong t6 = fmul(fsqn(t3, 3), t3);
-    ulong t12 = fmul(fsqn(t6, 6), t6);
-    ulong t24 = fmul(fsqn(t12, 12), t12);
-    ulong t30 = fmul(fsqn(t24, 6), t6);
-    ulong t31 = fmul(fsqr(t30), x);
-    ulong u = fsqr(t31);
-    ulong c = fmul(u, x);
-    return fmul(fsqn(u, 32), c);
-}
 static inline ulong fpow7(ulong x) {
     ulong x2 = fsqr(x);
     ulong x3 = fmul(x2, x);
     ulong x4 = fsqr(x2);
     return fmul(x3, x4);
 }
+static inline w2 wdbl(w2 a) { return wadd(a, a); }
+// M_E with wide sums: a block output is at most 16 inputs, a lane of M_E at
+// most 80 (< 2^7), so every sum fits w2 and is reduced once
 static inline void fexternal(thread ulong* s) {
     w2 y[16];
     for (int c = 0; c < 4; c++) {
         thread ulong* x = s + 4 * c;
-        w2 t01 = wadd(wof(x[0]), wof(x[1]));
-        w2 t23 = wadd(wof(x[2]), wof(x[3]));
-        w2 t0123 = wadd(t01, t23);
-        w2 t01123 = wadd(t0123, wof(x[1]));
-        w2 t01233 = wadd(t0123, wof(x[3]));
-        y[4 * c] = wadd(t01123, t01);
-        y[4 * c + 1] = wadd(t01123, wadd(wof(x[2]), wof(x[2])));
-        y[4 * c + 2] = wadd(t01233, t23);
-        y[4 * c + 3] = wadd(t01233, wadd(wof(x[0]), wof(x[0])));
+        w2 t0 = wadd(wof(x[0]), wof(x[1]));
+        w2 t1 = wadd(wof(x[2]), wof(x[3]));
+        w2 t2 = wadd(wdbl(wof(x[1])), t1);
+        w2 t3 = wadd(wdbl(wof(x[3])), t0);
+        w2 t4 = wadd(wdbl(wdbl(t1)), t3);
+        w2 t5 = wadd(wdbl(wdbl(t0)), t2);
+        y[4 * c] = wadd(t3, t5);
+        y[4 * c + 1] = t5;
+        y[4 * c + 2] = wadd(t2, t4);
+        y[4 * c + 3] = t4;
     }
     for (int k = 0; k < 4; k++) {
         w2 sum = wadd(wadd(y[k], y[4 + k]), wadd(y[8 + k], y[12 + k]));
@@ -272,43 +231,30 @@ template <int KK>
 static inline void permute_k(thread ulong (*s)[16]) {
     for (int k = 0; k < KK; k++) {
         fexternal(s[k]);
-        for (int r = 0; r < 4; r++) ffull(s[k], r);
+        for (int r = 0; r < 6; r++) ffull(s[k], r);
     }
-    ulong x[KK], y[KK], rest[KK];
+    // x: the S-box input of lane 0; rest: Σ_{i≥1} s_i
+    ulong x[KK], rest[KK];
     for (int k = 0; k < KK; k++) {
-        x[k] = faddc(s[k][0], RC[128]);
+        x[k] = faddc(s[k][0], RC[192]);
         rest[k] = frest(s[k]);
     }
-    for (int r = 0; r < 16; r++) {
-        // y = x⁻¹ (0 ↦ 0) for the K states, one inversion
-        ulong pre[KK];
-        ulong acc = 1;
+    for (int r = 0; r < 48; r++) {
         for (int k = 0; k < KK; k++) {
-            ulong a = fcanon(x[k]) == 0 ? 1 : x[k];
-            pre[k] = acc;
-            acc = fmul(acc, a);
-        }
-        ulong inv = finv(acc);
-        for (int k = KK - 1; k >= 0; k--) {
-            bool z = fcanon(x[k]) == 0;
-            ulong a = z ? 1 : x[k];
-            ulong ik = fmul(inv, pre[k]);
-            inv = fmul(inv, a);
-            y[k] = z ? 0 : ik;
-        }
-        for (int k = 0; k < KK; k++) {
-            ulong sum = fadd(y[k], rest[k]);
+            ulong y = fpow7(x[k]);
+            ulong sum = fadd(y, rest[k]);
             for (int i = 1; i < 16; i++) s[k][i] = fmuladd(s[k][i], DIAG[i], sum);
-            if (r + 1 < 16) {
-                x[k] = fmuladd(y[k], D0P1, faddc(rest[k], RC[128 + r + 1]));
+            // s_0' = d_0·y + sum = (d_0 + 1)·y + rest
+            if (r + 1 < 48) {
+                x[k] = fmuladd(y, D0P1, faddc(rest[k], RC[192 + r + 1]));
                 rest[k] = frest(s[k]);
             } else {
-                s[k][0] = fmuladd(y[k], D0P1, rest[k]);
+                s[k][0] = fmuladd(y, D0P1, rest[k]);
             }
         }
     }
     for (int k = 0; k < KK; k++) {
-        for (int r = 4; r < 8; r++) ffull(s[k], r);
+        for (int r = 6; r < 12; r++) ffull(s[k], r);
         for (int i = 0; i < 16; i++) s[k][i] = fcanon(s[k][i]);
     }
 }
@@ -445,7 +391,7 @@ kernel void hemera_sponge(device const ulong* lanes [[buffer(0)]],
                           device ulong* out [[buffer(1)]],
                           constant SpongeParams& p [[buffer(2)]],
                           uint gid [[thread_position_in_grid]]) {
-    // K items a thread, item gid + k·T (T threads): one batched inversion
+    // K items a thread, item gid + k·T (T threads)
     uint T = (p.items + K - 1) / K;
     if (gid >= T) return;
     ulong s[K][16];
@@ -735,7 +681,7 @@ pub fn source(k: usize) -> String {
     let mut s = String::new();
     s.push_str("#include <metal_stdlib>\nusing namespace metal;\n");
     writeln!(s, "#define K {k}").expect("fmt");
-    write!(s, "constant ulong RC[144] = {{").expect("fmt");
+    write!(s, "constant ulong RC[240] = {{").expect("fmt");
     for (i, c) in consts::round_constants().iter().enumerate() {
         if i > 0 {
             s.push(',');

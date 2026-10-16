@@ -7,6 +7,24 @@ use cyber_lens_rspcs::backend::{Backend, Cpu, Inject, State, hash40_template};
 
 const P: u64 = 0xFFFF_FFFF_0000_0001;
 
+/// hemera 0.4's permutation vectors (`vectors/hemera.json` of cyber-hemera
+/// 0.4.0, file sha-256 5b88d88a…dda5f): name, input, output (canonical limbs).
+#[rustfmt::skip]
+const HEMERA_PERMUTATION: [(&str, [u64; 16], [u64; 16]); 4] = [
+    ("zeros",
+     [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+     [0x895cbbb878ed7b95, 0x4d9447e9b10d0a16, 0xeda4b52a1341bdfa, 0xecb0dde11b61b8f7, 0x882a552953fff61a, 0x301b343adb1d0f0d, 0xd3ca66a578b75857, 0x3be5ae56adc25b69, 0x3546e64a96c3aae1, 0xd68bd20423ae7095, 0x5eb69c0eb8b3397e, 0x40f3c6e8e6485294, 0xc90ce42c6d96dadf, 0x6ce65e1d2915ab36, 0xc6f8b4499590fb1e, 0xbe3974adef258033]),
+    ("iota",
+     [0x0000000000000000, 0x0000000000000001, 0x0000000000000002, 0x0000000000000003, 0x0000000000000004, 0x0000000000000005, 0x0000000000000006, 0x0000000000000007, 0x0000000000000008, 0x0000000000000009, 0x000000000000000a, 0x000000000000000b, 0x000000000000000c, 0x000000000000000d, 0x000000000000000e, 0x000000000000000f],
+     [0x566c0cbb8e4baf40, 0x70bff2279d137b8d, 0xa8302c88173a9a23, 0x0dcfb7edffeaaf54, 0x3f623d7a8a5542ec, 0xf8d28758d3844017, 0x76c90e979516637d, 0xb0cce7d290e07756, 0xf000a79b1b3140d8, 0xa65c85e8d16bf499, 0x4ada4e8695b9af8d, 0x27bbbb5bf6f0777a, 0xac65b622281938a7, 0x54a28ec8783cd3ef, 0x88603f130241a3c3, 0x94dd7cec2bfb78b0]),
+    ("p_minus_1",
+     [0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000, 0xffffffff00000000],
+     [0xb1e504b21678577a, 0x2cd37d8529eb67b9, 0xa949d6a8f4f2cf6c, 0x8b8d75c1d4a7a5a6, 0x64df9fb5f668aaa2, 0x4bbf169465a16dd9, 0xbfe3788762e3b834, 0x067638f8712f4d81, 0x83b2e259cdfcb4c3, 0xb120313f3125503b, 0x909811c4b91ada15, 0x22db33308c8de273, 0xf4541036a8280da0, 0x9659da63e426bdf7, 0xc4deaaa64131060a, 0x832c00eaf0bac9a7]),
+    ("random",
+     [0x856d9c28a9741a02, 0x86ad14d4430c32b6, 0xc366ae2c20764753, 0xce6336ec93771f1d, 0x1a79312058b39663, 0x3ca10c145535098f, 0x9e66e2665154e05c, 0xba96d597e9fdde9c, 0xa11665ed06c80221, 0x480c4fbc1a4b3a65, 0xb6a11497bd5f9551, 0x9cefea2e8b1c5e3b, 0xbf1e5a8e8a548847, 0x5d0032063244d097, 0xb0ba1fab0cea9cf6, 0x333d875f5b54b44f],
+     [0xa6341eaea32413a5, 0x6011492b4a4849f5, 0xb7e83d614f05d91e, 0xb7806f1febb839e0, 0x7df4f5b00e17bfe6, 0xc25e2842099867bc, 0xb3fec268c09f4e06, 0xb5cf509e1511e4ba, 0xae2ede919fa51078, 0xda1c4befc75481ea, 0x524a2068acca0aba, 0xca9d616605b9b291, 0xf344c679905d27c9, 0xd7dd17a93f54a115, 0x2bbe8d9a5d07326f, 0x748c9cc68978afd2]),
+];
+
 fn rng(seed: &mut u64) -> u64 {
     *seed ^= *seed << 13;
     *seed ^= *seed >> 7;
@@ -79,16 +97,46 @@ fn permutations_equal_cpu() {
     }
 }
 
+/// Edge states against hemera's own single permutation (not the batched
+/// CPU backend): zeros, p − 1 everywhere, unit vectors, alternating 0 and
+/// p − 1, small values; each repeated so every lane of a GPU thread sees it.
 #[test]
-fn zero_lane_inverse_is_zero() {
-    // a state whose lane 0 is zero before the first partial S-box exercises 0⁻¹ = 0
-    // only by chance; check the CPU and the GPU agree on all-zero inputs too
+fn edge_states_equal_hemera() {
+    let mut edges: Vec<State> = vec![[0; 16], [P - 1; 16], [1; 16], [2; 16]];
+    for j in 0..16 {
+        let mut e = [0u64; 16];
+        e[j] = 1;
+        edges.push(e);
+        let mut e = [0u64; 16];
+        e[j] = P - 1;
+        edges.push(e);
+    }
+    edges.push(core::array::from_fn(|i| if i % 2 == 0 { 0 } else { P - 1 }));
+    edges.push(core::array::from_fn(|i| i as u64));
+    // the published vectors pin the CPU permutation this suite compares to
+    for (name, input, output) in HEMERA_PERMUTATION {
+        let mut h = input.map(cyber_hemera::field::Goldilocks::new);
+        cyber_hemera::permutation::permute(&mut h);
+        assert_eq!(h.map(|x| x.as_canonical_u64()), output, "hemera 0.4 vector {name}");
+        edges.push(input);
+    }
+    let want: Vec<State> = edges
+        .iter()
+        .map(|s| {
+            let mut h = s.map(cyber_hemera::field::Goldilocks::new);
+            cyber_hemera::permutation::permute(&mut h);
+            h.map(|x| x.as_canonical_u64())
+        })
+        .collect();
     for s in backends() {
-        let mut want = vec![[0u64; 16]; 4096];
-        Cpu.permute(&mut want);
-        let mut got = vec![[0u64; 16]; 4096];
-        s.backend.permute(&mut got);
-        assert_eq!(got, want, "{}", s.backend.name());
+        for reps in [1usize, 4099] {
+            let input: Vec<State> = (0..reps * edges.len()).map(|k| edges[k % edges.len()]).collect();
+            let mut got = input.clone();
+            s.backend.permute(&mut got);
+            for (k, g) in got.iter().enumerate() {
+                assert_eq!(g, &want[k % edges.len()], "{} edge {} (copy {})", s.backend.name(), k % edges.len(), k / edges.len());
+            }
+        }
     }
 }
 
@@ -137,10 +185,10 @@ fn grinding_past_the_first_dispatch() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn metal_shared_inversions_equal_cpu() {
-    // several states per GPU thread share each partial round's inversion;
-    // a ragged tail (n not a multiple of k) and zero lanes included
-    for k in [2usize, 3, 4] {
+fn metal_states_per_thread_equal_cpu() {
+    // several independent states per GPU thread, interleaved round by
+    // round; a ragged tail (n not a multiple of k) and zero lanes included
+    for k in [1usize, 2, 3, 4, 8] {
         let Ok(m) = cyber_lens_gpu::metal::Metal::with_states_per_thread(k) else {
             assert!(
                 std::env::var("LENS_GPU_REQUIRE")
@@ -165,6 +213,24 @@ fn metal_shared_inversions_equal_cpu() {
             Cpu.grind(&t, Inject::hash40(), 12),
             "k={k}"
         );
+        // header mining at k states a thread: the CPU's nonce, and it
+        // verifies with hemera's hash of the header
+        let mut msg = [0u8; 168];
+        for (i, b) in msg.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(13).wrapping_add(k as u8);
+        }
+        let target = [0, 0, 0, 1u64 << 53];
+        let job = mine_job(&msg, target);
+        let base = 3 + ((k as u128) << 70);
+        let got = m.mine(&job, base, 1 << 15).expect("mine");
+        assert_eq!(got, cyber_lens_gpu::mine::cpu(&job, base, 1 << 15), "k={k} mine");
+        let n = base + u128::from(got.expect("a nonce in 2^15 at 2^245"));
+        msg[24..40].copy_from_slice(&n.to_le_bytes());
+        let h = cyber_hemera::hash(&msg);
+        let d: [u64; 4] = core::array::from_fn(|i| {
+            u64::from_le_bytes(h.as_bytes()[8 * i..8 * i + 8].try_into().expect("8 bytes"))
+        });
+        assert!(cyber_lens_gpu::mine::below(&d, &target), "k={k}: hemera::hash of the mined header");
     }
 }
 
@@ -469,22 +535,21 @@ fn ragged_coset_groups_equal_the_reference() {
     }
 }
 
-/// States whose first partial S-box input is zero (0⁻¹ = 0 in hemera),
-/// built backwards from the target through the first four full rounds and
-/// the initial external layer; placed among ordinary states so a batched
-/// inversion (K states a thread, Montgomery's trick) meets one zero among
-/// nonzero lanes at every position of a batch.
+/// States whose first partial S-box input is zero (0⁷ = 0), built
+/// backwards from the target through the first six full rounds and the
+/// initial external layer; placed among ordinary states at every position
+/// of a group of eight, so each lane of a multi-state GPU thread meets one
+/// (the fast kernels carry non-canonical representatives: a zero may
+/// arrive as p).
 #[test]
-fn a_zero_partial_sbox_input_inverts_to_zero_in_every_batch_position() {
+fn a_zero_partial_sbox_input_in_every_batch_position() {
     use nebu::Goldilocks as G;
     let rc = cyber_lens_gpu::consts::round_constants();
+    let ic = cyber_lens_gpu::consts::INTERNAL;
+    // the Poseidon2 reference block, as a matrix (not the addition schedule)
+    const M4: [[u64; 4]; 4] = [[5, 7, 1, 3], [4, 6, 1, 1], [1, 3, 5, 7], [1, 1, 4, 6]];
     let mat4 = |x: [G; 4]| -> [G; 4] {
-        let t01 = x[0] + x[1];
-        let t23 = x[2] + x[3];
-        let t0123 = t01 + t23;
-        let t01123 = t0123 + x[1];
-        let t01233 = t0123 + x[3];
-        [t01123 + t01, t01123 + x[2] + x[2], t01233 + t23, t01233 + x[0] + x[0]]
+        core::array::from_fn(|r| (0..4).fold(G::ZERO, |a, c| a + G::new(M4[r][c]) * x[c]))
     };
     let external = |s: [G; 16]| -> [G; 16] {
         let mut y = [G::ZERO; 16];
@@ -546,9 +611,9 @@ fn a_zero_partial_sbox_input_inverts_to_zero_in_every_batch_position() {
     let mut r = 0x2e70u64;
     let crafted = |r: &mut u64| -> State {
         let mut t: [G; 16] = core::array::from_fn(|_| G::new(rng(r) % P));
-        t[0] = G::ZERO - G::new(rc[128]);
+        t[0] = G::ZERO - G::new(rc[ic]);
         let mut s = t;
-        for round in (0..4).rev() {
+        for round in (0..6).rev() {
             s = inv_external(s);
             for i in 0..16 {
                 s[i] = root7(s[i]) - G::new(rc[round * 16 + i]);
@@ -557,13 +622,13 @@ fn a_zero_partial_sbox_input_inverts_to_zero_in_every_batch_position() {
         s = inv_external(s);
         // forward check: lane 0 + c₀ is zero before the first partial S-box
         let mut f = external(s);
-        for round in 0..4 {
+        for round in 0..6 {
             for i in 0..16 {
                 f[i] = (f[i] + G::new(rc[round * 16 + i])).exp(7);
             }
             f = external(f);
         }
-        assert_eq!(f[0] + G::new(rc[128]), G::ZERO);
+        assert_eq!(f[0] + G::new(rc[ic]), G::ZERO);
         core::array::from_fn(|i| s[i].as_u64())
     };
     for sb in backends() {
