@@ -165,6 +165,15 @@ Open (transcript order):
    coset of `h` is `c_t + β·Ĝ(y_j)`; the closing sum runs over every eq
    term and every explicit entry (`q = b_i`).
 
+Rank check (`whir::zk::check`, when the mask names a block `2^ρ` at the
+top of the table): after the opening the prover reduces every round-0
+message — `Λ` on the block, `u`, the OOD answers, the `2k₀` sumcheck
+values, each a linear form in the block once `Ĝ` absorbs `Fold(Δc)` —
+modulo the opened cosets (basis `Z·Y^i` of each sub-polynomial's kernel)
+and requires `F_p`-rank `3·(E − 1)`, `E = 2 + s₀ + 2k₀`; otherwise
+`open_zk` answers `Resample` and the caller recommits with fresh masks. The
+event depends on public coins only.
+
 The proof bytes are a `WhirProof` whose round-0 openings carry
 `2^{k₀} + 7` base symbols per leaf; `u` travels with the caller.
 Soundness: the rows of § soundness for `h`, plus § batched openings with
