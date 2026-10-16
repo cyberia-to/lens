@@ -1,5 +1,5 @@
 //! Metal Shading Language source: Goldilocks over native `ulong` (`mulhi`
-//! for the high product), hemera's permutation (0.4: x⁷ in all 60 rounds,
+//! for the high product of the permutation's multiplications), hemera's permutation (0.4: x⁷ in all 60 rounds,
 //! the Poseidon2 reference 4×4 block) with its 240 constants inlined (the
 //! compiler sees them as literals), and the kernels.
 //!
@@ -142,15 +142,8 @@ static inline ulong rwide(ulong lo, ulong hi) {
     return r;
 }
 static inline void prod(ulong a, ulong b, thread ulong& lo, thread ulong& hi) {
-    uint a0 = (uint)a, a1 = (uint)(a >> 32), b0 = (uint)b, b1 = (uint)(b >> 32);
-    ulong p00 = (ulong)a0 * b0;
-    ulong p01 = (ulong)a0 * b1;
-    ulong p10 = (ulong)a1 * b0;
-    ulong p11 = (ulong)a1 * b1;
-    ulong mid = p01 + p10;
-    ulong mc = mid < p01 ? (1UL << 32) : 0;
-    lo = p00 + (mid << 32);
-    hi = p11 + (mid >> 32) + mc + (lo < p00 ? 1 : 0);
+    lo = a * b;
+    hi = mulhi(a, b);
 }
 static inline ulong fmul(ulong a, ulong b) { ulong lo, hi; prod(a, b, lo, hi); return rwide(lo, hi); }
 static inline ulong fsqr(ulong a) {
@@ -363,11 +356,13 @@ kernel void hemera_mine(constant MineParams& p [[buffer(0)]],
             s[k][i] = v;
         }
     }
-    permute_k<K>(s);
-    for (int b = 1; b < 4; b++) {
-        for (int k = 0; k < K; k++) {
-            for (int i = 0; i < 8; i++) s[k][i] = gadd(s[k][i], p.blocks[8 * b + i]);
-            if (b == 3) s[k][p.tail_lane] = p.tail;
+    // one call site of the permutation (60 rounds inlined once, not four times)
+    for (int b = 0; b < 4; b++) {
+        if (b > 0) {
+            for (int k = 0; k < K; k++) {
+                for (int i = 0; i < 8; i++) s[k][i] = gadd(s[k][i], p.blocks[8 * b + i]);
+                if (b == 3) s[k][p.tail_lane] = p.tail;
+            }
         }
         permute_k<K>(s);
     }

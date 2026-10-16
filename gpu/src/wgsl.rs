@@ -152,16 +152,6 @@ fn permute(s: ptr<function, array<vec2<u32>, 16>>) {
     for (var r = 6u; r < 12u; r++) { full_round(s, r); }
 }
 
-// two independent states interleaved round by round (instruction-level
-// parallelism; x⁷ shares nothing across states)
-fn permute2(s: ptr<function, array<vec2<u32>, 16>>, t: ptr<function, array<vec2<u32>, 16>>) {
-    mds_ext(s);
-    mds_ext(t);
-    for (var r = 0u; r < 6u; r++) { full_round(s, r); full_round(t, r); }
-    for (var r = 0u; r < 48u; r++) { partial_round(s, r); partial_round(t, r); }
-    for (var r = 6u; r < 12u; r++) { full_round(s, r); full_round(t, r); }
-}
-
 fn shl64(v: vec2<u32>, n: u32) -> vec2<u32> {
     if n == 0u { return v; }
     if n >= 64u { return vec2<u32>(0u, 0u); }
@@ -193,21 +183,16 @@ struct GrindParams {
 @group(0) @binding(1) var<storage, read_write> ST: array<vec2<u32>>;
 @group(0) @binding(2) var<uniform> PP: PermParams;
 
+// one state a thread (x⁷ shares nothing across states; one state a
+// thread measured faster than two interleaved, see audit/hemera-0.4)
 @compute @workgroup_size(64)
 fn hemera_permute(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two states a thread: gid and gid + half
     let gid = id.x + id.y * PP.row;
-    let half = (PP.n + 1u) / 2u;
-    if gid >= half { return; }
-    let j = min(gid + half, PP.n - 1u);
+    if gid >= PP.n { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
-    for (var i = 0u; i < 16u; i++) { s[i] = ST[16u * gid + i]; t[i] = ST[16u * j + i]; }
-    permute2(&s, &t);
+    for (var i = 0u; i < 16u; i++) { s[i] = ST[16u * gid + i]; }
+    permute(&s);
     for (var i = 0u; i < 16u; i++) { ST[16u * gid + i] = s[i]; }
-    if gid + half < PP.n {
-        for (var i = 0u; i < 16u; i++) { ST[16u * j + i] = t[i]; }
-    }
 }
 "#;
 
@@ -224,29 +209,21 @@ pub fn grind_source() -> String {
 
 @compute @workgroup_size(64)
 fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two nonces a thread: gid and gid + half
+    // one nonce a thread
     let gid = id.x + id.y * G.row;
-    let half = (G.count + 1u) / 2u;
-    if gid >= half { return; }
-    var st: array<array<vec2<u32>, 16>, 2>;
-    for (var k = 0u; k < 2u; k++) {
-        let n = add64(G.base, vec2<u32>(gid + k * half, 0u)).xy;
-        for (var i = 0u; i < 8u; i++) {
-            st[k][2u * i] = G.tpl[i].xy;
-            st[k][2u * i + 1u] = G.tpl[i].zw;
-        }
-        let lo = vec2<u32>(n.x & G.lo_mask.x, n.y & G.lo_mask.y);
-        st[k][G.lo] = gadd(st[k][G.lo], shl64(lo, G.lo_shift));
-        if G.hi_shift < 64u { st[k][G.hi] = gadd(st[k][G.hi], shr64(n, G.hi_shift)); }
+    if gid >= G.count { return; }
+    var s: array<vec2<u32>, 16>;
+    let n = add64(G.base, vec2<u32>(gid, 0u)).xy;
+    for (var i = 0u; i < 8u; i++) {
+        s[2u * i] = G.tpl[i].xy;
+        s[2u * i + 1u] = G.tpl[i].zw;
     }
-    var s = st[0];
-    var t = st[1];
-    permute2(&s, &t);
+    let lo = vec2<u32>(n.x & G.lo_mask.x, n.y & G.lo_mask.y);
+    s[G.lo] = gadd(s[G.lo], shl64(lo, G.lo_shift));
+    if G.hi_shift < 64u { s[G.hi] = gadd(s[G.hi], shr64(n, G.hi_shift)); }
+    permute(&s);
     if (s[0].x & G.mask.x) == 0u && (s[0].y & G.mask.y) == 0u {
         atomicMin(&FOUND, gid);
-    }
-    if gid + half < G.count && (t[0].x & G.mask.x) == 0u && (t[0].y & G.mask.y) == 0u {
-        atomicMin(&FOUND, gid + half);
     }
 }
 "#
@@ -254,7 +231,7 @@ fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 /// The header-mining module (`mine.rs`): the flat sponge over 168 bytes
-/// with the nonce at bytes 24..40, four permutations, two nonces a thread
+/// with the nonce at bytes 24..40, four permutations, one nonce a thread
 /// (bindings: 0 constants, 1 the found index (atomic), 2 parameters).
 pub fn mine_source() -> String {
     let field = &SOURCE[..SOURCE.find("struct PermParams").expect("marker")];
@@ -323,22 +300,17 @@ fn absorb(b: u32, s: ptr<function, array<vec2<u32>, 16>>) {
 
 @compute @workgroup_size(64)
 fn hemera_mine(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two nonces a thread: gid and gid + half
+    // one nonce a thread
     let gid = id.x + id.y * M.row;
-    let half = (M.count + 1u) / 2u;
-    if gid >= half { return; }
+    if gid >= M.count { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
     seed(gid, &s);
-    seed(gid + half, &t);
-    permute2(&s, &t);
+    permute(&s);
     for (var b = 1u; b < 4u; b++) {
         absorb(b, &s);
-        absorb(b, &t);
-        permute2(&s, &t);
+        permute(&s);
     }
     if below256(&s) { atomicMin(&FOUND, gid); }
-    if gid + half < M.count && below256(&t) { atomicMin(&FOUND, gid + half); }
 }
 "#
     )
@@ -366,29 +338,20 @@ struct SpongeParams {
 
 @compute @workgroup_size(64)
 fn hemera_sponge(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two items a thread: gid and gid + half
+    // one item a thread
     let gid = id.x + id.y * SP.row;
-    let half = (SP.items + 1u) / 2u;
-    if gid >= half { return; }
-    let j = min(gid + half, SP.items - 1u);
+    if gid >= SP.items { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
     for (var i = 0u; i < 8u; i++) {
         s[2u * i] = SP.init[i].xy;
         s[2u * i + 1u] = SP.init[i].zw;
-        t[2u * i] = SP.init[i].xy;
-        t[2u * i + 1u] = SP.init[i].zw;
     }
     let base = gid * SP.rate * SP.blocks;
-    let base2 = j * SP.rate * SP.blocks;
     for (var b = 0u; b < SP.blocks; b++) {
-        for (var i = 0u; i < SP.rate; i++) { s[i] = LANES[base + b * SP.rate + i]; t[i] = LANES[base2 + b * SP.rate + i]; }
-        permute2(&s, &t);
+        for (var i = 0u; i < SP.rate; i++) { s[i] = LANES[base + b * SP.rate + i]; }
+        permute(&s);
     }
     for (var i = 0u; i < 4u; i++) { OUT[4u * gid + i] = s[i]; }
-    if gid + half < SP.items {
-        for (var i = 0u; i < 4u; i++) { OUT[4u * j + i] = t[i]; }
-    }
 }
 "#
     )

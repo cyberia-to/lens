@@ -144,12 +144,11 @@ total computation: dominated by step 2 (blind rotation)
 computing hemera homomorphically (FHE-friendly hashing):
 
 ```
-hemera multiplicative depth: 40 (x⁻¹ S-box, 16 partial rounds)
-FHE noise growth:               5.4× less per hemera evaluation
-bootstraps needed:              fewer → faster overall pipeline
+hemera multiplicative depth: 180 (hemera 0.4: x⁷, depth 3, in all 60 rounds)
+multiplications:             1,728 per permutation
 ```
 
-ring-aware jets prove that hemera evaluation under FHE was computed correctly. hemera's reduced depth means the noise tracking accumulator triggers bootstrapping less often.
+ring-aware jets prove that hemera evaluation under FHE was computed correctly. the noise tracking accumulator counts hemera's depth to decide when to bootstrap.
 
 ## cross-algebra composition
 
