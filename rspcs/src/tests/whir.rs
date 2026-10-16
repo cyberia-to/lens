@@ -154,6 +154,7 @@ fn cheating_prover_commit_f_open_g_rejected() {
             message: crate::whir::prover_message_base(g.clone(), gc),
             codeword: df.codeword,
             tree: df.tree,
+            zk: None,
         };
         let (v, proof) = Whir::open(&p, &forged, &z, &mut Transcript::new(DOMAIN));
         assert_ne!(v, crate::field::ml_eval_base(&f, &z));

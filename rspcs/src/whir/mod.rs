@@ -22,6 +22,7 @@ mod proof;
 mod prover;
 mod sumcheck;
 mod verifier;
+pub mod zk;
 
 pub use config::{RoundSpec, WhirConfig};
 pub use proof::{Opening, WhirProof, WhirRoundProof};
