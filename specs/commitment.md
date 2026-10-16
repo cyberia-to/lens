@@ -362,10 +362,10 @@ when zheng verifies a lens opening inside a circuit:
 
 | algebra | hemera in-circuit cost | notes |
 |---------|----------------------|-------|
-| F_p (nebu) | ~736 F_p constraints | native — hemera is Goldilocks Poseidon2 |
+| F_p (nebu) | ~1,440 F_p constraints | native — hemera is Goldilocks Poseidon2 |
 | F₂ (kuro) | ~142K binary constraints | simulating Goldilocks mul in bits |
-| R_q (jali) | ~736 F_p constraints | NTT slots are F_p elements |
-| (min,+) (trop) | ~736 F_p constraints | witness committed via Brakedown/F_p |
+| R_q (jali) | ~1,440 F_p constraints | NTT slots are F_p elements |
+| (min,+) (trop) | ~1,440 F_p constraints | witness committed via Brakedown/F_p |
 | F_q (genies) | prohibitive | simulating Goldilocks in 512-bit field |
 
 the recursion boundary is always Goldilocks. accumulation is specified in
