@@ -168,19 +168,19 @@ fn solve(mut a: Vec<Vec<Goldilocks>>, mut b: Vec<Goldilocks>, cols: usize) -> (O
         a.swap(r, p);
         b.swap(r, p);
         let inv = a[r][col].inv();
-        for k in col..cols {
-            a[r][k] *= inv;
+        for x in &mut a[r][col..] {
+            *x *= inv;
         }
         b[r] *= inv;
-        for i in 0..rows {
-            if i != r && a[i][col] != Goldilocks::ZERO {
-                let f = a[i][col];
-                for k in col..cols {
-                    let v = a[r][k];
-                    a[i][k] -= f * v;
+        let pivot = a[r][col..].to_vec();
+        let pb = b[r];
+        for (i, (row, bi)) in a.iter_mut().zip(b.iter_mut()).enumerate() {
+            if i != r && row[col] != Goldilocks::ZERO {
+                let f = row[col];
+                for (x, &v) in row[col..].iter_mut().zip(&pivot) {
+                    *x -= f * v;
                 }
-                let v = b[r];
-                b[i] -= f * v;
+                *bi -= f * pb;
             }
         }
         piv.push(col);
@@ -308,3 +308,85 @@ fn kernel_delta(co: &Coins, rho: usize, seed: u64) -> Vec<Goldilocks> {
     d
 }
 
+
+/// The model above is the prover, and the rank check's rows are the
+/// model's derivative: one real `open_zk` at this file's shape, its coins
+/// read back, then (1) every round-0 message the model computes equals the
+/// proof's, (2) the model's change per block slot (with `Ĝ` absorbing it)
+/// equals `check::rows` entry by entry.
+#[test]
+fn the_rank_check_is_the_provers_own_round0() {
+    let mut rng = Rng::new(42);
+    let p = WhirParams {
+        log_inv_rate: (LOG_DOMAIN as usize - M) as u8,
+        folding_factor: K0 as u8,
+        pow_bits: 0,
+        security_target: 16,
+        max_final_vars: (M - K0) as u8,
+        ..WhirParams::default()
+    };
+    let cfg = WhirConfig::derive(&p, M).unwrap();
+    let spec0 = cfg.rounds[0];
+    assert_eq!((spec0.fold, spec0.ood, cfg.rounds.len()), (K0, 1, 1), "one fold, one OOD sample");
+    let rho = (((spec0.queries + 6) << K0).next_power_of_two()).trailing_zeros() as usize;
+    assert!(rho < M, "queries {}", spec0.queries);
+    let n = 1usize << M;
+    let start = n - (1 << rho);
+    let c = rng.evals(M);
+    let g: Vec<Fp3> = (0..n >> K0).map(|_| rng.e()).collect();
+    let mask = ZkMask {
+        g: g.clone(),
+        salts: (0..SALT_LIMBS << spec0.log_leaves()).map(|_| rng.g()).collect(),
+        block: Some(rho),
+    };
+    let (_, data) = commit_zk(&p, &c, mask).unwrap();
+    let q = rng.point(M);
+    let a0 = rng.e();
+    let mut weight = Weight { eq: vec![(q.clone(), a0), block_term(&q, rho, -a0)], explicit: vec![] };
+    let xi: Vec<Fp3> = (0..1 << rho).map(|_| rng.e()).collect();
+    weight.explicit.extend(xi.iter().enumerate().map(|(k, &x)| (start + k, x)));
+    let (vals, proof) = match open_zk(&p, &data, &weight, &mut Transcript::new(b"lemma-real")).unwrap() {
+        ZkOutcome::Opened(v, pr) => (v, pr),
+        ZkOutcome::Resample => panic!("resample at seed 42"),
+    };
+    let (beta, coins0) = super::LAST_COINS.with(|l| l.borrow().clone()).expect("coins");
+    let co = Coins {
+        beta,
+        z_ood: coins0.ood[0],
+        gamma: coins0.gamma,
+        alphas: coins0.alphas.clone(),
+        leaves: coins0.leaves.clone(),
+        psi: (vec![], Fp3::ZERO),
+        xi: xi.clone(),
+        weight: weight.clone(),
+    };
+    // (1) the model's messages are the proof's
+    let (limbs, _) = messages(&c, &g, &co, rho);
+    let e = 3 + 2 * K0;
+    let model: Vec<Fp3> = limbs[..3 * e].chunks_exact(3).map(|x| Fp3::new(x[0], x[1], x[2])).collect();
+    assert_eq!(model[1], vals.u, "u");
+    assert_eq!(model[2], proof.ood0[0], "OOD answer");
+    assert_eq!(&model[3..], &proof.sumcheck0[..], "round-0 sumcheck values");
+    let Symbols::Base(sym) = &proof.final_opening.symbols else { panic!("base round-0 symbols") };
+    let width = (1 << K0) + EXTRA;
+    let cos = &limbs[3 * e..];
+    for (leaf, (opened, modeled)) in sym.chunks_exact(width).zip(cos.chunks_exact((1 << K0) + 3)).enumerate() {
+        assert_eq!(&opened[..(1 << K0) + 3], modeled, "leaf {leaf}: coset and Ĝ");
+    }
+    // (2) the check's rows are the model's derivative
+    let rows = check::rows(&spec0, M, rho, &xi, beta, &coins0);
+    let zero = vec![Goldilocks::ZERO; n];
+    let (base, _) = messages(&c, &g, &co, rho);
+    for k in 0..1 << rho {
+        let mut dc = zero.clone();
+        dc[start + k] = Goldilocks::ONE;
+        let cc: Vec<Goldilocks> = c.iter().zip(&dc).map(|(&a, &b)| a + b).collect();
+        let dg = compensation(&dc, &co);
+        let gg: Vec<Fp3> = g.iter().zip(&dg).map(|(&a, &b)| a + b).collect();
+        let (mk, _) = messages(&cc, &gg, &co, rho);
+        for (r, row) in rows.iter().enumerate() {
+            let d = Fp3::new(mk[3 * r] - base[3 * r], mk[3 * r + 1] - base[3 * r + 1], mk[3 * r + 2] - base[3 * r + 2]);
+            assert_eq!(row[k], d, "row {r}, block slot {k}");
+        }
+    }
+}

@@ -296,6 +296,7 @@ pub(crate) fn prove_rounds(
 
 /// Round 0's coins, for a caller's zero-knowledge check: the OOD points,
 /// `γ`, the folding challenges and the opened leaves of `f_0`.
+#[derive(Clone, Debug)]
 pub(crate) struct Round0Coins {
     pub ood: Vec<Fp3>,
     pub gamma: Fp3,

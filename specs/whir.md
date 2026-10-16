@@ -158,7 +158,9 @@ Open (transcript order):
 1. absorb `"lens-whir-rs-v1"`, `"zk"`, header, `m`, root, then for each eq
    term its point and coefficient, then the number of explicit entries
    and each `(b_i, v_i)`, then `v = Λ(c)` and `u = Λ(g)`;
-2. `β ← squeeze_fp3`. WHIR runs on the virtual word `h = c + β·g` with
+2. grind `comb_pow` bits (the two-word combination's grinding, `zk_terms`;
+   the nonce travels with the caller, 0 when no grinding is required),
+   then `β ← squeeze_fp3`. WHIR runs on the virtual word `h = c + β·g` with
    initial weight `Λ` and `σ = v + β·u` — steps 2–7 of § open / verify
    with `f₀ = h`: OOD answers are `ĥ(ζ) = ĉ(ζ) + β·Ĝ(ζ^{2^{k₀}})`; an opened
    round-0 leaf is authenticated over its `2^{k₀} + 7` symbols and its

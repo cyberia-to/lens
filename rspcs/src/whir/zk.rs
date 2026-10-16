@@ -208,7 +208,11 @@ pub fn comb_pow(params: &WhirParams, m: usize) -> Result<u32, PcsError> {
     Ok(batch::comb_pow(&cfg, 2, f64::from(params.security_target)))
 }
 
-/// Open the claim `Λ`.
+/// Open the claim `Λ`. Without a block in the mask no rank check runs and
+/// the opening is never `Resample`: the caller then owns the whole
+/// zero-knowledge argument. With a block, the check assumes the caller's
+/// only revealed functional of the block besides this opening is `Λ`
+/// restricted to it (zheng's `u_ψ`).
 pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Transcript) -> Result<ZkOutcome, PcsError> {
     let cfg = &data.config;
     let m = cfg.num_vars;
@@ -248,6 +252,8 @@ pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Tr
     let table = weight.table(m);
     let lambda_block = zk.block.map(|rho| table[(1 << m) - (1 << rho)..].to_vec());
     let (proof, coins0) = prove_rounds(params, cfg, t, f, Coeffs::Ext(hc), table, &univariate0, &open0);
+    #[cfg(test)]
+    LAST_COINS.with(|l| *l.borrow_mut() = Some((beta, coins0.clone())));
     if let (Some(rho), Some(lambda)) = (zk.block, lambda_block) {
         let lap = std::time::Instant::now();
         let ok = check::rank_ok(&spec0, m, rho, &lambda, beta, &coins0);
@@ -353,6 +359,13 @@ pub fn zk_security_bits(params: &WhirParams, m: usize) -> f64 {
 mod check;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+thread_local! {
+    /// The last opening's `β` and round-0 coins (tests tie the rank check to
+    /// the prover's own messages).
+    pub(crate) static LAST_COINS: core::cell::RefCell<Option<(Fp3, super::prover::Round0Coins)>> = const { core::cell::RefCell::new(None) };
+}
 #[cfg(test)]
 mod lemma;
 #[cfg(test)]

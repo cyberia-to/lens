@@ -29,13 +29,24 @@ fn eq_bits(p: &[Fp3], b: usize) -> Fp3 {
 pub(crate) fn rank_ok(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], beta: Fp3, c: &Round0Coins) -> bool {
     let k0 = spec0.fold;
     let big_r = 1usize << rho;
-    let bs = (1usize << n) - big_r;
-    let low = (1usize << k0) - 1;
     let d = big_r >> k0;
     let q = c.leaves.len();
     if rho < k0 || d <= q {
         return false;
     }
+    let rows = rows(spec0, n, rho, lambda, beta, c);
+    reduced_rank(spec0, rho, rows, c) == 3 * (2 + c.ood.len() + 2 * k0 - 1)
+}
+
+/// The round-0 Fp3 messages as linear forms on the block's evaluation
+/// basis: `rows[e][k]` is message `e`'s change when block slot `k` moves by
+/// one and `Ĝ` absorbs it (`ΔG = −Fold(Δc)/β`). Order: `Λ` on the block,
+/// `u`, the OOD answers, then `(h(0), h(2))` per folding round.
+pub(crate) fn rows(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], beta: Fp3, c: &Round0Coins) -> Vec<Vec<Fp3>> {
+    let k0 = spec0.fold;
+    let big_r = 1usize << rho;
+    let bs = (1usize << n) - big_r;
+    let low = (1usize << k0) - 1;
     let eq_alpha = eq_table(&c.alphas);
     let binv = beta.inv();
     // Σ over the low bits of Λ at each high position of the block
@@ -105,6 +116,16 @@ pub(crate) fn rank_ok(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], b
             coef *= if bit == 1 { a } else { Fp3::ONE - a };
         }
     }
+    rows
+}
+
+/// `F_p`-rank of `rows` reduced modulo the opened cosets.
+fn reduced_rank(spec0: &RoundSpec, rho: usize, mut rows: Vec<Vec<Fp3>>, c: &Round0Coins) -> usize {
+    let k0 = spec0.fold;
+    let big_r = 1usize << rho;
+    let d = big_r >> k0;
+    let q = c.leaves.len();
+    let e = rows.len();
     // evaluation basis → coefficient basis on the block: φ'[b] = Σ_{y ⊇ b} φ[y]
     for row in &mut rows {
         let mut step = 1;
@@ -146,7 +167,7 @@ pub(crate) fn rank_ok(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], b
             m.push(red.iter().map(|x| [x.c0, x.c1, x.c2][limb]).collect());
         }
     }
-    rank(m, cols) == 3 * (e - 1)
+    rank(m, cols)
 }
 
 fn rank(mut a: Vec<Vec<Goldilocks>>, cols: usize) -> usize {
