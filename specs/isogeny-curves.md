@@ -92,7 +92,7 @@ verify(commitment, point, value, proof):
 | F_p multiply | 1 constraint | N/A | nebu workload |
 | F_q multiply | ~64 constraints (non-native) | 1 constraint | genies workload |
 | isogeny walk step | ~64 constraints (non-native) | 1 constraint | privacy primitive |
-| hemera hash | ~736 constraints | ~736 constraints | same (hemera is F_p native) |
+| hemera hash | ~1,440 constraints | ~1,440 constraints | same (hemera is F_p native) |
 | VDF verification | ~64K constraints (non-native) | ~1K constraints | delay primitive |
 
 ## primary workloads
@@ -124,12 +124,12 @@ isogeny proofs are NOT verified inside F_q circuits. verification crosses to Gol
 ```
 isogeny execution → isogeny proof (hemera Merkle + FS externally)
                         ↓
-    verify in F_p circuit (hemera native, ~736 constraints)
+    verify in F_p circuit (hemera native, ~1,440 constraints)
                         ↓
     fold into F_p accumulator
 ```
 
-hemera inside F_q circuit: prohibitively expensive (simulating Goldilocks in F_q). hemera inside F_p circuit: ~736 constraints. recursion boundary is always Goldilocks.
+hemera inside F_q circuit: prohibitively expensive (simulating Goldilocks in F_q). hemera inside F_p circuit: ~1,440 constraints. recursion boundary is always Goldilocks.
 
 ## genies dependency
 

@@ -79,7 +79,7 @@ the verifier uses hemera for hashing and F₂ for field ops. no binary-native ha
 | XOR | ~32 constraints | 1 constraint | 32x |
 | lt (comparison) | ~64 constraints | ~1 constraint | 64x |
 | field multiply | 1 constraint | ~64 constraints | 0.016x |
-| hemera hash | ~736 constraints | N/A (external) | — |
+| hemera hash | ~1,440 constraints | N/A (external) | — |
 
 binary wins for bitwise. Goldilocks wins for arithmetic. the prover chooses based on workload.
 
@@ -111,12 +111,12 @@ binary proofs are NOT verified inside binary circuits. verification crosses to G
 ```
 binary execution → binary proof (hemera Merkle + FS externally)
                         ↓
-    verify in F_p circuit (hemera native, ~736 constraints)
+    verify in F_p circuit (hemera native, ~1,440 constraints)
                         ↓
     fold into F_p accumulator
 ```
 
-hemera inside F₂ circuit: ~142K binary constraints per hash (simulating Goldilocks mul in bits). unacceptable for recursion. hemera inside F_p circuit: ~736 constraints. the recursion boundary is Goldilocks.
+hemera inside F₂ circuit: ~142K binary constraints per hash (simulating Goldilocks mul in bits). unacceptable for recursion. hemera inside F_p circuit: ~1,440 constraints. the recursion boundary is Goldilocks.
 
 ## kuro dependency
 
