@@ -36,7 +36,7 @@ fn case(rng: &mut Rng, p: WhirParams, m: usize) -> Case {
 
 fn prove(c: &Case) -> (ZkValues, WhirProof) {
     match open_zk(&c.p, &c.data, &c.weight, &mut Transcript::new(DOMAIN)).unwrap() {
-        ZkOutcome::Opened(v, p) => (v, p),
+        ZkOutcome::Opened(v, p) => (v, *p),
         ZkOutcome::Resample => unreachable!("no block named"),
     }
 }

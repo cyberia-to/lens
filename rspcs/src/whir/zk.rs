@@ -110,7 +110,7 @@ pub struct ZkMask {
 /// What [`open_zk`] produced.
 #[derive(Debug)]
 pub enum ZkOutcome {
-    Opened(ZkValues, WhirProof),
+    Opened(ZkValues, Box<WhirProof>),
     /// The round-0 coins fail the masking lemma's rank condition: commit
     /// again with fresh masks and salts (never output this proof).
     Resample,
@@ -264,7 +264,7 @@ pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Tr
             return Ok(ZkOutcome::Resample);
         }
     }
-    Ok(ZkOutcome::Opened(ZkValues { v, u, nonce }, proof))
+    Ok(ZkOutcome::Opened(ZkValues { v, u, nonce }, Box::new(proof)))
 }
 
 /// Verify a zero-knowledge opening of `Λ` with values `vals`.

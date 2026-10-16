@@ -346,7 +346,7 @@ fn the_rank_check_is_the_provers_own_round0() {
     let xi: Vec<Fp3> = (0..1 << rho).map(|_| rng.e()).collect();
     weight.explicit.extend(xi.iter().enumerate().map(|(k, &x)| (start + k, x)));
     let (vals, proof) = match open_zk(&p, &data, &weight, &mut Transcript::new(b"lemma-real")).unwrap() {
-        ZkOutcome::Opened(v, pr) => (v, pr),
+        ZkOutcome::Opened(v, pr) => (v, *pr),
         ZkOutcome::Resample => panic!("resample at seed 42"),
     };
     let (beta, coins0) = super::LAST_COINS.with(|l| l.borrow().clone()).expect("coins");
