@@ -98,7 +98,10 @@ fn main() {
             std::hint::black_box(input.clone());
         });
         let (cm, _) = stats(ct);
-        let pt: Vec<f64> = pt.into_iter().map(|t| n as f64 / (t - cm).max(1e-9) / 1e6).collect();
+        let pt: Vec<f64> = pt
+            .into_iter()
+            .map(|t| n as f64 / (t - cm).max(1e-9) / 1e6)
+            .collect();
         let (pm, pb) = stats(pt);
         let mt = timed(reps, || {
             std::hint::black_box(mine_fn(1 << 40, count));
@@ -118,7 +121,7 @@ fn main() {
         cpu_mine_n,
     );
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(feature = "metal", target_os = "macos"))]
     for &k in &ks {
         let m = cyber_lens_gpu::metal::Metal::with_states_per_thread(k).expect("metal");
         // agreement on a reachable target first

@@ -183,7 +183,7 @@ fn grinding_past_the_first_dispatch() {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "metal", target_os = "macos"))]
 #[test]
 fn metal_states_per_thread_equal_cpu() {
     // several independent states per GPU thread, interleaved round by
@@ -712,6 +712,7 @@ fn mine_job(msg: &[u8; 168], target: [u64; 4]) -> cyber_lens_gpu::mine::Job {
     }
 }
 
+#[allow(unused_variables)] // every arm is feature-gated
 fn mine_on(
     s: &cyber_lens_gpu::Selected,
     job: &cyber_lens_gpu::mine::Job,
