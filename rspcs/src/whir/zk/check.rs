@@ -54,7 +54,35 @@ pub(crate) fn rank_ok(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], b
     let ood_g: Vec<Vec<Fp3>> = pows.iter().map(|p| (0..big_r >> k0).map(|h| eq_bits(&p[k0..], (bs >> k0) + h)).collect()).collect();
     let e = 2 + c.ood.len() + 2 * k0;
     let two = Fp3::from_base(Goldilocks::new(2));
-    // rows[e][k]: message e on the block's evaluation basis vector k
+    // the weight folded 0 … k₀ − 1 times
+    let mut tables = vec![w];
+    for &a in &c.alphas[..k0 - 1] {
+        let mut next = tables.last().expect("one").clone();
+        fold_evals_ext(&mut next, a);
+        tables.push(next);
+    }
+    // sumcheck values of the indicator of high position h (ones over its
+    // 2^{k₀} low patterns stay ones under folding)
+    let ind: Vec<Vec<(Fp3, Fp3)>> = (0..big_r >> k0)
+        .map(|h| {
+            tables
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    let width = 1usize << (k0 - i);
+                    let base = h * width;
+                    (0..width / 2).fold((Fp3::ZERO, Fp3::ZERO), |(h0, h2), p| {
+                        let (w0, w1) = (t[base + 2 * p], t[base + 2 * p + 1]);
+                        (h0 + w0, h2 + (two * w1 - w0))
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    // rows[e][k]: message e on the block's evaluation basis vector k; the
+    // sumcheck values of δ_k in closed form (one nonzero entry,
+    // eq(α_{<i}, k_{<i}) at k >> i after i folds), minus eq(α, k_low) times
+    // the indicator's
     let mut rows = vec![vec![Fp3::ZERO; big_r]; e];
     for k in 0..big_r {
         let ea = eq_alpha[k & low];
@@ -64,24 +92,17 @@ pub(crate) fn rank_ok(spec0: &RoundSpec, n: usize, rho: usize, lambda: &[Fp3], b
         for (j, (oc, og)) in ood_c.iter().zip(&ood_g).enumerate() {
             rows[2 + j][k] = oc[k] - ea * og[kh];
         }
-        let mut f = vec![Fp3::ZERO; big_r];
-        f[k] = Fp3::ONE;
-        for l in 0..1 << k0 {
-            f[(kh << k0) | l] -= ea;
-        }
-        let mut ww = w.clone();
-        let mut r = 2 + c.ood.len();
-        for &a in &c.alphas {
-            let (mut h0, mut h2) = (Fp3::ZERO, Fp3::ZERO);
-            for i in 0..f.len() / 2 {
-                h0 += f[2 * i] * ww[2 * i];
-                h2 += (two * f[2 * i + 1] - f[2 * i]) * (two * ww[2 * i + 1] - ww[2 * i]);
-            }
-            rows[r][k] = h0;
-            rows[r + 1][k] = h2;
-            r += 2;
-            fold_evals_ext(&mut f, a);
-            fold_evals_ext(&mut ww, a);
+        let mut coef = Fp3::ONE;
+        for (i, t) in tables.iter().enumerate() {
+            let ki = k >> i;
+            let (pair, bit) = (ki >> 1, ki & 1);
+            let slope = two * t[2 * pair + 1] - t[2 * pair];
+            let (h0, h2) = if bit == 0 { (coef * t[ki], -(coef * slope)) } else { (Fp3::ZERO, two * coef * slope) };
+            let r = 2 + c.ood.len() + 2 * i;
+            rows[r][k] = h0 - ea * ind[kh][i].0;
+            rows[r + 1][k] = h2 - ea * ind[kh][i].1;
+            let a = c.alphas[i];
+            coef *= if bit == 1 { a } else { Fp3::ONE - a };
         }
     }
     // evaluation basis → coefficient basis on the block: φ'[b] = Σ_{y ⊇ b} φ[y]

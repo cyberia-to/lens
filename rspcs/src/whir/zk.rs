@@ -249,7 +249,12 @@ pub fn open_zk(params: &WhirParams, data: &WhirData, weight: &Weight, t: &mut Tr
     let lambda_block = zk.block.map(|rho| table[(1 << m) - (1 << rho)..].to_vec());
     let (proof, coins0) = prove_rounds(params, cfg, t, f, Coeffs::Ext(hc), table, &univariate0, &open0);
     if let (Some(rho), Some(lambda)) = (zk.block, lambda_block) {
-        if !check::rank_ok(&spec0, m, rho, &lambda, beta, &coins0) {
+        let lap = std::time::Instant::now();
+        let ok = check::rank_ok(&spec0, m, rho, &lambda, beta, &coins0);
+        if std::env::var_os("ZHENG_TIMING").is_some() {
+            eprintln!("  lens zk rank check: {:.1} ms", lap.elapsed().as_secs_f64() * 1e3);
+        }
+        if !ok {
             return Ok(ZkOutcome::Resample);
         }
     }
