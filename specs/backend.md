@@ -67,8 +67,8 @@ against the CPU), `spot-*`, `record-*` (call hashes to `LENS_RECORD`) and
 ## GPU kernels
 
 - Metal (`gpu/src/msl.rs`): native 64-bit integers, `mulhi` products,
-  hemera's constants inlined; one state (or `k`, sharing the partial-round
-  inversions) per thread; grinding writes the least passing offset with an
+  hemera's constants inlined; one state (or `k` independent states, interleaved
+  round by round) per thread; grinding writes the least passing offset with an
   atomic minimum per dispatch; coset NTT as a scatter (coset powers,
   bit reversal) and one radix-2 stage per dispatch.
 - WebGPU (`gpu/src/wgsl.rs`): 32-bit limbs (WGSL has no 64-bit integers),

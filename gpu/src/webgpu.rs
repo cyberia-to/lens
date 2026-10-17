@@ -217,7 +217,7 @@ impl WebGpu {
 
     /// [`crate::mine`] on the adapter: the least `i < count` whose nonce
     /// `base + i` hashes below the job's target, or `None`. One dispatch of
-    /// `count` nonces (two a thread); the host splits ranges so
+    /// `count` nonces (one a thread); the host splits ranges so
     /// `base + count` never carries into the high word
     /// ([`crate::mine::no_carry`]).
     pub fn mine(
@@ -249,7 +249,7 @@ impl WebGpu {
             mapped_at_creation: false,
         });
         g.queue.write_buffer(&found, 0, &u32::MAX.to_le_bytes());
-        let threads = (count as usize).div_ceil(2);
+        let threads = count as usize;
         let (_, _, row) = grid(threads);
         let mut p = u32s(&job.init);
         p.extend(u32s(job.blocks.as_flattened()));
@@ -401,8 +401,8 @@ impl Backend for WebGpu {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            // two states a thread
-            let threads = chunk.len().div_ceil(2);
+            // one state a thread
+            let threads = chunk.len();
             let (_, _, row) = grid(threads);
             let p = bytes(&[chunk.len() as u32, row, 0, 0]);
             let out = g.run(&g.permute, &io, &p, threads, &read);
@@ -444,8 +444,8 @@ impl Backend for WebGpu {
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            // two items a thread
-            let (x, y, row) = grid(n.div_ceil(2));
+            // one item a thread
+            let (x, y, row) = grid(n);
             let mut p = u32s(init);
             p.extend([rate as u32, blocks as u32, n as u32, row]);
             let ub = g
@@ -722,8 +722,8 @@ impl Backend for WebGpu {
         let mut count = 1u64 << bits.clamp(12, GRIND_DISPATCH.trailing_zeros());
         loop {
             g.queue.write_buffer(&found, 0, &u32::MAX.to_le_bytes());
-            // two nonces a thread (`permute2`)
-            let threads = (count as usize).div_ceil(2);
+            // one nonce a thread
+            let threads = count as usize;
             let (_, _, row) = grid(threads);
             let mut p = u32s(template);
             p.extend(u32s(&[base, mask, lo_mask]));
