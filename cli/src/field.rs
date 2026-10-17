@@ -4,7 +4,7 @@
 //! per-field operations the cli needs — file encoding, canonical byte I/O, and
 //! coordinate parsing — so the command logic stays generic over the algebra.
 
-use lens::{Field, Reduce};
+use lens::{Codec, Field, Reduce};
 use nebu::Goldilocks;
 use nebu::encoding::encode_7;
 
@@ -12,8 +12,9 @@ use genies::Fq;
 use kuro::F2_128;
 
 /// Per-field byte widths, file encoding, and coordinate parsing.
-/// `Reduce` lets the transcript squeeze challenges of this field.
-pub trait CliField: Field + Reduce + Copy {
+/// `Reduce` lets the transcript squeeze challenges of this field; `Codec`
+/// tells it how many bytes of hash output that squeeze needs to collect.
+pub trait CliField: Field + Reduce + Codec + Copy {
     /// Canonical serialized width of one element, in bytes.
     const WIDTH: usize;
     /// File bytes consumed per element — kept below the modulus so every
@@ -138,6 +139,9 @@ fn hex_number_le(s: &str, width: usize) -> Result<Vec<u8>, String> {
         .strip_prefix("0x")
         .or_else(|| s.strip_prefix("0X"))
         .unwrap_or(s);
+    if !s.is_ascii() {
+        return Err(format!("invalid hex '{s}'"));
+    }
     let s = if s.is_empty() { "0" } else { s };
     let padded = if s.len().is_multiple_of(2) {
         s.to_string()
@@ -156,4 +160,26 @@ fn hex_number_le(s: &str, width: usize) -> Result<Vec<u8>, String> {
     let mut le: Vec<u8> = be.into_iter().rev().collect();
     le.resize(width, 0);
     Ok(le)
+}
+
+#[cfg(test)]
+mod hex_number_le_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_ascii_without_panicking() {
+        // a multi-byte UTF-8 char can keep the byte length even (so the
+        // odd-length padding guard does not catch it) while landing a
+        // `&padded[i..i+2]` slice boundary mid-character; hex_number_le
+        // must error, not panic.
+        assert!(hex_number_le("aébcd", 32).is_err());
+        assert!(F2_128::parse("aébcd").is_err());
+        assert!(Fq::parse("aébcd").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_hex_with_and_without_prefix() {
+        assert_eq!(hex_number_le("0x00ff", 4).unwrap(), vec![0xff, 0x00, 0, 0]);
+        assert_eq!(hex_number_le("00ff", 4).unwrap(), vec![0xff, 0x00, 0, 0]);
+    }
 }
