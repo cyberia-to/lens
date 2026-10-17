@@ -172,3 +172,26 @@ fn decode_rejects_oversized_merkle_path_inner_count() {
     bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // path length, no hashes follow
     assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
 }
+
+#[test]
+fn decode_rejects_oversized_tensor_merkle_column_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(2); // OPENING_TENSOR_MERKLE
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // row_combination len = 0
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // n_cols, no columns follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}
+
+#[test]
+fn decode_rejects_oversized_tensor_merkle_path_count() {
+    let mut bytes = artifact_header(0, false);
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // n_points = 0
+    bytes.push(2); // OPENING_TENSOR_MERKLE
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // row_combination len = 0
+    bytes.extend_from_slice(&1u32.to_le_bytes()); // n_cols = 1
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // column index
+    bytes.extend_from_slice(&0u32.to_le_bytes()); // column len = 0
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // path length, no nodes follow
+    assert!(artifact::decode::<Goldilocks>(&bytes).is_err());
+}

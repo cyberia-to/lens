@@ -214,12 +214,12 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
         OPENING_TENSOR_MERKLE => {
             let row_combination = r.len_bytes()?.to_vec();
             let n_cols = r.u32()?;
-            let mut columns = Vec::with_capacity(n_cols);
+            let mut columns = Vec::with_capacity(n_cols.min(r.remaining()));
             for _ in 0..n_cols {
                 let index = r.u32()?;
                 let column = r.len_bytes()?.to_vec();
                 let n_path = r.u32()?;
-                let mut path = Vec::with_capacity(n_path);
+                let mut path = Vec::with_capacity(n_path.min(r.remaining()));
                 for _ in 0..n_path {
                     let h = take_hash(r)?;
                     let side = match r.u8()? {
