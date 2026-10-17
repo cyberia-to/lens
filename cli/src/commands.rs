@@ -239,26 +239,6 @@ pub fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-#[cfg(test)]
-mod hex_to_bytes_tests {
-    use super::*;
-
-    #[test]
-    fn rejects_non_ascii_without_panicking() {
-        // a multi-byte UTF-8 char keeps the byte length even (so the
-        // odd-length guard does not catch it) while landing a
-        // `&s[i..i+2]` slice boundary mid-character; hex_to_bytes must
-        // error, not panic.
-        assert!(hex_to_bytes("aéb").is_err());
-    }
-
-    #[test]
-    fn accepts_valid_hex_with_and_without_prefix() {
-        assert_eq!(hex_to_bytes("0x00ff").unwrap(), vec![0x00, 0xff]);
-        assert_eq!(hex_to_bytes("00ff").unwrap(), vec![0x00, 0xff]);
-    }
-}
-
 pub fn hex(b: &[u8]) -> String {
     let mut s = String::with_capacity(b.len() * 2);
     for x in b {
@@ -283,5 +263,25 @@ fn fmt_dur(d: Duration) -> String {
         format!("{us:.0}us")
     } else {
         format!("{:.1}ms", us / 1000.0)
+    }
+}
+
+#[cfg(test)]
+mod hex_to_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_ascii_without_panicking() {
+        // a multi-byte UTF-8 char keeps the byte length even (so the
+        // odd-length guard does not catch it) while landing a
+        // `&s[i..i+2]` slice boundary mid-character; hex_to_bytes must
+        // error, not panic.
+        assert!(hex_to_bytes("aéb").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_hex_with_and_without_prefix() {
+        assert_eq!(hex_to_bytes("0x00ff").unwrap(), vec![0x00, 0xff]);
+        assert_eq!(hex_to_bytes("00ff").unwrap(), vec![0x00, 0xff]);
     }
 }
