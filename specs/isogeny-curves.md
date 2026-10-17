@@ -15,9 +15,11 @@ are rejected, and batch verification returns false for those requests. The forme
 random-point batch path ignored the caller's claimed values and also passed only
 32 bytes to the Fq reduction function, which requires at least 64. That path is
 removed; expanding a random challenge alone would not repair its authentication.
-The general Lens transcript's single-hash `squeeze_field` API remains unsuitable
-for Fq; a future Fq protocol must specify a domain-separated 64-byte-or-wider
-challenge derivation together with its actual proof checks.
+The general Lens transcript's `squeeze_field` now chains squeezes until it holds
+`F::byte_len()` bytes (64 for Fq), so it no longer panics for Fq; that is a
+crash fix, not an Fq challenge protocol. A future Fq protocol must still specify
+a domain-separated 64-byte-or-wider challenge derivation together with its actual
+proof checks.
 
 
 the F_q lens. dedicated polynomial commitment over [[genies]]'s isogeny field F_q where q = 4·ℓ₁·ℓ₂·...·ℓₙ - 1. privacy primitives (stealth addresses, VDF verification, blind signatures, ring signatures) prove natively in their own field — no non-native arithmetic penalty.

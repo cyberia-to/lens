@@ -12,6 +12,7 @@ mod types;
 
 pub use fri::fri_fold;
 pub use pcs::{MultilinearPcs, PcsError};
+pub use strata_core::Codec;
 pub use strata_proof::Reduce;
 pub use transcript::Transcript;
 pub use types::{ColumnQuery, Commitment, Field, MultilinearPoly, Opening, Ring, Semiring};

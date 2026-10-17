@@ -70,6 +70,14 @@ impl Assayer {
     ) -> MultilinearPoly<Goldilocks> {
         let mut data = Vec::new();
 
+        // Pack the problem graph itself: num_vertices, source, target.
+        // Without these, the commitment binds a solution's cost and shape
+        // but not which graph it claims to solve — two witnesses over
+        // different graphs, same weight sequence, would commit identically.
+        data.push(Goldilocks::new(witness.num_vertices as u64));
+        data.push(Goldilocks::new(witness.source as u64));
+        data.push(Goldilocks::new(witness.target as u64));
+
         // Pack cost
         data.push(Goldilocks::new(witness.cost.as_u64()));
 
@@ -79,8 +87,14 @@ impl Assayer {
             data.push(Goldilocks::new(idx as u64));
         }
 
-        // Pack edge weights
+        // Pack edges: endpoints and weight. `verify_tropical` reads
+        // `edge.from`/`edge.to` for every edge (structural path check and
+        // dual feasibility), so the commitment must bind them too, not
+        // just the weight.
+        data.push(Goldilocks::new(witness.edges.len() as u64));
         for e in &witness.edges {
+            data.push(Goldilocks::new(e.from as u64));
+            data.push(Goldilocks::new(e.to as u64));
             data.push(Goldilocks::new(e.weight.as_u64()));
         }
 
@@ -280,6 +294,30 @@ mod tests {
     fn valid_shortest_path() {
         let (w, c) = shortest_path_graph();
         assert!(Assayer::verify_tropical(&w, &c));
+    }
+
+    #[test]
+    fn commitment_binds_edge_topology_and_endpoints() {
+        // pack_witness used to pack only edge weights, plus source/target
+        // and num_vertices not at all — so two witnesses that differ only
+        // in which vertices their edges connect, or in the source/target,
+        // committed identically. verify_tropical checks topology, but the
+        // commitment never bound what verify_tropical checked.
+        let (w1, c) = shortest_path_graph();
+        let mut w2 = w1.clone();
+        for e in w2.edges.iter_mut() {
+            e.from += 100;
+            e.to += 100;
+        }
+        w2.source += 100;
+        w2.target += 100;
+
+        let (commit1, _) = Assayer::commit_witness(&w1, &c);
+        let (commit2, _) = Assayer::commit_witness(&w2, &c);
+        assert_ne!(
+            commit1, commit2,
+            "commitment must change when edge topology, source or target change"
+        );
     }
 
     #[test]
