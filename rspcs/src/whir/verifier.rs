@@ -4,16 +4,16 @@ use cyber_lens_core::{Commitment, PcsError, Transcript};
 use nebu::Fp3;
 
 use super::fold::{check_opening, shift_point};
-use super::proof::WhirProof;
+use super::proof::{Opening, WhirProof};
 use super::{WhirConfig, WhirParams, prologue, sumcheck};
 use crate::field::{coeff_ml_eval, eq_eval, pow_point, univariate_ext_at_base};
 use crate::pow;
 
-/// A weight `coef · Z · eq(point, X)` added in round `round`.
-struct Constraint {
-    round: usize,
-    point: Vec<Fp3>,
-    coef: Fp3,
+/// A weight `coef · eq(point, X)` added in round `round`.
+pub(crate) struct Constraint {
+    pub round: usize,
+    pub point: Vec<Fp3>,
+    pub coef: Fp3,
 }
 
 fn nonce(v: &[u64], bits: u32) -> Result<u64, PcsError> {
@@ -23,6 +23,10 @@ fn nonce(v: &[u64], bits: u32) -> Result<u64, PcsError> {
         _ => Err(PcsError::Shape),
     }
 }
+
+/// Authenticates opened leaves of `f_0` and returns their folded values.
+pub(crate) type CheckOpening0<'a> =
+    &'a dyn Fn(&[usize], &Opening, &[Fp3]) -> Result<Vec<Fp3>, PcsError>;
 
 #[allow(clippy::too_many_arguments)]
 pub fn verify(
@@ -39,28 +43,54 @@ pub fn verify(
         return Err(PcsError::ParamsMismatch);
     }
     let cfg = WhirConfig::derive(params, m)?;
+    if point.len() != m {
+        return Err(PcsError::Shape);
+    }
+    shape(&cfg, proof)?;
+    prologue(t, params, m, commitment, point, value, ext0);
+    let cons = vec![Constraint {
+        round: 0,
+        point: point.to_vec(),
+        coef: Fp3::ONE,
+    }];
     let spec0 = cfg.rounds[0];
-    if point.len() != m
-        || proof.ood0.len() != spec0.ood
+    let root = commitment.0;
+    verify_rounds(&cfg, t, cons, &[], value, proof, &|idx, opening, alphas| {
+        check_opening(&root, &spec0, ext0, idx, opening, alphas)
+    })
+}
+
+/// Lengths a proof must have under `cfg`.
+pub(crate) fn shape(cfg: &WhirConfig, proof: &WhirProof) -> Result<(), PcsError> {
+    if proof.ood0.len() != cfg.rounds[0].ood
         || proof.rounds.len() + 1 != cfg.rounds.len()
         || proof.final_poly.len() != 1 << cfg.final_vars
     {
         return Err(PcsError::Shape);
     }
-    prologue(t, params, m, commitment, point, value, ext0);
+    Ok(())
+}
 
-    let mut cons = vec![Constraint {
-        round: 0,
-        point: point.to_vec(),
-        coef: Fp3::ONE,
-    }];
+/// WHIR from step 2 of the transcript on: `cons` holds the claim's eq
+/// terms (round 0), `explicit` its entries at hypercube points, `sigma`
+/// its value; `check0` authenticates and folds openings of `f_0`.
+pub(crate) fn verify_rounds(
+    cfg: &WhirConfig,
+    t: &mut Transcript,
+    mut cons: Vec<Constraint>,
+    explicit: &[(usize, Fp3)],
+    mut sigma: Fp3,
+    proof: &WhirProof,
+    check0: CheckOpening0<'_>,
+) -> Result<(), PcsError> {
+    let m = cfg.num_vars;
+    let spec0 = cfg.rounds[0];
     let mut zs = Vec::with_capacity(spec0.ood);
     for &y in &proof.ood0 {
         zs.push(t.squeeze_fp3());
         t.absorb_fp3(y);
     }
     let gamma = t.squeeze_fp3();
-    let mut sigma = value;
     let mut g = gamma;
     for (&z, &y) in zs.iter().zip(&proof.ood0) {
         sigma += g * y;
@@ -80,8 +110,16 @@ pub fn verify(
         spec0.fold_pow,
     )?;
 
-    let mut prev_root = commitment.0;
+    let mut prev_root: Option<cyber_hemera::Hash> = None;
     let mut prev_spec = spec0;
+    let fold_prev = |prev_root: &Option<cyber_hemera::Hash>,
+                     prev_spec: &super::RoundSpec,
+                     idx: &[usize],
+                     opening: &Opening,
+                     alphas: &[Fp3]| match prev_root {
+        Some(root) => check_opening(root, prev_spec, true, idx, opening, alphas),
+        None => check0(idx, opening, alphas),
+    };
     for (i, rp) in proof.rounds.iter().enumerate() {
         let i = i + 1;
         let spec = cfg.rounds[i];
@@ -104,14 +142,7 @@ pub fn verify(
         let idx = prev_spec.sample(t);
         let gamma = t.squeeze_fp3();
         let prev_alphas = &alphas[alphas.len() - prev_spec.fold..];
-        let folded = check_opening(
-            &prev_root,
-            &prev_spec,
-            i > 1 || ext0,
-            &idx,
-            &rp.opening,
-            prev_alphas,
-        )?;
+        let folded = fold_prev(&prev_root, &prev_spec, &idx, &rp.opening, prev_alphas)?;
 
         let mut g = gamma;
         for (&z, &y) in zs.iter().zip(&rp.ood) {
@@ -140,7 +171,7 @@ pub fn verify(
             spec.fold,
             spec.fold_pow,
         )?);
-        prev_root = rp.root;
+        prev_root = Some(rp.root);
         prev_spec = spec;
     }
 
@@ -155,15 +186,7 @@ pub fn verify(
     }
     let idx = prev_spec.sample(t);
     let prev_alphas = &alphas[alphas.len() - prev_spec.fold..];
-    let last_ext = !proof.rounds.is_empty() || ext0;
-    let folded = check_opening(
-        &prev_root,
-        &prev_spec,
-        last_ext,
-        &idx,
-        &proof.final_opening,
-        prev_alphas,
-    )?;
+    let folded = fold_prev(&prev_root, &prev_spec, &idx, &proof.final_opening, prev_alphas)?;
     for (&j, &v) in idx.iter().zip(&folded) {
         if univariate_ext_at_base(&proof.final_poly, shift_point(&prev_spec, j)) != v {
             return Err(PcsError::Consistency);
@@ -179,8 +202,37 @@ pub fn verify(
         let e = eq_eval(&c.point[..pre], &alphas[off..off + pre]);
         expected += c.coef * e * coeff_ml_eval(&proof.final_poly, &c.point[pre..]);
     }
+    if !explicit.is_empty() {
+        // entries at hypercube points b: eq(b_low, α) · f_M(b_high), with
+        // f_M's table on the hypercube computed once
+        let pre = m - fv;
+        let fin = hypercube_table(&proof.final_poly);
+        for &(b, v) in explicit {
+            let e = (0..pre).fold(Fp3::ONE, |acc, l| {
+                if (b >> l) & 1 == 1 { acc * alphas[l] } else { acc * (Fp3::ONE - alphas[l]) }
+            });
+            expected += v * e * fin[b >> pre];
+        }
+    }
     if expected != sigma {
         return Err(PcsError::Sumcheck);
     }
     Ok(())
+}
+
+/// Monomial coefficients → values on the hypercube (`e_s = Σ_{b ⊆ s} c_b`).
+fn hypercube_table(coeffs: &[Fp3]) -> Vec<Fp3> {
+    let mut a = coeffs.to_vec();
+    let n = a.len();
+    let mut step = 1;
+    while step < n {
+        for block in a.chunks_exact_mut(2 * step) {
+            let (lo, hi) = block.split_at_mut(step);
+            for (h, l) in hi.iter_mut().zip(lo.iter()) {
+                *h += *l;
+            }
+        }
+        step *= 2;
+    }
+    a
 }

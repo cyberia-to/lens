@@ -5,11 +5,11 @@ use nebu::{Fp3, Goldilocks};
 
 use super::config::RoundSpec;
 use super::fold::{coset_tree, open as open_leaves, shift_point};
-use super::proof::{WhirProof, WhirRoundProof};
+use super::proof::{Opening, WhirProof, WhirRoundProof};
 use super::{WhirConfig, WhirParams, prologue, sumcheck};
 use crate::field::{
     add_scaled_eq, eq_table, fold_coeffs_base, fold_coeffs_ext, ml_eval_base, ml_eval_ext,
-    mobius_base, mobius_ext, pow_point, univariate_ext, univariate_ext_at_base,
+    mobius_base, mobius_ext, pow_point, univariate_ext,
 };
 use crate::merkle::Tree;
 use crate::pow;
@@ -36,6 +36,8 @@ pub struct WhirData {
     pub(crate) message: Message,
     pub(crate) codeword: Symbols,
     pub(crate) tree: Tree,
+    /// The masks of a zero-knowledge commitment (`whir::zk`).
+    pub(crate) zk: Option<super::zk::ZkRound0>,
 }
 
 impl core::fmt::Debug for WhirData {
@@ -63,7 +65,7 @@ pub fn commit(params: &WhirParams, evals: &[Goldilocks]) -> (Commitment, WhirDat
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (root, WhirData { config, message, codeword, tree, zk: None })
 }
 
 /// Commit an Fp3-valued table: the code is `RS[K, L, 2^m]` with the same
@@ -86,23 +88,23 @@ pub fn commit_ext(params: &WhirParams, evals: &[Fp3]) -> (Commitment, WhirData) 
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (root, WhirData { config, message, codeword, tree, zk: None })
 }
 
 /// Monomial coefficients of the current folded polynomial.
-enum Coeffs {
+pub(crate) enum Coeffs {
     Base(Vec<Goldilocks>),
     Ext(Vec<Fp3>),
 }
 
 impl Coeffs {
-    fn fold(&mut self, alpha: Fp3) {
+    pub(crate) fn fold(&mut self, alpha: Fp3) {
         match self {
             Coeffs::Base(c) => *self = Coeffs::Ext(fold_coeffs_base(c, alpha)),
             Coeffs::Ext(c) => fold_coeffs_ext(c, alpha),
         }
     }
-    fn ext(&self) -> &[Fp3] {
+    pub(crate) fn ext(&self) -> &[Fp3] {
         match self {
             Coeffs::Ext(c) => c,
             Coeffs::Base(_) => unreachable!("at least one fold precedes"),
@@ -124,38 +126,68 @@ pub fn open(
         Ok(cfg),
         "open params differ from commit params"
     );
+    assert!(data.zk.is_none(), "a zero-knowledge commitment opens with open_zk");
     let ext0 = matches!(data.message, Message::Ext { .. });
     let value = match &data.message {
         Message::Base { evals, .. } => ml_eval_base(evals, point),
         Message::Ext { evals, .. } => ml_eval_ext(evals, point),
     };
     prologue(t, params, m, &Commitment(data.tree.root()), point, value, ext0);
-
-    // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
-    let spec0 = cfg.rounds[0];
-    let mut ood0 = Vec::with_capacity(spec0.ood);
-    let mut ood_points = Vec::with_capacity(spec0.ood);
-    for _ in 0..spec0.ood {
-        let z = t.squeeze_fp3();
-        let y = data.univariate(z);
-        t.absorb_fp3(y);
-        ood0.push(y);
-        ood_points.push(z);
-    }
-    let gamma = t.squeeze_fp3();
-    let mut w = eq_table(point);
-    let mut g = gamma;
-    for &z in &ood_points {
-        add_scaled_eq(&mut w, &pow_point(z, m), g);
-        g *= gamma;
-    }
-    let (mut f, mut coeffs): (Vec<Fp3>, Coeffs) = match &data.message {
+    let (f, coeffs): (Vec<Fp3>, Coeffs) = match &data.message {
         Message::Base { evals, coeffs } => (
             evals.iter().map(|&x| Fp3::from_base(x)).collect(),
             Coeffs::Base(coeffs.clone()),
         ),
         Message::Ext { evals, coeffs } => (evals.clone(), Coeffs::Ext(coeffs.clone())),
     };
+    let spec0 = cfg.rounds[0];
+    let (proof, _) = prove_rounds(
+        params,
+        cfg,
+        t,
+        f,
+        coeffs,
+        eq_table(point),
+        &|z| data.univariate(z),
+        &|idx| open_leaves(&data.codeword, &data.tree, &spec0, idx),
+    );
+    (value, proof)
+}
+
+/// WHIR from step 2 of the transcript on: the round-0 word `f_0` given
+/// as its table `f`, its monomial coefficients and its initial weight
+/// table `w`; `univariate0` answers `f̂_0(ζ)`, `open0` opens leaves of
+/// `f_0`'s tree. The caller has absorbed the prologue and the claim.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prove_rounds(
+    params: &WhirParams,
+    cfg: &WhirConfig,
+    t: &mut Transcript,
+    mut f: Vec<Fp3>,
+    mut coeffs: Coeffs,
+    mut w: Vec<Fp3>,
+    univariate0: &(dyn Fn(Fp3) -> Fp3 + Sync),
+    open0: &(dyn Fn(&[usize]) -> Opening + Sync),
+) -> (WhirProof, Round0Coins) {
+    // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
+    let m = cfg.num_vars;
+    let spec0 = cfg.rounds[0];
+    let mut ood0 = Vec::with_capacity(spec0.ood);
+    let mut ood_points = Vec::with_capacity(spec0.ood);
+    for _ in 0..spec0.ood {
+        let z = t.squeeze_fp3();
+        let y = univariate0(z);
+        t.absorb_fp3(y);
+        ood0.push(y);
+        ood_points.push(z);
+    }
+    let gamma = t.squeeze_fp3();
+    let mut g = gamma;
+    for &z in &ood_points {
+        add_scaled_eq(&mut w, &pow_point(z, m), g);
+        g *= gamma;
+    }
+    let mut coins0 = Round0Coins { ood: ood_points.clone(), gamma, alphas: vec![], leaves: vec![] };
 
     let mut sumcheck0 = Vec::new();
     let mut fold_nonces0 = Vec::new();
@@ -169,11 +201,16 @@ pub fn open(
         &mut fold_nonces0,
         |a| coeffs.fold(a),
     );
+    coins0.alphas = alphas.clone();
 
-    // the previously committed function: (codeword, tree, spec)
+    // the previously committed function after f_0: (codeword, tree)
     let mut prev_owned: Option<(Symbols, Tree)> = None;
     let mut prev_spec: RoundSpec = spec0;
     let mut rounds = Vec::with_capacity(cfg.rounds.len() - 1);
+    let open_prev = |prev: &Option<(Symbols, Tree)>, spec: &RoundSpec, idx: &[usize]| match prev {
+        Some((cw, tree)) => open_leaves(cw, tree, spec, idx),
+        None => open0(idx),
+    };
 
     for spec in cfg.rounds.iter().skip(1).copied() {
         let c = coeffs.ext().to_vec();
@@ -194,10 +231,10 @@ pub fn open(
         let query_nonce: Vec<u64> = pow::grind(t, prev_spec.query_pow).into_iter().collect();
         let idx = prev_spec.sample(t);
         let gamma = t.squeeze_fp3();
-        let (prev_cw, prev_tree) = prev_owned
-            .as_ref()
-            .map_or((&data.codeword, &data.tree), |(c, t)| (c, t));
-        let opening = open_leaves(prev_cw, prev_tree, &prev_spec, &idx);
+        let opening = open_prev(&prev_owned, &prev_spec, &idx);
+        if prev_owned.is_none() {
+            coins0.leaves = idx.clone();
+        }
 
         let mut g = gamma;
         for &z in &zs {
@@ -206,15 +243,6 @@ pub fn open(
         }
         for &j in &idx {
             let r = Fp3::from_base(shift_point(&prev_spec, j));
-            debug_assert_eq!(
-                univariate_ext_at_base(&c, shift_point(&prev_spec, j)),
-                super::fold::fold_leaf(
-                    &prev_leaf(prev_cw, &prev_spec, j),
-                    &alphas[alphas.len() - prev_spec.fold..],
-                    prev_spec.log_domain,
-                    j
-                )
-            );
             add_scaled_eq(&mut w, &pow_point(r, spec.num_vars), g);
             g *= gamma;
         }
@@ -248,10 +276,10 @@ pub fn open(
     t.absorb_fp3_slice(&final_poly);
     let final_nonce: Vec<u64> = pow::grind(t, prev_spec.query_pow).into_iter().collect();
     let idx = prev_spec.sample(t);
-    let (prev_cw, prev_tree) = prev_owned
-        .as_ref()
-        .map_or((&data.codeword, &data.tree), |(c, t)| (c, t));
-    let final_opening = open_leaves(prev_cw, prev_tree, &prev_spec, &idx);
+    let final_opening = open_prev(&prev_owned, &prev_spec, &idx);
+    if prev_owned.is_none() {
+        coins0.leaves = idx;
+    }
 
     let proof = WhirProof {
         params: *params,
@@ -263,12 +291,15 @@ pub fn open(
         final_nonce,
         final_opening,
     };
-    (value, proof)
+    (proof, coins0)
 }
 
-/// Leaf `j` of a committed function lifted to Fp3 (debug cross-check).
-fn prev_leaf(cw: &Symbols, spec: &RoundSpec, j: usize) -> Vec<Fp3> {
-    let width = 1usize << spec.fold;
-    let leaves = 1usize << spec.log_leaves();
-    (0..width).map(|t| cw.get(j + t * leaves)).collect()
+/// Round 0's coins, for a caller's zero-knowledge check: the OOD points,
+/// `γ`, the folding challenges and the opened leaves of `f_0`.
+#[derive(Clone, Debug)]
+pub(crate) struct Round0Coins {
+    pub ood: Vec<Fp3>,
+    pub gamma: Fp3,
+    pub alphas: Vec<Fp3>,
+    pub leaves: Vec<usize>,
 }
