@@ -107,8 +107,8 @@ impl<'a> Reader<'a> {
     }
     pub fn digest(&mut self) -> R<Hash> {
         let s = self.take(32)?;
-        for limb in s.chunks_exact(8) {
-            if u64::from_le_bytes(limb.try_into().expect("8 bytes")) >= P {
+        for limb in s.as_chunks::<8>().0 {
+            if u64::from_le_bytes(*limb) >= P {
                 return Err(PcsError::Malformed);
             }
         }

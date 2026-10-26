@@ -23,9 +23,9 @@ mod prover;
 mod sumcheck;
 mod verifier;
 
+pub use access::{LeafLayout, verify_leaves};
 pub use config::{RoundSpec, WhirConfig};
 pub use proof::{Opening, WhirProof, WhirRoundProof};
-pub use access::{LeafLayout, verify_leaves};
 pub use prover::WhirData;
 
 #[cfg(test)]

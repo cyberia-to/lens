@@ -98,11 +98,11 @@ impl Transcript {
         let mut filled = 0;
         while filled < out.len() {
             let hash = self.squeeze();
-            for chunk in hash.as_bytes().chunks_exact(8) {
+            for chunk in hash.as_bytes().as_chunks::<8>().0 {
                 if filled == out.len() {
                     break;
                 }
-                let v = u64::from_le_bytes(chunk.try_into().expect("8-byte chunk"));
+                let v = u64::from_le_bytes(*chunk);
                 if v < P {
                     out[filled] = Goldilocks::new(v);
                     filled += 1;

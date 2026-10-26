@@ -37,7 +37,12 @@ pub fn coset_tree(cw: &Symbols, log_n: u32, fold: usize) -> Tree {
                 (&limbs, 3)
             }
         };
-        let job = crate::backend::ByteTree { symbols, limbs: per, width, leaves };
+        let job = crate::backend::ByteTree {
+            symbols,
+            limbs: per,
+            width,
+            leaves,
+        };
         if let Some(levels) = backend.byte_tree(&job) {
             return Tree::from_lanes(levels);
         }

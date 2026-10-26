@@ -151,7 +151,9 @@ impl CosetLeaves<'_> {
     }
     /// The coset shifts `ω^s`.
     pub fn shift(&self, s: usize) -> u64 {
-        crate::field::root_of_unity(self.log_n).exp(s as u64).as_u64()
+        crate::field::root_of_unity(self.log_n)
+            .exp(s as u64)
+            .as_u64()
     }
 }
 
@@ -160,7 +162,8 @@ impl CosetLeaves<'_> {
 /// `fold` replaces every column `v` by `v'_i = v_{2i} + α·(v_{2i+1} − v_{2i})`,
 /// `firsts` returns every column's entry 0.
 pub trait LineSession {
-    fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs>;
+    fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64])
+    -> Vec<crate::program::Limbs>;
     fn fold(&mut self, alpha: crate::program::Limbs);
     fn firsts(&mut self) -> Vec<crate::program::Limbs>;
     /// Every column at its current length, column-major (a caller taking
@@ -176,13 +179,24 @@ pub struct CpuSession<'a> {
 }
 
 impl<'a> CpuSession<'a> {
-    pub fn new(prog: &'a crate::program::Program, cols: &[crate::program::Limbs], len: usize) -> Self {
-        Self { prog, cols: cols.chunks_exact(len).map(<[_]>::to_vec).collect() }
+    pub fn new(
+        prog: &'a crate::program::Program,
+        cols: &[crate::program::Limbs],
+        len: usize,
+    ) -> Self {
+        Self {
+            prog,
+            cols: cols.chunks_exact(len).map(<[_]>::to_vec).collect(),
+        }
     }
 }
 
 impl LineSession for CpuSession<'_> {
-    fn sums(&mut self, weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+    fn sums(
+        &mut self,
+        weights: &[crate::program::Limbs],
+        xs: &[u64],
+    ) -> Vec<crate::program::Limbs> {
         let flat: Vec<crate::program::Limbs> = self.cols.iter().flatten().copied().collect();
         Cpu.line_sums(self.prog, &flat, weights, xs)
     }
@@ -250,13 +264,24 @@ pub trait Backend: Send + Sync {
     /// `a + x·(b − a)`, `a = cols[c][2i]`, `b = cols[c][2i + 1]`
     /// (`cols` column-major: `cols[c·len + r]`, `len = 2·weights.len()`).
     /// Pairs of weight zero contribute nothing.
-    fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+    fn line_sums(
+        &self,
+        prog: &crate::program::Program,
+        cols: &[crate::program::Limbs],
+        weights: &[crate::program::Limbs],
+        xs: &[u64],
+    ) -> Vec<crate::program::Limbs> {
         Cpu.line_sums(prog, cols, weights, xs)
     }
 
     /// A [`LineSession`] over `cols` (column-major, `len` rows each) on
     /// the backend's device, or `None` (the caller runs rounds itself).
-    fn line_session<'a>(&'a self, _prog: &'a crate::program::Program, _cols: &[crate::program::Limbs], _len: usize) -> Option<Box<dyn LineSession + 'a>> {
+    fn line_session<'a>(
+        &'a self,
+        _prog: &'a crate::program::Program,
+        _cols: &[crate::program::Limbs],
+        _len: usize,
+    ) -> Option<Box<dyn LineSession + 'a>> {
         None
     }
 
@@ -265,14 +290,23 @@ pub trait Backend: Send + Sync {
     /// `j`; a binary node permutes `(l ‖ r ‖ tag ‖ 0⁷)`, a 4-ary node the
     /// four children's sixteen lanes; a node's digest is lanes `0..4`.
     /// `None` where the backend does not run them.
-    fn merkle_levels(&self, _leaves: &[[u64; 4]], _arities: &[usize], _tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+    fn merkle_levels(
+        &self,
+        _leaves: &[[u64; 4]],
+        _arities: &[usize],
+        _tag: u64,
+    ) -> Option<Vec<Vec<[u64; 4]>>> {
         None
     }
 
     /// The leaf digests of cosets `cosets` of `job` (coset-major, then
     /// leaf), or `None` where the backend does not run them (the caller
     /// streams on the CPU then).
-    fn coset_leaves(&self, _job: &CosetLeaves<'_>, _cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves(
+        &self,
+        _job: &CosetLeaves<'_>,
+        _cosets: core::ops::Range<usize>,
+    ) -> Option<Vec<[u64; 4]>> {
         None
     }
 
@@ -282,7 +316,12 @@ pub trait Backend: Send + Sync {
     /// `u`; `values.len() = limbs · g · k`) — a held codeword committed in
     /// one pass. `None` where the backend does not run it (`values`
     /// untouched).
-    fn coset_leaves_kept(&self, _job: &CosetLeaves<'_>, _cosets: core::ops::Range<usize>, _values: &mut [u64]) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves_kept(
+        &self,
+        _job: &CosetLeaves<'_>,
+        _cosets: core::ops::Range<usize>,
+        _values: &mut [u64],
+    ) -> Option<Vec<[u64; 4]>> {
         None
     }
 
@@ -378,7 +417,9 @@ impl Backend for Cpu {
     }
 
     fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
-        assert!((1..=16).contains(&rate) && blocks >= 1 && lanes.len() % (rate * blocks) == 0);
+        assert!(
+            (1..=16).contains(&rate) && blocks >= 1 && lanes.len().is_multiple_of(rate * blocks)
+        );
         let items = lanes.len() / (rate * blocks);
         let per_item = rate * blocks;
         let run = |first: usize, out: &mut [[u64; 4]]| {
@@ -410,7 +451,13 @@ impl Backend for Cpu {
         out
     }
 
-    fn line_sums(&self, prog: &crate::program::Program, cols: &[crate::program::Limbs], weights: &[crate::program::Limbs], xs: &[u64]) -> Vec<crate::program::Limbs> {
+    fn line_sums(
+        &self,
+        prog: &crate::program::Program,
+        cols: &[crate::program::Limbs],
+        weights: &[crate::program::Limbs],
+        xs: &[u64],
+    ) -> Vec<crate::program::Limbs> {
         use crate::program::{from_fp3, to_fp3};
         let pairs = weights.len();
         let len = 2 * pairs;
@@ -441,8 +488,13 @@ impl Backend for Cpu {
         let t = crate::par::threads();
         let chunk = pairs.div_ceil(t).max(1);
         let parts: Vec<Vec<Fp3>> = std::thread::scope(|s| {
-            let hs: Vec<_> = (0..pairs).step_by(chunk).map(|lo| s.spawn(move || part(lo, (lo + chunk).min(pairs)))).collect();
-            hs.into_iter().map(|h| h.join().expect("line sums")).collect()
+            let hs: Vec<_> = (0..pairs)
+                .step_by(chunk)
+                .map(|lo| s.spawn(move || part(lo, (lo + chunk).min(pairs))))
+                .collect();
+            hs.into_iter()
+                .map(|h| h.join().expect("line sums"))
+                .collect()
         });
         let mut out = vec![Fp3::ZERO; xs.len()];
         for p in parts {
@@ -474,7 +526,11 @@ impl Backend for Cpu {
 }
 
 /// The definition of [`Backend::merkle_levels`] on the CPU.
-pub fn merkle_levels_reference(leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Vec<Vec<[u64; 4]>> {
+pub fn merkle_levels_reference(
+    leaves: &[[u64; 4]],
+    arities: &[usize],
+    tag: u64,
+) -> Vec<Vec<[u64; 4]>> {
     let mut out: Vec<Vec<[u64; 4]>> = Vec::new();
     let mut cur = leaves.to_vec();
     for &a in arities {
@@ -500,8 +556,16 @@ pub fn merkle_levels_reference(leaves: &[[u64; 4]], arities: &[usize], tag: u64)
 
 /// The definition of [`Backend::coset_leaves`] on the CPU (the reference
 /// the device backends are tested against).
-pub fn coset_leaves_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Vec<[u64; 4]> {
-    let (k, w, per, l) = (job.k(), 1usize << job.log_width, job.per(), job.limbs_per_member);
+pub fn coset_leaves_reference(
+    job: &CosetLeaves<'_>,
+    cosets: core::ops::Range<usize>,
+) -> Vec<[u64; 4]> {
+    let (k, w, per, l) = (
+        job.k(),
+        1usize << job.log_width,
+        job.per(),
+        job.limbs_per_member,
+    );
     let (spb, blocks) = job.blocks();
     let mut out = Vec::new();
     for s in cosets {
@@ -538,7 +602,11 @@ pub fn coset_values_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<us
     let (k, g) = (job.k(), cosets.len());
     let mut out = vec![0u64; job.limbs.len() * g * k];
     for (c, s) in cosets.enumerate() {
-        for (j, v) in Cpu.coset_ntt_one(&job.limbs, job.shift(s)).into_iter().enumerate() {
+        for (j, v) in Cpu
+            .coset_ntt_one(&job.limbs, job.shift(s))
+            .into_iter()
+            .enumerate()
+        {
             out[(j * g + c) * k..(j * g + c + 1) * k].copy_from_slice(&v);
         }
     }
@@ -548,7 +616,10 @@ pub fn coset_values_reference(job: &CosetLeaves<'_>, cosets: core::ops::Range<us
 impl Cpu {
     /// One coset of every limb vector.
     fn coset_ntt_one(&self, limbs: &[&[u64]], shift: u64) -> Vec<Vec<u64>> {
-        limbs.iter().map(|c| self.coset_ntt(c, &[shift]).pop().expect("one coset")).collect()
+        limbs
+            .iter()
+            .map(|c| self.coset_ntt(c, &[shift]).pop().expect("one coset"))
+            .collect()
     }
 }
 

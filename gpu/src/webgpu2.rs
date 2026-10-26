@@ -490,7 +490,16 @@ pub fn merkle_levels(
             let m = NODE_CHUNK.min(n - first);
             // one node a thread
             let (x, y, row) = grid(m);
-            let u = c.uniform(&[n as u32, a as u32, row, first as u32, t[0], t[1], m as u32, 0]);
+            let u = c.uniform(&[
+                n as u32,
+                a as u32,
+                row,
+                first as u32,
+                t[0],
+                t[1],
+                m as u32,
+                0,
+            ]);
             c.pass(
                 &mut enc,
                 &c.ext.level,
@@ -678,7 +687,11 @@ impl LineSession for Session<'_> {
             }
             let raw = c.submit_read(enc, &all, 0, bytes);
             raw.chunks_exact(24)
-                .map(|v| core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))))
+                .map(|v| {
+                    core::array::from_fn(|q| {
+                        u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))
+                    })
+                })
                 .collect()
         })
     }

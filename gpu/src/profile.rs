@@ -37,7 +37,10 @@ pub fn report() -> String {
     let mut g = TOTALS.lock().unwrap_or_else(|e| e.into_inner());
     let mut s = String::new();
     for (op, n, dt, items) in g.iter() {
-        s.push_str(&format!("  {op:14} {n:6} calls {:9.1} ms  {items} items\n", dt * 1e3));
+        s.push_str(&format!(
+            "  {op:14} {n:6} calls {:9.1} ms  {items} items\n",
+            dt * 1e3
+        ));
     }
     g.clear();
     s
@@ -89,32 +92,57 @@ impl Backend for Profile {
         add("sponge", t, (lanes.len() / rate) as u64);
         r
     }
-    fn line_sums(&self, prog: &Program, cols: &[Limbs], weights: &[Limbs], xs: &[u64]) -> Vec<Limbs> {
+    fn line_sums(
+        &self,
+        prog: &Program,
+        cols: &[Limbs],
+        weights: &[Limbs],
+        xs: &[u64],
+    ) -> Vec<Limbs> {
         let t = Instant::now();
         let r = self.0.line_sums(prog, cols, weights, xs);
         add("line_sums", t, (weights.len() * xs.len()) as u64);
         r
     }
-    fn line_session<'a>(&'a self, prog: &'a Program, cols: &[Limbs], len: usize) -> Option<Box<dyn LineSession + 'a>> {
+    fn line_session<'a>(
+        &'a self,
+        prog: &'a Program,
+        cols: &[Limbs],
+        len: usize,
+    ) -> Option<Box<dyn LineSession + 'a>> {
         let t = Instant::now();
         let s = self.0.line_session(prog, cols, len);
         add("line_session", t, cols.len() as u64);
         s.map(|s| Box::new(ProfSession(s)) as Box<dyn LineSession + 'a>)
     }
-    fn merkle_levels(&self, leaves: &[[u64; 4]], arities: &[usize], tag: u64) -> Option<Vec<Vec<[u64; 4]>>> {
+    fn merkle_levels(
+        &self,
+        leaves: &[[u64; 4]],
+        arities: &[usize],
+        tag: u64,
+    ) -> Option<Vec<Vec<[u64; 4]>>> {
         let t = Instant::now();
         let r = self.0.merkle_levels(leaves, arities, tag);
         add("merkle_levels", t, leaves.len() as u64);
         r
     }
-    fn coset_leaves(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves(
+        &self,
+        job: &CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+    ) -> Option<Vec<[u64; 4]>> {
         let t = Instant::now();
         let n = (cosets.len() * job.k() * job.limbs.len()) as u64;
         let r = self.0.coset_leaves(job, cosets);
         add("coset_leaves", t, n);
         r
     }
-    fn coset_leaves_kept(&self, job: &CosetLeaves<'_>, cosets: core::ops::Range<usize>, values: &mut [u64]) -> Option<Vec<[u64; 4]>> {
+    fn coset_leaves_kept(
+        &self,
+        job: &CosetLeaves<'_>,
+        cosets: core::ops::Range<usize>,
+        values: &mut [u64],
+    ) -> Option<Vec<[u64; 4]>> {
         let t = Instant::now();
         let n = (cosets.len() * job.k() * job.limbs.len()) as u64;
         let r = self.0.coset_leaves_kept(job, cosets, values);

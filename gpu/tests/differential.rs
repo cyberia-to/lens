@@ -117,7 +117,11 @@ fn edge_states_equal_hemera() {
     for (name, input, output) in HEMERA_PERMUTATION {
         let mut h = input.map(cyber_hemera::field::Goldilocks::new);
         cyber_hemera::permutation::permute(&mut h);
-        assert_eq!(h.map(|x| x.as_canonical_u64()), output, "hemera 0.4 vector {name}");
+        assert_eq!(
+            h.map(|x| x.as_canonical_u64()),
+            output,
+            "hemera 0.4 vector {name}"
+        );
         edges.push(input);
     }
     let want: Vec<State> = edges
@@ -130,11 +134,20 @@ fn edge_states_equal_hemera() {
         .collect();
     for s in backends() {
         for reps in [1usize, 4099] {
-            let input: Vec<State> = (0..reps * edges.len()).map(|k| edges[k % edges.len()]).collect();
+            let input: Vec<State> = (0..reps * edges.len())
+                .map(|k| edges[k % edges.len()])
+                .collect();
             let mut got = input.clone();
             s.backend.permute(&mut got);
             for (k, g) in got.iter().enumerate() {
-                assert_eq!(g, &want[k % edges.len()], "{} edge {} (copy {})", s.backend.name(), k % edges.len(), k / edges.len());
+                assert_eq!(
+                    g,
+                    &want[k % edges.len()],
+                    "{} edge {} (copy {})",
+                    s.backend.name(),
+                    k % edges.len(),
+                    k / edges.len()
+                );
             }
         }
     }
@@ -177,7 +190,12 @@ fn grinding_past_the_first_dispatch() {
             let t = hash40_template(&[seed.wrapping_mul(29).wrapping_add(7); 32]);
             let want = Cpu.grind(&t, Inject::hash40(), bits);
             for s in backends() {
-                assert_eq!(s.backend.grind(&t, Inject::hash40(), bits), want, "{} bits {bits} seed {seed} (nonce {want})", s.backend.name());
+                assert_eq!(
+                    s.backend.grind(&t, Inject::hash40(), bits),
+                    want,
+                    "{} bits {bits} seed {seed} (nonce {want})",
+                    s.backend.name()
+                );
             }
         }
     }
@@ -223,14 +241,21 @@ fn metal_states_per_thread_equal_cpu() {
         let job = mine_job(&msg, target);
         let base = 3 + ((k as u128) << 70);
         let got = m.mine(&job, base, 1 << 15).expect("mine");
-        assert_eq!(got, cyber_lens_gpu::mine::cpu(&job, base, 1 << 15), "k={k} mine");
+        assert_eq!(
+            got,
+            cyber_lens_gpu::mine::cpu(&job, base, 1 << 15),
+            "k={k} mine"
+        );
         let n = base + u128::from(got.expect("a nonce in 2^15 at 2^245"));
         msg[24..40].copy_from_slice(&n.to_le_bytes());
         let h = cyber_hemera::hash(&msg);
         let d: [u64; 4] = core::array::from_fn(|i| {
             u64::from_le_bytes(h.as_bytes()[8 * i..8 * i + 8].try_into().expect("8 bytes"))
         });
-        assert!(cyber_lens_gpu::mine::below(&d, &target), "k={k}: hemera::hash of the mined header");
+        assert!(
+            cyber_lens_gpu::mine::below(&d, &target),
+            "k={k}: hemera::hash of the mined header"
+        );
     }
 }
 
@@ -299,7 +324,13 @@ fn program_line_sums_equal_cpu() {
         // the Fp3 product's wide sums at their largest
         let edge = [P - 1, P - (1 << 32), 0, 1, P - 1, P - 1];
         let cols: Vec<[u64; 3]> = (0..inputs * 2 * pairs)
-            .map(|j| if j % 7 < 3 { [edge[j % 6], edge[(j + 1) % 6], edge[(j + 4) % 6]] } else { [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P] })
+            .map(|j| {
+                if j % 7 < 3 {
+                    [edge[j % 6], edge[(j + 1) % 6], edge[(j + 4) % 6]]
+                } else {
+                    [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P]
+                }
+            })
             .collect();
         let mut weights: Vec<[u64; 3]> = (0..pairs)
             .map(|_| [rng(&mut r) % P, rng(&mut r) % P, rng(&mut r) % P])
@@ -347,10 +378,23 @@ fn coset_leaves_equal_the_reference() {
                 let mut vals = vec![0u64; job.limbs.len() * range.len() * k];
                 match s.backend.coset_leaves_kept(&job, range.clone(), &mut vals) {
                     Some(got) => {
-                        assert_eq!(got, coset_leaves_reference(&job, range.clone()), "{} kept leaves {range:?}", s.backend.name());
-                        assert!(vals == coset_values_reference(&job, range.clone()), "{} kept values {range:?}", s.backend.name());
+                        assert_eq!(
+                            got,
+                            coset_leaves_reference(&job, range.clone()),
+                            "{} kept leaves {range:?}",
+                            s.backend.name()
+                        );
+                        assert!(
+                            vals == coset_values_reference(&job, range.clone()),
+                            "{} kept values {range:?}",
+                            s.backend.name()
+                        );
                     }
-                    None => assert!(!required(s.backend.name()), "{}: kept coset leaves declined", s.backend.name()),
+                    None => assert!(
+                        !required(s.backend.name()),
+                        "{}: kept coset leaves declined",
+                        s.backend.name()
+                    ),
                 }
                 match s.backend.coset_leaves(&job, range.clone()) {
                     Some(got) => assert_eq!(
@@ -424,7 +468,12 @@ fn line_sessions_equal_the_cpu_session() {
             dev.fold(alpha);
             cpu.fold(alpha);
             rows /= 2;
-            assert_eq!(dev.columns(), cpu.columns(), "{} columns at {rows} rows", s.backend.name());
+            assert_eq!(
+                dev.columns(),
+                cpu.columns(),
+                "{} columns at {rows} rows",
+                s.backend.name()
+            );
         }
         assert_eq!(dev.firsts(), cpu.firsts(), "{}", s.backend.name());
     }
@@ -594,7 +643,9 @@ fn a_zero_partial_sbox_input_in_every_batch_position() {
             }
         }
     }
-    let inv_external = |s: [G; 16]| -> [G; 16] { core::array::from_fn(|i| (0..16).fold(G::ZERO, |a, j| a + m[i][16 + j] * s[j])) };
+    let inv_external = |s: [G; 16]| -> [G; 16] {
+        core::array::from_fn(|i| (0..16).fold(G::ZERO, |a, j| a + m[i][16 + j] * s[j]))
+    };
     // 7⁻¹ mod p − 1
     let pm1 = (P - 1) as i128;
     let e7 = {
@@ -641,7 +692,12 @@ fn a_zero_partial_sbox_input_in_every_batch_position() {
             Cpu.permute(&mut want);
             let mut got = states;
             sb.backend.permute(&mut got);
-            assert_eq!(got, want, "{} zero at batch position {pos}", sb.backend.name());
+            assert_eq!(
+                got,
+                want,
+                "{} zero at batch position {pos}",
+                sb.backend.name()
+            );
         }
     }
 }
@@ -652,24 +708,43 @@ fn byte_trees_equal_the_cpu_tree() {
     use cyber_lens_rspcs::merkle::Tree;
     let mut r = 77u64;
     for s in backends() {
-        for (limbs, width, leaves) in [(1usize, 16usize, 1usize << 12), (3, 16, 1 << 12), (1, 32, 1 << 13), (3, 32, 1 << 12)] {
+        for (limbs, width, leaves) in [
+            (1usize, 16usize, 1usize << 12),
+            (3, 16, 1 << 12),
+            (1, 32, 1 << 13),
+            (3, 32, 1 << 12),
+        ] {
             // canonical limbs plus a few non-canonical representatives (v + p)
             let symbols: Vec<u64> = (0..limbs * width * leaves)
                 .map(|i| {
                     let v = rng(&mut r) % P;
-                    if i % 97 == 0 && v < u64::MAX - P { v + P } else { v }
+                    if i % 97 == 0 && v < u64::MAX - P {
+                        v + P
+                    } else {
+                        v
+                    }
                 })
                 .collect();
-            let job = ByteTree { symbols: &symbols, limbs, width, leaves };
+            let job = ByteTree {
+                symbols: &symbols,
+                limbs,
+                width,
+                leaves,
+            };
             let Some(levels) = s.backend.byte_tree(&job) else {
-                assert!(s.backend.name() != "metal" || !required("metal"), "metal: byte tree declined");
+                assert!(
+                    s.backend.name() != "metal" || !required("metal"),
+                    "metal: byte tree declined"
+                );
                 continue;
             };
             let want = Tree::build_on_cpu(leaves, |j| {
                 let mut b = Vec::with_capacity(width * limbs * 8);
                 for t in 0..width {
                     for l in 0..limbs {
-                        b.extend_from_slice(&(symbols[(j + t * leaves) * limbs + l] % P).to_le_bytes());
+                        b.extend_from_slice(
+                            &(symbols[(j + t * leaves) * limbs + l] % P).to_le_bytes(),
+                        );
                     }
                 }
                 b
@@ -679,7 +754,12 @@ fn byte_trees_equal_the_cpu_tree() {
             for i in 0..4 {
                 rb[8 * i..8 * i + 8].copy_from_slice(&root[i].to_le_bytes());
             }
-            assert_eq!(rb, *want.root().as_bytes(), "{} limbs {limbs} width {width}", s.backend.name());
+            assert_eq!(
+                rb,
+                *want.root().as_bytes(),
+                "{} limbs {limbs} width {width}",
+                s.backend.name()
+            );
         }
     }
 }
