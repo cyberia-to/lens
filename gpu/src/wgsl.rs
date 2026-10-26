@@ -3,14 +3,15 @@
 //! kernel binds at most two storage buffers (PowerVR drivers hang above
 //! four). Every stored value is canonical (`< p`), matching the CPU.
 //!
-//! Bindings: 0 = constants (storage, read: 144 round constants then the
-//! 16-lane diagonal), 1 = states (storage, read-write) or the grinding
+//! Bindings: 0 = constants (storage, read: hemera 0.4's 240 round
+//! constants — 192 external, then 48 internal — then the 16-lane
+//! diagonal at 240), 1 = states (storage, read-write) or the grinding
 //! result (storage, atomic), 2 = parameters (uniform).
 
 pub const SOURCE: &str = r#"
 const EPS: u32 = 0xFFFFFFFFu;
 
-@group(0) @binding(0) var<storage, read> K: array<vec2<u32>, 160>;
+@group(0) @binding(0) var<storage, read> K: array<vec2<u32>, 256>;
 
 fn ge64(a: vec2<u32>, b: vec2<u32>) -> bool {
     return a.y > b.y || (a.y == b.y && a.x >= b.x);
@@ -96,26 +97,6 @@ fn gmul(a: vec2<u32>, b: vec2<u32>) -> vec2<u32> {
     return canon(r);
 }
 
-fn gsqn(x: vec2<u32>, n: u32) -> vec2<u32> {
-    var y = x;
-    for (var i = 0u; i < n; i++) { y = gmul(y, y); }
-    return y;
-}
-
-// x^(p-2), 72 multiplications; 0 maps to 0
-fn ginv(x: vec2<u32>) -> vec2<u32> {
-    let t2 = gmul(gmul(x, x), x);
-    let t3 = gmul(gmul(t2, t2), x);
-    let t6 = gmul(gsqn(t3, 3u), t3);
-    let t12 = gmul(gsqn(t6, 6u), t6);
-    let t24 = gmul(gsqn(t12, 12u), t12);
-    let t30 = gmul(gsqn(t24, 6u), t6);
-    let t31 = gmul(gmul(t30, t30), x);
-    let u = gmul(t31, t31);
-    let c = gmul(u, x);
-    return gmul(gsqn(u, 32u), c);
-}
-
 fn pow7(x: vec2<u32>) -> vec2<u32> {
     let x2 = gmul(x, x);
     let x3 = gmul(x2, x);
@@ -127,15 +108,19 @@ fn mds_ext(s: ptr<function, array<vec2<u32>, 16>>) {
     for (var c = 0u; c < 4u; c++) {
         let o = 4u * c;
         let x0 = (*s)[o]; let x1 = (*s)[o + 1u]; let x2 = (*s)[o + 2u]; let x3 = (*s)[o + 3u];
-        let t01 = gadd(x0, x1);
-        let t23 = gadd(x2, x3);
-        let t0123 = gadd(t01, t23);
-        let t01123 = gadd(t0123, x1);
-        let t01233 = gadd(t0123, x3);
-        (*s)[o + 3u] = gadd(t01233, gadd(x0, x0));
-        (*s)[o + 1u] = gadd(t01123, gadd(x2, x2));
-        (*s)[o] = gadd(t01123, t01);
-        (*s)[o + 2u] = gadd(t01233, t23);
+        // the Poseidon2 reference block [[5,7,1,3],[4,6,1,1],[1,3,5,7],[1,1,4,6]]
+        let t0 = gadd(x0, x1);
+        let t1 = gadd(x2, x3);
+        let t2 = gadd(gadd(x1, x1), t1);
+        let t3 = gadd(gadd(x3, x3), t0);
+        let t1d = gadd(t1, t1);
+        let t0d = gadd(t0, t0);
+        let t4 = gadd(gadd(t1d, t1d), t3);
+        let t5 = gadd(gadd(t0d, t0d), t2);
+        (*s)[o] = gadd(t3, t5);
+        (*s)[o + 1u] = t5;
+        (*s)[o + 2u] = gadd(t2, t4);
+        (*s)[o + 3u] = t4;
     }
     for (var k = 0u; k < 4u; k++) {
         let sum = gadd(gadd((*s)[k], (*s)[4u + k]), gadd((*s)[8u + k], (*s)[12u + k]));
@@ -151,43 +136,20 @@ fn full_round(s: ptr<function, array<vec2<u32>, 16>>, r: u32) {
     mds_ext(s);
 }
 
-fn permute(s: ptr<function, array<vec2<u32>, 16>>) {
-    mds_ext(s);
-    for (var r = 0u; r < 4u; r++) { full_round(s, r); }
-    for (var r = 0u; r < 16u; r++) {
-        (*s)[0] = ginv(gadd((*s)[0], K[128u + r]));
-        var sum = (*s)[0];
-        for (var i = 1u; i < 16u; i++) { sum = gadd(sum, (*s)[i]); }
-        for (var i = 0u; i < 16u; i++) { (*s)[i] = gadd(gmul((*s)[i], K[144u + i]), sum); }
-    }
-    for (var r = 4u; r < 8u; r++) { full_round(s, r); }
+fn partial_round(s: ptr<function, array<vec2<u32>, 16>>, r: u32) {
+    (*s)[0] = pow7(gadd((*s)[0], K[192u + r]));
+    var sum = (*s)[0];
+    for (var i = 1u; i < 16u; i++) { sum = gadd(sum, (*s)[i]); }
+    for (var i = 0u; i < 16u; i++) { (*s)[i] = gadd(gmul((*s)[i], K[240u + i]), sum); }
 }
 
-// two states at once: each partial round inverts both S-box inputs with
-// one inversion (Montgomery's trick; a zero maps to zero)
-fn permute2(s: ptr<function, array<vec2<u32>, 16>>, t: ptr<function, array<vec2<u32>, 16>>) {
+// hemera 0.4: M_E, 6 full rounds, 48 partial rounds (x⁷ on lane 0,
+// M_I = 1 + diag(d)), 6 full rounds
+fn permute(s: ptr<function, array<vec2<u32>, 16>>) {
     mds_ext(s);
-    mds_ext(t);
-    for (var r = 0u; r < 4u; r++) { full_round(s, r); full_round(t, r); }
-    for (var r = 0u; r < 16u; r++) {
-        let a = gadd((*s)[0], K[128u + r]);
-        let b = gadd((*t)[0], K[128u + r]);
-        let za = a.x == 0u && a.y == 0u;
-        let zb = b.x == 0u && b.y == 0u;
-        let a1 = select(a, vec2<u32>(1u, 0u), za);
-        let b1 = select(b, vec2<u32>(1u, 0u), zb);
-        let inv = ginv(gmul(a1, b1));
-        (*s)[0] = select(gmul(inv, b1), vec2<u32>(0u, 0u), za);
-        (*t)[0] = select(gmul(inv, a1), vec2<u32>(0u, 0u), zb);
-        var su = (*s)[0];
-        var tu = (*t)[0];
-        for (var i = 1u; i < 16u; i++) { su = gadd(su, (*s)[i]); tu = gadd(tu, (*t)[i]); }
-        for (var i = 0u; i < 16u; i++) {
-            (*s)[i] = gadd(gmul((*s)[i], K[144u + i]), su);
-            (*t)[i] = gadd(gmul((*t)[i], K[144u + i]), tu);
-        }
-    }
-    for (var r = 4u; r < 8u; r++) { full_round(s, r); full_round(t, r); }
+    for (var r = 0u; r < 6u; r++) { full_round(s, r); }
+    for (var r = 0u; r < 48u; r++) { partial_round(s, r); }
+    for (var r = 6u; r < 12u; r++) { full_round(s, r); }
 }
 
 fn shl64(v: vec2<u32>, n: u32) -> vec2<u32> {
@@ -221,21 +183,16 @@ struct GrindParams {
 @group(0) @binding(1) var<storage, read_write> ST: array<vec2<u32>>;
 @group(0) @binding(2) var<uniform> PP: PermParams;
 
+// one state a thread (x⁷ shares nothing across states; one state a
+// thread measured faster than two interleaved, see audit/hemera-0.4)
 @compute @workgroup_size(64)
 fn hemera_permute(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two states a thread: gid and gid + half
     let gid = id.x + id.y * PP.row;
-    let half = (PP.n + 1u) / 2u;
-    if gid >= half { return; }
-    let j = min(gid + half, PP.n - 1u);
+    if gid >= PP.n { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
-    for (var i = 0u; i < 16u; i++) { s[i] = ST[16u * gid + i]; t[i] = ST[16u * j + i]; }
-    permute2(&s, &t);
+    for (var i = 0u; i < 16u; i++) { s[i] = ST[16u * gid + i]; }
+    permute(&s);
     for (var i = 0u; i < 16u; i++) { ST[16u * gid + i] = s[i]; }
-    if gid + half < PP.n {
-        for (var i = 0u; i < 16u; i++) { ST[16u * j + i] = t[i]; }
-    }
 }
 "#;
 
@@ -252,29 +209,21 @@ pub fn grind_source() -> String {
 
 @compute @workgroup_size(64)
 fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two nonces a thread: gid and gid + half
+    // one nonce a thread
     let gid = id.x + id.y * G.row;
-    let half = (G.count + 1u) / 2u;
-    if gid >= half { return; }
-    var st: array<array<vec2<u32>, 16>, 2>;
-    for (var k = 0u; k < 2u; k++) {
-        let n = add64(G.base, vec2<u32>(gid + k * half, 0u)).xy;
-        for (var i = 0u; i < 8u; i++) {
-            st[k][2u * i] = G.tpl[i].xy;
-            st[k][2u * i + 1u] = G.tpl[i].zw;
-        }
-        let lo = vec2<u32>(n.x & G.lo_mask.x, n.y & G.lo_mask.y);
-        st[k][G.lo] = gadd(st[k][G.lo], shl64(lo, G.lo_shift));
-        if G.hi_shift < 64u { st[k][G.hi] = gadd(st[k][G.hi], shr64(n, G.hi_shift)); }
+    if gid >= G.count { return; }
+    var s: array<vec2<u32>, 16>;
+    let n = add64(G.base, vec2<u32>(gid, 0u)).xy;
+    for (var i = 0u; i < 8u; i++) {
+        s[2u * i] = G.tpl[i].xy;
+        s[2u * i + 1u] = G.tpl[i].zw;
     }
-    var s = st[0];
-    var t = st[1];
-    permute2(&s, &t);
+    let lo = vec2<u32>(n.x & G.lo_mask.x, n.y & G.lo_mask.y);
+    s[G.lo] = gadd(s[G.lo], shl64(lo, G.lo_shift));
+    if G.hi_shift < 64u { s[G.hi] = gadd(s[G.hi], shr64(n, G.hi_shift)); }
+    permute(&s);
     if (s[0].x & G.mask.x) == 0u && (s[0].y & G.mask.y) == 0u {
         atomicMin(&FOUND, gid);
-    }
-    if gid + half < G.count && (t[0].x & G.mask.x) == 0u && (t[0].y & G.mask.y) == 0u {
-        atomicMin(&FOUND, gid + half);
     }
 }
 "#
@@ -282,7 +231,7 @@ fn hemera_grind(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 /// The header-mining module (`mine.rs`): the flat sponge over 168 bytes
-/// with the nonce at bytes 24..40, four permutations, two nonces a thread
+/// with the nonce at bytes 24..40, four permutations, one nonce a thread
 /// (bindings: 0 constants, 1 the found index (atomic), 2 parameters).
 pub fn mine_source() -> String {
     let field = &SOURCE[..SOURCE.find("struct PermParams").expect("marker")];
@@ -351,22 +300,17 @@ fn absorb(b: u32, s: ptr<function, array<vec2<u32>, 16>>) {
 
 @compute @workgroup_size(64)
 fn hemera_mine(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two nonces a thread: gid and gid + half
+    // one nonce a thread
     let gid = id.x + id.y * M.row;
-    let half = (M.count + 1u) / 2u;
-    if gid >= half { return; }
+    if gid >= M.count { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
     seed(gid, &s);
-    seed(gid + half, &t);
-    permute2(&s, &t);
+    permute(&s);
     for (var b = 1u; b < 4u; b++) {
         absorb(b, &s);
-        absorb(b, &t);
-        permute2(&s, &t);
+        permute(&s);
     }
     if below256(&s) { atomicMin(&FOUND, gid); }
-    if gid + half < M.count && below256(&t) { atomicMin(&FOUND, gid + half); }
 }
 "#
     )
@@ -394,29 +338,20 @@ struct SpongeParams {
 
 @compute @workgroup_size(64)
 fn hemera_sponge(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two items a thread: gid and gid + half
+    // one item a thread
     let gid = id.x + id.y * SP.row;
-    let half = (SP.items + 1u) / 2u;
-    if gid >= half { return; }
-    let j = min(gid + half, SP.items - 1u);
+    if gid >= SP.items { return; }
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
     for (var i = 0u; i < 8u; i++) {
         s[2u * i] = SP.init[i].xy;
         s[2u * i + 1u] = SP.init[i].zw;
-        t[2u * i] = SP.init[i].xy;
-        t[2u * i + 1u] = SP.init[i].zw;
     }
     let base = gid * SP.rate * SP.blocks;
-    let base2 = j * SP.rate * SP.blocks;
     for (var b = 0u; b < SP.blocks; b++) {
-        for (var i = 0u; i < SP.rate; i++) { s[i] = LANES[base + b * SP.rate + i]; t[i] = LANES[base2 + b * SP.rate + i]; }
-        permute2(&s, &t);
+        for (var i = 0u; i < SP.rate; i++) { s[i] = LANES[base + b * SP.rate + i]; }
+        permute(&s);
     }
     for (var i = 0u; i < 4u; i++) { OUT[4u * gid + i] = s[i]; }
-    if gid + half < SP.items {
-        for (var i = 0u; i < 4u; i++) { OUT[4u * j + i] = t[i]; }
-    }
 }
 "#
     )

@@ -40,6 +40,10 @@ webgpu = ["dep:wgpu", "dep:pollster"]
 name = "gpu_bench"
 
 [[example]]
+name = "hemera_bench"
+required-features = ["metal", "webgpu"]
+
+[[example]]
 name = "metal_cold"
 required-features = ["metal"]
 

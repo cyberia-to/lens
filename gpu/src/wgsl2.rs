@@ -261,24 +261,17 @@ struct MP { count: u32, arity: u32, row: u32, p0: u32, tag: vec2<u32>, p1: vec2<
 
 @compute @workgroup_size(64)
 fn merkle_level(@builtin(global_invocation_id) id: vec3<u32>) {
-    // two nodes a thread: local and local + half of this dispatch's p1.x
+    // one node a thread: node p0 + local, local < p1.x (this dispatch)
     let local = id.x + id.y * M.row;
-    let half = (M.p1.x + 1u) / 2u;
-    if local >= half { return; }
+    if local >= M.p1.x { return; }
     let g0 = M.p0 + local;
     if g0 >= M.count { return; }
-    let second = local + half < M.p1.x && g0 + half < M.count;
-    let g1 = select(g0, g0 + half, second);
     var s: array<vec2<u32>, 16>;
-    var t: array<vec2<u32>, 16>;
-    for (var i = 0u; i < 16u; i++) { s[i] = vec2<u32>(0u, 0u); t[i] = vec2<u32>(0u, 0u); }
-    for (var i = 0u; i < 4u * M.arity; i++) { s[i] = SRC[4u * M.arity * g0 + i]; t[i] = SRC[4u * M.arity * g1 + i]; }
-    if M.arity == 2u { s[8] = M.tag; t[8] = M.tag; }
-    permute2(&s, &t);
+    for (var i = 0u; i < 16u; i++) { s[i] = vec2<u32>(0u, 0u); }
+    for (var i = 0u; i < 4u * M.arity; i++) { s[i] = SRC[4u * M.arity * g0 + i]; }
+    if M.arity == 2u { s[8] = M.tag; }
+    permute(&s);
     for (var i = 0u; i < 4u; i++) { DST[4u * g0 + i] = s[i]; }
-    if second {
-        for (var i = 0u; i < 4u; i++) { DST[4u * g1 + i] = t[i]; }
-    }
 }
 "#,
     )
