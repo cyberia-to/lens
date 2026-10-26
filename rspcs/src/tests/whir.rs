@@ -129,6 +129,8 @@ fn security_meets_target_at_every_size() {
 }
 
 /// Commit to f, run the prover for g on f's codeword and tree.
+/// The prover's own round self-check would refuse the forged witness in debug builds, so the
+/// forgery is built with it off; the verifier is what is under test.
 #[test]
 fn cheating_prover_commit_f_open_g_rejected() {
     for (m, p) in [
@@ -155,7 +157,13 @@ fn cheating_prover_commit_f_open_g_rejected() {
             codeword: df.codeword,
             tree: df.tree,
         };
-        let (v, proof) = Whir::open(&p, &forged, &z, &mut Transcript::new(DOMAIN));
+        let (v, proof) = crate::whir::open_unchecked_for_tests(
+            &p,
+            &forged,
+            &z,
+            &mut Transcript::new(DOMAIN),
+            false,
+        );
         assert_ne!(v, crate::field::ml_eval_base(&f, &z));
         assert!(check::<Whir>(&p, &cf, m, &z, v, &proof).is_err(), "m={m}");
     }

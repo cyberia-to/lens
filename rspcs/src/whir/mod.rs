@@ -31,6 +31,8 @@ pub use prover::WhirData;
 #[cfg(test)]
 pub(crate) use fold::fold_leaf as fold_leaf_for_tests;
 #[cfg(test)]
+pub(crate) use prover::open_with as open_unchecked_for_tests;
+#[cfg(test)]
 pub(crate) fn prover_message_base(
     evals: Vec<nebu::Goldilocks>,
     coeffs: Vec<nebu::Goldilocks>,
