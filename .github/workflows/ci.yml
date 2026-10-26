@@ -90,6 +90,35 @@ jobs:
         run: cargo test --locked
         working-directory: lens
 
+  heavy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lens
+      - name: cargo test (ignored heavy cases, release)
+        run: cargo test --locked --release -p cyber-lens-rspcs -- --ignored
+        working-directory: lens
+
   clippy:
     runs-on: ubuntu-latest
     steps:
