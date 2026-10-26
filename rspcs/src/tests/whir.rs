@@ -53,6 +53,7 @@ fn completeness_unique_decoding() {
 }
 
 #[test]
+#[ignore = "heavy: completeness at 2^16..2^20; run by CI job `heavy` (cargo test --release -- --ignored)"]
 fn completeness_16_18_20() {
     for m in [16, 18, 20] {
         completeness::<Whir>(&params(4, 4), m, m as u64);

@@ -37,6 +37,7 @@ fn completeness_fixed_shapes() {
 }
 
 #[test]
+#[ignore = "heavy: completeness at 2^16..2^20; run by CI job `heavy` (cargo test --release -- --ignored)"]
 fn completeness_16_18_20() {
     for m in [16, 18, 20] {
         completeness::<TensorRs>(&params(2), m, m as u64);
