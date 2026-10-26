@@ -14,11 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        hemera: ['0.4', '0.3']
+        hemera: ['0.4']
         profile: [debug, release]
         include:
           - hemera: '0.4'
-            lens_ref: a49571b63d41389246d3cb82b1a31db88f44ffeb
+            lens_ref: 61cc1ba4b227527859aa09d9cbaac8cf55fc114d
             hemera_ref: release/0.4
             locked: --locked
           - hemera: '0.3'
@@ -54,3 +54,7 @@ jobs:
         run: >
           cargo test ${{ matrix.locked }} ${{ matrix.release }} -p cyber-lens-rspcs --lib
           tests::tensor::cheating_prover_commit_f_open_g_rejected -- --exact --nocapture
+      - name: all of rspcs, release (regression check of the open/open_with split)
+        if: always() && matrix.profile == 'release'
+        working-directory: lens
+        run: cargo test ${{ matrix.locked }} --release -p cyber-lens-rspcs
