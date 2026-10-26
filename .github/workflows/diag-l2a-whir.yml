@@ -1,0 +1,56 @@
+# Diagnostic for soft3 plan row L2a (never merged): run only the WHIR
+# cheating-prover test, under hemera 0.4 (the sync branch, locked) and
+# hemera 0.3 (the 0.2 line before the sync), in debug and release,
+# to read the panic and tell a hemera-dependent failure from a standing one.
+name: diag-l2a-whir
+
+on:
+  push:
+    branches: ['diag/l2a-whir']
+
+jobs:
+  whir-cheating:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hemera: ['0.4', '0.3']
+        profile: [debug, release]
+        include:
+          - hemera: '0.4'
+            lens_ref: a49571b
+            hemera_ref: release/0.4
+            locked: --locked
+          - hemera: '0.3'
+            lens_ref: b1040c2
+            hemera_ref: main
+            locked: ''
+          - profile: release
+            release: --release
+    env:
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: lens, ref: '${{ matrix.lens_ref }}' }
+      - uses: actions/checkout@v4
+        with: { repository: cyberia-to/strata, path: strata }
+      - uses: actions/checkout@v4
+        with: { repository: cyberia-to/hemera, path: hemera, ref: '${{ matrix.hemera_ref }}' }
+      - uses: actions/checkout@v4
+        with: { repository: cyberia-to/honeycrisp, path: honeycrisp }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: revisions
+        run: |
+          git -C lens rev-parse HEAD; git -C hemera rev-parse HEAD
+          grep -m1 '^version' hemera/rs/Cargo.toml
+      - name: the test, all three cases
+        working-directory: lens
+        run: >
+          cargo test ${{ matrix.locked }} ${{ matrix.release }} -p cyber-lens-rspcs --lib
+          tests::whir::cheating_prover_commit_f_open_g_rejected -- --exact --nocapture
+      - name: the tensor twin (passes in the rehearsal), as a control
+        if: always()
+        working-directory: lens
+        run: >
+          cargo test ${{ matrix.locked }} ${{ matrix.release }} -p cyber-lens-rspcs --lib
+          tests::tensor::cheating_prover_commit_f_open_g_rejected -- --exact --nocapture
