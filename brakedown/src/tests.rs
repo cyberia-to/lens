@@ -304,12 +304,14 @@ fn single_point_batches_work_and_other_batches_fail_closed() {
             &proof,
             &mut Transcript::new(b"batch")
         ));
-        assert!(std::panic::catch_unwind(|| Brakedown::batch_open(
-            &poly,
-            &points,
-            &mut Transcript::new(b"batch")
-        ))
-        .is_err());
+        assert!(
+            std::panic::catch_unwind(|| Brakedown::batch_open(
+                &poly,
+                &points,
+                &mut Transcript::new(b"batch")
+            ))
+            .is_err()
+        );
     }
 }
 

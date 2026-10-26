@@ -63,7 +63,15 @@ pub fn commit(params: &WhirParams, evals: &[Goldilocks]) -> (Commitment, WhirDat
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (
+        root,
+        WhirData {
+            config,
+            message,
+            codeword,
+            tree,
+        },
+    )
 }
 
 /// Commit an Fp3-valued table: the code is `RS[K, L, 2^m]` with the same
@@ -86,7 +94,15 @@ pub fn commit_ext(params: &WhirParams, evals: &[Fp3]) -> (Commitment, WhirData) 
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (
+        root,
+        WhirData {
+            config,
+            message,
+            codeword,
+            tree,
+        },
+    )
 }
 
 /// Monomial coefficients of the current folded polynomial.
@@ -143,7 +159,15 @@ pub(crate) fn open_with(
         Message::Base { evals, .. } => ml_eval_base(evals, point),
         Message::Ext { evals, .. } => ml_eval_ext(evals, point),
     };
-    prologue(t, params, m, &Commitment(data.tree.root()), point, value, ext0);
+    prologue(
+        t,
+        params,
+        m,
+        &Commitment(data.tree.root()),
+        point,
+        value,
+        ext0,
+    );
 
     // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
     let spec0 = cfg.rounds[0];

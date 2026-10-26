@@ -58,7 +58,10 @@ pub fn terms(c: &WhirConfig, inputs: usize, claims: usize, comb_pow: u32) -> Vec
     }
     if inputs > 1 {
         out.push(("batch sumcheck".into(), k - list - 1.0));
-        out.push(("batch combine".into(), -comb_log_err(c, inputs) + f64::from(comb_pow)));
+        out.push((
+            "batch combine".into(),
+            -comb_log_err(c, inputs) + f64::from(comb_pow),
+        ));
     }
     out
 }
@@ -70,7 +73,11 @@ mod tests {
 
     #[test]
     fn a_batch_reaches_the_target_with_its_grinding() {
-        let p = WhirParams { log_inv_rate: 4, pow_bits: 24, ..WhirParams::default() };
+        let p = WhirParams {
+            log_inv_rate: 4,
+            pow_bits: 24,
+            ..WhirParams::default()
+        };
         let c = WhirConfig::derive(&p, 20).unwrap();
         assert!(terms(&c, 1, 1, 0).is_empty());
         assert_eq!(terms(&c, 1, 5, 0).len(), 1, "one word: the claims' γ only");

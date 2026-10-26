@@ -4,8 +4,8 @@
 //! the table size; there is no code-distance or sampling soundness assumption.
 //! This backend is not zero knowledge. See specs/public-tensor.md.
 
-use crate::{matrix, merkle::ColumnTree, tensor::evaluate_small};
 use crate::{Commitment, Lens, MultilinearPoly, Opening, Transcript};
+use crate::{matrix, merkle::ColumnTree, tensor::evaluate_small};
 use cyber_lens_core::ColumnQuery;
 use nebu::Goldilocks;
 

@@ -110,7 +110,10 @@ fn leaves_authenticate_symbols_and_univariate_matches_codeword() {
         assert!(verify_leaves(&root.0, &layout, ext, &leaves, &forged).is_err());
         assert!(verify_leaves(&root.0, &layout, !ext, &leaves, &opening).is_err());
         let wire = opening.to_bytes();
-        assert_eq!(crate::whir::Opening::from_bytes(&wire, ext).unwrap(), opening);
+        assert_eq!(
+            crate::whir::Opening::from_bytes(&wire, ext).unwrap(),
+            opening
+        );
     }
 }
 
