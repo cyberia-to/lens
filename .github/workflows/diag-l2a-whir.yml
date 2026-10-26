@@ -18,11 +18,11 @@ jobs:
         profile: [debug, release]
         include:
           - hemera: '0.4'
-            lens_ref: a49571b
+            lens_ref: a49571b63d41389246d3cb82b1a31db88f44ffeb
             hemera_ref: release/0.4
             locked: --locked
           - hemera: '0.3'
-            lens_ref: b1040c2
+            lens_ref: b1040c286912d6882f618a0490a09788cd30a542
             hemera_ref: main
             locked: ''
           - profile: release
