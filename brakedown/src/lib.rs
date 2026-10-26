@@ -299,9 +299,11 @@ fn deserialize_goldilocks(bytes: &[u8], elements: usize) -> Option<Vec<Goldilock
         return None;
     }
     bytes
-        .chunks_exact(8)
+        .as_chunks::<8>()
+        .0
+        .iter()
         .map(|chunk| {
-            let value = u64::from_le_bytes(chunk.try_into().ok()?);
+            let value = u64::from_le_bytes(*chunk);
             (value < nebu::field::P).then(|| Goldilocks::new(value))
         })
         .collect()

@@ -281,8 +281,16 @@ impl WhirConfig {
         self.rounds
             .iter()
             .map(|r| {
-                let fold = if r.fold_pow > 0 { r.fold as f64 * f64::from(r.fold_pow).exp2() } else { 0.0 };
-                let query = if r.query_pow > 0 { f64::from(r.query_pow).exp2() } else { 0.0 };
+                let fold = if r.fold_pow > 0 {
+                    r.fold as f64 * f64::from(r.fold_pow).exp2()
+                } else {
+                    0.0
+                };
+                let query = if r.query_pow > 0 {
+                    f64::from(r.query_pow).exp2()
+                } else {
+                    0.0
+                };
                 fold + query
             })
             .sum()

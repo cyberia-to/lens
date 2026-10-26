@@ -60,10 +60,12 @@ impl Porphyry {
 
     fn deserialize(bytes: &[u8]) -> Vec<Fq> {
         bytes
-            .chunks_exact(64)
+            .as_chunks::<64>()
+            .0
+            .iter()
             .map(|chunk| {
                 let mut limbs = [0u64; 8];
-                for (i, word) in chunk.chunks_exact(8).enumerate() {
+                for (i, word) in chunk.as_chunks::<8>().0.iter().enumerate() {
                     let mut buf = [0u8; 8];
                     buf.copy_from_slice(word);
                     limbs[i] = u64::from_le_bytes(buf);

@@ -199,7 +199,9 @@ pub fn coeff_ml_eval(coeffs: &[Fp3], point: &[Fp3]) -> Fp3 {
 /// Fold the first variable of a base-field coefficient table:
 /// `c'_i = c_{2i} + α · c_{2i+1}`.
 pub fn fold_coeffs_base(c: &[Goldilocks], alpha: Fp3) -> Vec<Fp3> {
-    c.chunks_exact(2)
+    c.as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| Fp3::from_base(p[0]) + mul_base(alpha, p[1]))
         .collect()
 }
@@ -262,13 +264,19 @@ pub fn univariate_ext(coeffs: &[Fp3], z: Fp3) -> Fp3 {
 
 /// `Σ c_i z^i` for base coefficients at an Fp3 point.
 pub fn univariate_base(coeffs: &[Goldilocks], z: Fp3) -> Fp3 {
-    let horner = |cs: &[Goldilocks]| cs.iter().rev().fold(Fp3::ZERO, |acc, &c| acc * z + Fp3::from_base(c));
+    let horner = |cs: &[Goldilocks]| {
+        cs.iter()
+            .rev()
+            .fold(Fp3::ZERO, |acc, &c| acc * z + Fp3::from_base(c))
+    };
     if coeffs.len() < 1 << 15 || crate::par::threads() == 1 {
         return horner(coeffs);
     }
     // Σ_k z^{k·C} · horner(chunk k)
     let chunk = coeffs.len().div_ceil(crate::par::threads());
-    let parts = crate::par::par_map_min(coeffs.len().div_ceil(chunk), 2, |k| horner(&coeffs[k * chunk..((k + 1) * chunk).min(coeffs.len())]));
+    let parts = crate::par::par_map_min(coeffs.len().div_ceil(chunk), 2, |k| {
+        horner(&coeffs[k * chunk..((k + 1) * chunk).min(coeffs.len())])
+    });
     let mut step = Fp3::ONE;
     let (mut b, mut e) = (z, chunk);
     while e > 0 {
@@ -369,7 +377,10 @@ mod par_tests {
         let horner = coeffs.iter().rev().fold(Fp3::ZERO, |a, &c| a * z + c);
         assert_eq!(univariate_ext(&coeffs, z), horner);
         let bc: Vec<Goldilocks> = coeffs.iter().map(|c| c.c0).collect();
-        let hb = bc.iter().rev().fold(Fp3::ZERO, |a, &c| a * z + Fp3::from_base(c));
+        let hb = bc
+            .iter()
+            .rev()
+            .fold(Fp3::ZERO, |a, &c| a * z + Fp3::from_base(c));
         assert_eq!(univariate_base(&bc, z), hb);
 
         let table: Vec<Fp3> = (0..1u64 << 16).map(fp3).collect();

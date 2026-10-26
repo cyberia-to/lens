@@ -14,9 +14,9 @@
 //! consumes the list exactly; a short, long or reordered list fails.
 
 use cyber_hemera::Hash;
-use cyber_hemera::tree::{hash_leaf, hash_leaf_batch, hash_node_batch};
 #[cfg(test)]
 use cyber_hemera::tree::hash_node;
+use cyber_hemera::tree::{hash_leaf, hash_leaf_batch, hash_node_batch};
 use cyber_lens_core::PcsError;
 
 use crate::par::{par_map, par_map_min};
@@ -42,7 +42,11 @@ impl Tree {
         Self::build_with(count, leaf, false)
     }
 
-    fn build_with(count: usize, leaf: impl Fn(usize) -> Vec<u8> + Sync, allow_device: bool) -> Self {
+    fn build_with(
+        count: usize,
+        leaf: impl Fn(usize) -> Vec<u8> + Sync,
+        allow_device: bool,
+    ) -> Self {
         assert!(count.is_power_of_two(), "leaf count must be a power of two");
         let single = count == 1;
         let backend = crate::backend::current();
@@ -219,16 +223,28 @@ fn absorb7(state: &mut [u64; 16], bytes: &[u8]) {
         buf[..chunk.len()].copy_from_slice(chunk);
         // both summands are below p; one conditional subtraction reduces
         let (sum, carry) = lane.overflowing_add(u64::from_le_bytes(buf));
-        *lane = if carry || sum >= P { sum.wrapping_sub(P) } else { sum };
+        *lane = if carry || sum >= P {
+            sum.wrapping_sub(P)
+        } else {
+            sum
+        };
     }
 }
 
-fn leaf_digests_cpu(count: usize, leaf: &(impl Fn(usize) -> Vec<u8> + Sync), single: bool) -> Vec<Hash> {
+fn leaf_digests_cpu(
+    count: usize,
+    leaf: &(impl Fn(usize) -> Vec<u8> + Sync),
+    single: bool,
+) -> Vec<Hash> {
     let groups = par_map_min(count.div_ceil(CPU_GROUP), 2, |g| {
         let lo = g * CPU_GROUP;
         let hi = (lo + CPU_GROUP).min(count);
         let bytes: Vec<Vec<u8>> = (lo..hi).map(leaf).collect();
-        let items: Vec<(&[u8], u64)> = bytes.iter().zip(lo..hi).map(|(b, i)| (b.as_slice(), i as u64)).collect();
+        let items: Vec<(&[u8], u64)> = bytes
+            .iter()
+            .zip(lo..hi)
+            .map(|(b, i)| (b.as_slice(), i as u64))
+            .collect();
         let mut out = vec![Hash::from_bytes([0; 32]); items.len()];
         hash_leaf_batch(&items, single, &mut out);
         out
@@ -266,8 +282,11 @@ fn leaf_digests_device(
         let bytes: Vec<Vec<u8>> = par_map(hi - lo, |k| leaf(lo + k));
         let len = bytes[0].len();
         if bytes.iter().any(|b| b.len() != len) {
-            let items: Vec<(&[u8], u64)> =
-                bytes.iter().zip(lo..hi).map(|(b, i)| (b.as_slice(), i as u64)).collect();
+            let items: Vec<(&[u8], u64)> = bytes
+                .iter()
+                .zip(lo..hi)
+                .map(|(b, i)| (b.as_slice(), i as u64))
+                .collect();
             out.extend(items.iter().map(|&(b, i)| hash_leaf(b, i, single)));
             lo = hi;
             continue;
@@ -275,7 +294,9 @@ fn leaf_digests_device(
         let full = len / RATE_BYTES;
         let mut states = vec![[0u64; 16]; hi - lo];
         for b in 0..full {
-            par_fill(&mut states, |k, st| absorb7(st, &bytes[k][b * RATE_BYTES..(b + 1) * RATE_BYTES]));
+            par_fill(&mut states, |k, st| {
+                absorb7(st, &bytes[k][b * RATE_BYTES..(b + 1) * RATE_BYTES])
+            });
             backend.permute(&mut states);
         }
         par_fill(&mut states, |k, st| {
@@ -326,7 +347,11 @@ fn par_fill<T: Send>(v: &mut [T], f: impl Fn(usize, &mut T) + Sync) {
     let f = &f;
     std::thread::scope(|s| {
         for (c, part) in v.chunks_mut(chunk).enumerate() {
-            s.spawn(move || part.iter_mut().enumerate().for_each(|(i, x)| f(c * chunk + i, x)));
+            s.spawn(move || {
+                part.iter_mut()
+                    .enumerate()
+                    .for_each(|(i, x)| f(c * chunk + i, x))
+            });
         }
     });
 }
@@ -348,7 +373,9 @@ mod device_tests {
     }
 
     fn bytes(i: usize, len: usize) -> Vec<u8> {
-        (0..len).map(|k| (i * 131 + k * 7 + (k >> 3)) as u8 ^ 0xa5).collect()
+        (0..len)
+            .map(|k| (i * 131 + k * 7 + (k >> 3)) as u8 ^ 0xa5)
+            .collect()
     }
 
     #[test]
@@ -357,7 +384,9 @@ mod device_tests {
             for count in [1usize, 2, 64] {
                 let leaf = |i: usize| bytes(i, len);
                 let got = leaf_digests_device(&Renamed, count, &leaf, count == 1);
-                let want: Vec<Hash> = (0..count).map(|i| hash_leaf(&leaf(i), i as u64, count == 1)).collect();
+                let want: Vec<Hash> = (0..count)
+                    .map(|i| hash_leaf(&leaf(i), i as u64, count == 1))
+                    .collect();
                 assert_eq!(got, want, "len {len} count {count}");
             }
         }
@@ -365,9 +394,13 @@ mod device_tests {
 
     #[test]
     fn device_and_cpu_nodes_are_hemera_nodes() {
-        let leaves: Vec<Hash> = (0..64).map(|i| hash_leaf(&bytes(i, 40), i as u64, false)).collect();
+        let leaves: Vec<Hash> = (0..64)
+            .map(|i| hash_leaf(&bytes(i, 40), i as u64, false))
+            .collect();
         for root in [false, true] {
-            let want: Vec<Hash> = (0..32).map(|i| hash_node(&leaves[2 * i], &leaves[2 * i + 1], root)).collect();
+            let want: Vec<Hash> = (0..32)
+                .map(|i| hash_node(&leaves[2 * i], &leaves[2 * i + 1], root))
+                .collect();
             assert_eq!(nodes_device(&Renamed, &leaves, root), want);
             assert_eq!(nodes_cpu(&leaves, root), want);
         }
@@ -377,14 +410,18 @@ mod device_tests {
     fn batched_cpu_leaves_equal_single_leaves() {
         let leaf = |i: usize| bytes(i, 128);
         let n = 3 * CPU_GROUP + 16;
-        let want: Vec<Hash> = (0..n).map(|i| hash_leaf(&leaf(i), i as u64, false)).collect();
+        let want: Vec<Hash> = (0..n)
+            .map(|i| hash_leaf(&leaf(i), i as u64, false))
+            .collect();
         assert_eq!(leaf_digests_cpu(n, &leaf, false), want);
     }
 
     #[test]
     fn unequal_leaves_fall_back_to_single_hashing() {
         let leaf = |i: usize| bytes(i, 10 + i % 3);
-        let want: Vec<Hash> = (0..8).map(|i| hash_leaf(&leaf(i), i as u64, false)).collect();
+        let want: Vec<Hash> = (0..8)
+            .map(|i| hash_leaf(&leaf(i), i as u64, false))
+            .collect();
         assert_eq!(leaf_digests_device(&Renamed, 8, &leaf, false), want);
     }
 }

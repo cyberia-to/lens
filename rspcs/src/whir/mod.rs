@@ -23,13 +23,15 @@ mod prover;
 mod sumcheck;
 mod verifier;
 
+pub use access::{LeafLayout, verify_leaves};
 pub use config::{RoundSpec, WhirConfig};
 pub use proof::{Opening, WhirProof, WhirRoundProof};
-pub use access::{LeafLayout, verify_leaves};
 pub use prover::WhirData;
 
 #[cfg(test)]
 pub(crate) use fold::fold_leaf as fold_leaf_for_tests;
+#[cfg(test)]
+pub(crate) use prover::open_with as open_unchecked_for_tests;
 #[cfg(test)]
 pub(crate) fn prover_message_base(
     evals: Vec<nebu::Goldilocks>,

@@ -31,8 +31,10 @@ use nebu::Fp3;
 
 /// Fewer states than this run on the CPU backend.
 pub const MIN_BATCH: usize = 1 << 12;
-/// States per GPU thread by default (measured: `examples/gpu_bench`).
-pub const PER_THREAD: usize = 4;
+/// States per GPU thread by default. Hemera 0.4 has no shared work across
+/// states (x⁷, no batched inversion), and one state a thread measured
+/// fastest (`examples/hemera_bench`, `audit/hemera-0.4-2026-10.md`).
+pub const PER_THREAD: usize = 1;
 /// The largest grinding dispatch, in nonces (the first tries 2^bits).
 const GRIND_DISPATCH: u64 = 1 << 22;
 
@@ -390,8 +392,8 @@ impl Metal {
         Self::with_options(Options::from_env())
     }
 
-    /// As [`Self::new`] with `k` states per GPU thread (`k ≥ 1`; their
-    /// partial-round inversions are shared).
+    /// As [`Self::new`] with `k` states per GPU thread (`k ≥ 1`;
+    /// independent states interleaved round by round).
     pub fn with_states_per_thread(k: usize) -> Result<Self, String> {
         Self::with_options(Options {
             per_thread: k,

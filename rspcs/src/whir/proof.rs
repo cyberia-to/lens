@@ -114,7 +114,10 @@ impl WhirProof {
     /// Whether the openings of `f_0` carry Fp3 symbols (a proof of an Fp3
     /// commitment).
     pub fn opens_ext0(&self) -> bool {
-        let first = self.rounds.first().map_or(&self.final_opening, |r| &r.opening);
+        let first = self
+            .rounds
+            .first()
+            .map_or(&self.final_opening, |r| &r.opening);
         matches!(first.symbols, Symbols::Ext(_))
     }
 

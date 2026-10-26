@@ -55,7 +55,11 @@ pub struct Program {
 }
 
 pub fn to_fp3(x: Limbs) -> Fp3 {
-    Fp3::new(Goldilocks::new(x[0]), Goldilocks::new(x[1]), Goldilocks::new(x[2]))
+    Fp3::new(
+        Goldilocks::new(x[0]),
+        Goldilocks::new(x[1]),
+        Goldilocks::new(x[2]),
+    )
 }
 pub fn from_fp3(x: Fp3) -> Limbs {
     [x.c0.as_u64(), x.c1.as_u64(), x.c2.as_u64()]
@@ -67,7 +71,12 @@ impl Program {
     /// `OP_MULB`, `b` indexes `consts`). `output` is a slot. Ops are
     /// re-ordered depth-first from the output (operands just before their
     /// use) and registers reused after each value's last use.
-    pub fn from_slots(ops: &[(u8, u32, u32)], consts: Vec<Limbs>, inputs: usize, output: u32) -> Self {
+    pub fn from_slots(
+        ops: &[(u8, u32, u32)],
+        consts: Vec<Limbs>,
+        inputs: usize,
+        output: u32,
+    ) -> Self {
         let base = inputs + consts.len();
         let node = |s: u32| (s as usize).checked_sub(base);
         // depth-first post-order from the output, iteratively
@@ -92,10 +101,10 @@ impl Program {
                 }
                 // push b first so a is evaluated first
                 for &k in kids.iter().rev() {
-                    if let Some(j) = node(k) {
-                        if !seen[j] {
-                            stack.push((j, false));
-                        }
+                    if let Some(j) = node(k)
+                        && !seen[j]
+                    {
+                        stack.push((j, false));
                     }
                 }
             }
@@ -105,10 +114,8 @@ impl Program {
         for (k, &i) in order.iter().enumerate() {
             let (code, a, b) = ops[i];
             for (s, used) in [(a, true), (b, code != OP_NEG && code != OP_MULB)] {
-                if used {
-                    if let Some(j) = node(s) {
-                        last[j] = last[j].max(k);
-                    }
+                if used && let Some(j) = node(s) {
+                    last[j] = last[j].max(k);
                 }
             }
         }
@@ -147,7 +154,12 @@ impl Program {
                 regs - 1
             });
             reg[i] = dst;
-            out_ops.push(Op { code, a: oa, b: ob, dst });
+            out_ops.push(Op {
+                code,
+                a: oa,
+                b: ob,
+                dst,
+            });
             if last[i] != usize::MAX && last[i] > k && last[i] < order.len() {
                 dying[last[i]].push(dst);
             } else if last[i] <= k {
@@ -160,7 +172,13 @@ impl Program {
             None => operand(CONST, output - inputs as u32),
             Some(j) => operand(REG, reg[j]),
         };
-        Self { ops: out_ops, consts, inputs: inputs as u32, regs, output }
+        Self {
+            ops: out_ops,
+            consts,
+            inputs: inputs as u32,
+            regs,
+            output,
+        }
     }
 
     fn read(&self, o: u32, inputs: &[Fp3], regs: &[Fp3]) -> Fp3 {
@@ -198,7 +216,11 @@ mod tests {
     use super::*;
 
     fn e(k: u64) -> Fp3 {
-        Fp3::new(Goldilocks::new(k * 7 + 1), Goldilocks::new(k ^ 3), Goldilocks::new(k * k))
+        Fp3::new(
+            Goldilocks::new(k * 7 + 1),
+            Goldilocks::new(k ^ 3),
+            Goldilocks::new(k * k),
+        )
     }
 
     /// Slot evaluation, unscheduled (the definition).
@@ -232,21 +254,33 @@ mod tests {
         };
         for trial in 0..40 {
             let inputs = 5 + (trial % 7);
-            let consts: Vec<Limbs> = (0..4).map(|k| from_fp3(e(k + trial as u64))).chain([[5, 0, 0]]).collect();
+            let consts: Vec<Limbs> = (0..4)
+                .map(|k| from_fp3(e(k + trial as u64)))
+                .chain([[5, 0, 0]])
+                .collect();
             let base = (inputs + consts.len()) as u32;
             let mut ops = Vec::new();
             for k in 0..200u32 {
                 let avail = base + k;
                 let code = (next() % 5) as u8;
                 let a = (next() % avail as u64) as u32;
-                let b = if code == OP_MULB { (consts.len() - 1) as u32 } else { (next() % avail as u64) as u32 };
+                let b = if code == OP_MULB {
+                    (consts.len() - 1) as u32
+                } else {
+                    (next() % avail as u64) as u32
+                };
                 ops.push((code, a, b));
             }
             let output = base + 199;
             let p = Program::from_slots(&ops, consts.clone(), inputs, output);
-            let ins: Vec<Fp3> = (0..inputs as u64).map(|k| e(k + 100 * trial as u64)).collect();
+            let ins: Vec<Fp3> = (0..inputs as u64)
+                .map(|k| e(k + 100 * trial as u64))
+                .collect();
             let mut regs = Vec::new();
-            assert_eq!(p.eval(&ins, &mut regs), eval_slots(&ops, &consts, &ins, output));
+            assert_eq!(
+                p.eval(&ins, &mut regs),
+                eval_slots(&ops, &consts, &ins, output)
+            );
             assert!(p.regs as usize <= p.ops.len());
         }
     }

@@ -8,7 +8,7 @@
 //! read is bounds-checked (quality passes 6, 7).
 
 use cyber_hemera::{Hash, Side};
-use lens::{Commitment, ColumnQuery, Opening};
+use lens::{ColumnQuery, Commitment, Opening};
 
 use crate::field::CliField;
 
@@ -229,7 +229,11 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
                     };
                     path.push((h, side));
                 }
-                columns.push(ColumnQuery { index, column, path });
+                columns.push(ColumnQuery {
+                    index,
+                    column,
+                    path,
+                });
             }
             Ok(Opening::TensorMerkle {
                 row_combination,

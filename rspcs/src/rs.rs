@@ -47,7 +47,9 @@ pub fn encode_base_with(coeffs: &[Goldilocks], log_n: u32, parallel: bool) -> Ve
         let cosets = crate::backend::current().coset_ntt(&crate::backend::limbs(coeffs), &shifts);
         return interleave_par(blowup * k, blowup, |s, u| Goldilocks::new(cosets[s][u]));
     }
-    let cosets: Vec<Vec<Goldilocks>> = (0..blowup).map(|s| coset_ntt(coeffs, omega.exp(s as u64))).collect();
+    let cosets: Vec<Vec<Goldilocks>> = (0..blowup)
+        .map(|s| coset_ntt(coeffs, omega.exp(s as u64)))
+        .collect();
     interleave(&cosets, k, blowup)
 }
 
@@ -55,7 +57,11 @@ pub fn encode_base_with(coeffs: &[Goldilocks], log_n: u32, parallel: bool) -> Ve
 const PAR_MIN: usize = 1 << 14;
 
 /// `out[u·blowup + s] = at(s, u)`, chunks of `out` in threads.
-fn interleave_par<T: Copy + Default + Send>(n: usize, blowup: usize, at: impl Fn(usize, usize) -> T + Sync) -> Vec<T> {
+fn interleave_par<T: Copy + Default + Send>(
+    n: usize,
+    blowup: usize,
+    at: impl Fn(usize, usize) -> T + Sync,
+) -> Vec<T> {
     let mut out = vec![T::default(); n];
     let t = crate::par::threads();
     let chunk = n.div_ceil(t).next_multiple_of(blowup).max(blowup);
@@ -85,11 +91,21 @@ pub fn encode_ext(coeffs: &[Fp3], log_n: u32) -> Vec<Fp3> {
         let shifts: Vec<u64> = (0..blowup).map(|s| omega.exp(s as u64).as_u64()).collect();
         let be = crate::backend::current();
         let limb = |f: fn(&Fp3) -> u64| coeffs.iter().map(f).collect::<Vec<u64>>();
-        let l: Vec<Vec<Vec<u64>>> = [limb(|x| x.c0.as_u64()), limb(|x| x.c1.as_u64()), limb(|x| x.c2.as_u64())]
-            .iter()
-            .map(|v| be.coset_ntt(v, &shifts))
-            .collect();
-        return interleave_par(n, blowup, |s, u| Fp3::new(Goldilocks::new(l[0][s][u]), Goldilocks::new(l[1][s][u]), Goldilocks::new(l[2][s][u])));
+        let l: Vec<Vec<Vec<u64>>> = [
+            limb(|x| x.c0.as_u64()),
+            limb(|x| x.c1.as_u64()),
+            limb(|x| x.c2.as_u64()),
+        ]
+        .iter()
+        .map(|v| be.coset_ntt(v, &shifts))
+        .collect();
+        return interleave_par(n, blowup, |s, u| {
+            Fp3::new(
+                Goldilocks::new(l[0][s][u]),
+                Goldilocks::new(l[1][s][u]),
+                Goldilocks::new(l[2][s][u]),
+            )
+        });
     }
     let limb = |f: fn(&Fp3) -> Goldilocks| coeffs.iter().map(f).collect::<Vec<_>>();
     let l0 = encode_base(&limb(|x| x.c0), log_n);
@@ -120,12 +136,27 @@ mod tests {
     fn threaded_encodings_equal_the_serial_ones() {
         let k = 1usize << 11;
         let base: Vec<Goldilocks> = (0..k as u64).map(|i| Goldilocks::new(i * i + 3)).collect();
-        let ext: Vec<Fp3> = (0..k as u64).map(|i| Fp3::new(Goldilocks::new(i), Goldilocks::new(i * 7 + 1), Goldilocks::new(i ^ 99))).collect();
+        let ext: Vec<Fp3> = (0..k as u64)
+            .map(|i| {
+                Fp3::new(
+                    Goldilocks::new(i),
+                    Goldilocks::new(i * 7 + 1),
+                    Goldilocks::new(i ^ 99),
+                )
+            })
+            .collect();
         let log_n = 15;
-        assert_eq!(encode_base(&base, log_n), encode_base_with(&base, log_n, false));
-        let limb = |f: fn(&Fp3) -> Goldilocks| encode_base_with(&ext.iter().map(f).collect::<Vec<_>>(), log_n, false);
+        assert_eq!(
+            encode_base(&base, log_n),
+            encode_base_with(&base, log_n, false)
+        );
+        let limb = |f: fn(&Fp3) -> Goldilocks| {
+            encode_base_with(&ext.iter().map(f).collect::<Vec<_>>(), log_n, false)
+        };
         let (a, b, c) = (limb(|x| x.c0), limb(|x| x.c1), limb(|x| x.c2));
-        let want: Vec<Fp3> = (0..1usize << log_n).map(|i| Fp3::new(a[i], b[i], c[i])).collect();
+        let want: Vec<Fp3> = (0..1usize << log_n)
+            .map(|i| Fp3::new(a[i], b[i], c[i]))
+            .collect();
         assert_eq!(encode_ext(&ext, log_n), want);
     }
 }

@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use cyber_lens_rspcs::backend::{
-    Backend, CosetLeaves, Cpu, CpuSession, Inject, LineSession, State, coset_leaves_reference, coset_values_reference,
-    merkle_levels_reference,
+    Backend, CosetLeaves, Cpu, CpuSession, Inject, LineSession, State, coset_leaves_reference,
+    coset_values_reference, merkle_levels_reference,
 };
 use cyber_lens_rspcs::program::{Limbs, Program};
 
@@ -50,7 +50,12 @@ impl LineSession for CheckedSession<'_> {
     }
     fn columns(&mut self) -> Vec<Limbs> {
         let d = self.dev.columns();
-        assert_eq!(d, self.cpu.columns(), "line session columns, round {}", self.round);
+        assert_eq!(
+            d,
+            self.cpu.columns(),
+            "line session columns, round {}",
+            self.round
+        );
         d
     }
 }
@@ -153,8 +158,15 @@ impl Backend for Checked {
     ) -> Option<Vec<[u64; 4]>> {
         let d = self.0.coset_leaves_kept(job, cosets.clone(), values)?;
         if on("leaves") {
-            assert_eq!(d, coset_leaves_reference(job, cosets.clone()), "kept coset leaves {cosets:?}");
-            assert!(values == coset_values_reference(job, cosets.clone()).as_slice(), "kept coset values {cosets:?}");
+            assert_eq!(
+                d,
+                coset_leaves_reference(job, cosets.clone()),
+                "kept coset leaves {cosets:?}"
+            );
+            assert!(
+                values == coset_values_reference(job, cosets.clone()).as_slice(),
+                "kept coset values {cosets:?}"
+            );
         }
         Some(d)
     }
@@ -283,10 +295,19 @@ impl Backend for Spot {
         let (per, k, g) = (job.per(), job.k(), cosets.len());
         let c = (cosets.start * 7 + 3) % g;
         let one = cosets.start + c..cosets.start + c + 1;
-        assert_eq!(&d[c * per..(c + 1) * per], &coset_leaves_reference(job, one.clone())[..], "spot kept leaves: coset {}", one.start);
+        assert_eq!(
+            &d[c * per..(c + 1) * per],
+            &coset_leaves_reference(job, one.clone())[..],
+            "spot kept leaves: coset {}",
+            one.start
+        );
         let want = coset_values_reference(job, one.clone());
         for j in 0..job.limbs.len() {
-            assert!(values[(j * g + c) * k..(j * g + c + 1) * k] == want[j * k..(j + 1) * k], "spot kept values: coset {} limb {j}", one.start);
+            assert!(
+                values[(j * g + c) * k..(j * g + c + 1) * k] == want[j * k..(j + 1) * k],
+                "spot kept values: coset {} limb {j}",
+                one.start
+            );
         }
         Some(d)
     }
@@ -432,9 +453,17 @@ impl Backend for Record {
         cosets: core::ops::Range<usize>,
         values: &mut [u64],
     ) -> Option<Vec<[u64; 4]>> {
-        let i = h64(job.limbs.iter().flat_map(|l| l.iter().copied()).chain([job.log_n as u64, cosets.start as u64, cosets.end as u64]));
+        let i = h64(job.limbs.iter().flat_map(|l| l.iter().copied()).chain([
+            job.log_n as u64,
+            cosets.start as u64,
+            cosets.end as u64,
+        ]));
         let d = self.0.coset_leaves_kept(job, cosets.clone(), values)?;
-        self.log("leaves_kept", i, h64(d.iter().flatten().copied().chain(values.iter().copied())));
+        self.log(
+            "leaves_kept",
+            i,
+            h64(d.iter().flatten().copied().chain(values.iter().copied())),
+        );
         Some(d)
     }
     fn merkle_levels(

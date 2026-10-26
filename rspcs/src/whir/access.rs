@@ -135,6 +135,10 @@ pub fn verify_leaves(
         &opening.siblings,
     )?;
     Ok((0..leaves.len())
-        .map(|q| (0..width).map(|t| opening.symbols.get(q * width + t)).collect())
+        .map(|q| {
+            (0..width)
+                .map(|t| opening.symbols.get(q * width + t))
+                .collect()
+        })
         .collect())
 }

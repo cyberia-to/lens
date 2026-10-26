@@ -27,7 +27,7 @@ use std::process::Command;
 
 /// `metal::PER_THREAD` (a mismatch only disables the embedded library: the
 /// source hash would differ).
-const PER_THREAD: usize = 4;
+const PER_THREAD: usize = 1;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");

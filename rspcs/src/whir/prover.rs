@@ -63,7 +63,15 @@ pub fn commit(params: &WhirParams, evals: &[Goldilocks]) -> (Commitment, WhirDat
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (
+        root,
+        WhirData {
+            config,
+            message,
+            codeword,
+            tree,
+        },
+    )
 }
 
 /// Commit an Fp3-valued table: the code is `RS[K, L, 2^m]` with the same
@@ -86,7 +94,15 @@ pub fn commit_ext(params: &WhirParams, evals: &[Fp3]) -> (Commitment, WhirData) 
         evals: evals.to_vec(),
         coeffs,
     };
-    (root, WhirData { config, message, codeword, tree })
+    (
+        root,
+        WhirData {
+            config,
+            message,
+            codeword,
+            tree,
+        },
+    )
 }
 
 /// Monomial coefficients of the current folded polynomial.
@@ -116,6 +132,20 @@ pub fn open(
     point: &[Fp3],
     t: &mut Transcript,
 ) -> (Fp3, WhirProof) {
+    open_with(params, data, point, t, true)
+}
+
+/// The prover with its round self-check switchable. `self_check: false` exists only for tests
+/// that drive the prover with a forged witness (a codeword and a message of different
+/// polynomials) to check that the verifier rejects the result; every honest path goes through
+/// `open`, which always checks (in debug builds).
+pub(crate) fn open_with(
+    params: &WhirParams,
+    data: &WhirData,
+    point: &[Fp3],
+    t: &mut Transcript,
+    self_check: bool,
+) -> (Fp3, WhirProof) {
     let cfg = &data.config;
     let m = cfg.num_vars;
     assert_eq!(point.len(), m, "point dimension");
@@ -129,7 +159,15 @@ pub fn open(
         Message::Base { evals, .. } => ml_eval_base(evals, point),
         Message::Ext { evals, .. } => ml_eval_ext(evals, point),
     };
-    prologue(t, params, m, &Commitment(data.tree.root()), point, value, ext0);
+    prologue(
+        t,
+        params,
+        m,
+        &Commitment(data.tree.root()),
+        point,
+        value,
+        ext0,
+    );
 
     // commitment-phase OOD on f_0, then combine the weights (Construction 5.5)
     let spec0 = cfg.rounds[0];
@@ -206,15 +244,17 @@ pub fn open(
         }
         for &j in &idx {
             let r = Fp3::from_base(shift_point(&prev_spec, j));
-            debug_assert_eq!(
-                univariate_ext_at_base(&c, shift_point(&prev_spec, j)),
-                super::fold::fold_leaf(
-                    &prev_leaf(prev_cw, &prev_spec, j),
-                    &alphas[alphas.len() - prev_spec.fold..],
-                    prev_spec.log_domain,
-                    j
-                )
-            );
+            if self_check {
+                debug_assert_eq!(
+                    univariate_ext_at_base(&c, shift_point(&prev_spec, j)),
+                    super::fold::fold_leaf(
+                        &prev_leaf(prev_cw, &prev_spec, j),
+                        &alphas[alphas.len() - prev_spec.fold..],
+                        prev_spec.log_domain,
+                        j
+                    )
+                );
+            }
             add_scaled_eq(&mut w, &pow_point(r, spec.num_vars), g);
             g *= gamma;
         }

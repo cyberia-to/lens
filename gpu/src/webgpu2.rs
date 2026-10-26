@@ -488,9 +488,18 @@ pub fn merkle_levels(
         // bounded submissions per level
         for first in (0..n).step_by(NODE_CHUNK) {
             let m = NODE_CHUNK.min(n - first);
-            // two nodes a thread
-            let (x, y, row) = grid(m.div_ceil(2));
-            let u = c.uniform(&[n as u32, a as u32, row, first as u32, t[0], t[1], m as u32, 0]);
+            // one node a thread
+            let (x, y, row) = grid(m);
+            let u = c.uniform(&[
+                n as u32,
+                a as u32,
+                row,
+                first as u32,
+                t[0],
+                t[1],
+                m as u32,
+                0,
+            ]);
             c.pass(
                 &mut enc,
                 &c.ext.level,
@@ -678,7 +687,11 @@ impl LineSession for Session<'_> {
             }
             let raw = c.submit_read(enc, &all, 0, bytes);
             raw.chunks_exact(24)
-                .map(|v| core::array::from_fn(|q| u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))))
+                .map(|v| {
+                    core::array::from_fn(|q| {
+                        u64::from_le_bytes(v[8 * q..8 * q + 8].try_into().expect("8"))
+                    })
+                })
                 .collect()
         })
     }
@@ -760,7 +773,7 @@ pub async fn merkle_levels_async(
     for &a in arities {
         n /= a;
         let dst = c.empty((n * 32) as u64);
-        let (x, y, row) = grid(n.div_ceil(2));
+        let (x, y, row) = grid(n);
         let t = u32s(&[tag]);
         let u = c.uniform(&[n as u32, a as u32, row, 0, t[0], t[1], n as u32, 0]);
         c.pass(
