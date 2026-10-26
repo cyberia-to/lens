@@ -34,3 +34,10 @@ genies = { version = "0.1.0", path = "../strata/genies/rs", package = "strata-ge
 cyber-hemera = { version = "0.4", path = "../hemera/rs" }
 acpu = "0.2"
 criterion = "0.5"
+
+# Tests run optimized with debug assertions and overflow checks kept on (test inherits dev).
+# The soft3 release train runs `cargo test --locked` here under a 900 s per-gate budget;
+# rspcs's WHIR/tensor sweeps exceed it unoptimized. Profiles of a non-root manifest are
+# ignored, so consumers of lens are unaffected.
+[profile.dev]
+opt-level = 3
