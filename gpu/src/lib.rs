@@ -6,7 +6,7 @@
 //! cyber-lens-gpu — GPU prover backends for lens's
 //! [`cyber_lens_rspcs::backend::Backend`]:
 //!
-//! - [`metal::Metal`] (feature `metal`, macOS): MSL kernels over native
+//! - [`metal::Metal`] (feature `metal`, Apple Silicon macOS): MSL kernels over native
 //!   64-bit integers on the Apple GPU through honeycrisp's aruminium,
 //!   shared-storage buffers in unified memory;
 //! - [`webgpu::WebGpu`] (feature `webgpu`): WGSL kernels over 32-bit limbs
@@ -24,16 +24,16 @@
 
 pub mod checked;
 pub mod consts;
-#[cfg(all(feature = "metal", target_os = "macos"))]
+#[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 pub mod metal;
-#[cfg(all(feature = "metal", target_os = "macos"))]
+#[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 mod metal_cache;
-#[cfg(all(target_os = "macos", feature = "metal"))]
+#[cfg(all(target_os = "macos", target_arch = "aarch64", feature = "metal"))]
 mod metal_objc;
 pub mod mine;
-#[cfg(all(feature = "metal", target_os = "macos"))]
+#[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 mod msl;
-#[cfg(all(feature = "metal", target_os = "macos"))]
+#[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 mod msl_tree;
 pub mod profile;
 #[cfg(feature = "webgpu")]
@@ -123,7 +123,7 @@ fn cpu() -> Selected {
 
 /// The Metal backend, or why not.
 pub fn metal() -> Result<Selected, String> {
-    #[cfg(all(feature = "metal", target_os = "macos"))]
+    #[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
     {
         let m = metal::Metal::new()?;
         let device = m.device().to_string();
@@ -132,9 +132,9 @@ pub fn metal() -> Result<Selected, String> {
             device,
         })
     }
-    #[cfg(not(all(feature = "metal", target_os = "macos")))]
+    #[cfg(not(all(feature = "metal", target_os = "macos", target_arch = "aarch64")))]
     {
-        Err("metal: not built (macOS with the `metal` feature)".into())
+        Err("metal: not built (Apple Silicon macOS with the `metal` feature)".into())
     }
 }
 
