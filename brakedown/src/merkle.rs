@@ -48,7 +48,9 @@ impl ColumnTree {
             let prev = levels.last().expect("checked non-empty above");
             let is_root = prev.len() == 2;
             let next: Vec<Hash> = prev
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| hash_node(&pair[0], &pair[1], is_root))
                 .collect();
             levels.push(next);
@@ -67,7 +69,7 @@ impl ColumnTree {
         let mut idx = index;
         for level in &self.levels[..self.levels.len() - 1] {
             let sibling = level[idx ^ 1];
-            let side = if idx % 2 == 0 {
+            let side = if idx.is_multiple_of(2) {
                 Side::Right
             } else {
                 Side::Left

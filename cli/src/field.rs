@@ -112,7 +112,7 @@ impl CliField for Fq {
 
     fn from_le(bytes: &[u8]) -> Self {
         let mut limbs = [0u64; 8];
-        for (i, chunk) in bytes[..64].chunks_exact(8).enumerate() {
+        for (i, chunk) in bytes[..64].as_chunks::<8>().0.iter().enumerate() {
             let mut b = [0u8; 8];
             b.copy_from_slice(chunk);
             limbs[i] = u64::from_le_bytes(b);
@@ -123,8 +123,8 @@ impl CliField for Fq {
     fn parse(s: &str) -> Result<Self, String> {
         let le = hex_number_le(s, 64)?;
         let mut limbs = [0u64; 8];
-        for (i, chunk) in le.chunks_exact(8).enumerate() {
-            limbs[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in le.as_chunks::<8>().0.iter().enumerate() {
+            limbs[i] = u64::from_le_bytes(*chunk);
         }
         // Canonicalize into [0, q); a hand-typed value ≥ q is reduced.
         Ok(Fq::reduce(&limbs))

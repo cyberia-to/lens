@@ -68,21 +68,18 @@ impl Assayer {
         witness: &TropicalWitness,
         certificate: &DualCertificate,
     ) -> MultilinearPoly<Goldilocks> {
-        let mut data = Vec::new();
-
         // Pack the problem graph itself: num_vertices, source, target.
         // Without these, the commitment binds a solution's cost and shape
         // but not which graph it claims to solve — two witnesses over
         // different graphs, same weight sequence, would commit identically.
-        data.push(Goldilocks::new(witness.num_vertices as u64));
-        data.push(Goldilocks::new(witness.source as u64));
-        data.push(Goldilocks::new(witness.target as u64));
-
-        // Pack cost
-        data.push(Goldilocks::new(witness.cost.as_u64()));
-
-        // Pack assignment length + edge indices
-        data.push(Goldilocks::new(witness.assignment.len() as u64));
+        // Then the cost, then the assignment length (edge indices follow).
+        let mut data = vec![
+            Goldilocks::new(witness.num_vertices as u64),
+            Goldilocks::new(witness.source as u64),
+            Goldilocks::new(witness.target as u64),
+            Goldilocks::new(witness.cost.as_u64()),
+            Goldilocks::new(witness.assignment.len() as u64),
+        ];
         for &idx in &witness.assignment {
             data.push(Goldilocks::new(idx as u64));
         }

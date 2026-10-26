@@ -199,7 +199,9 @@ pub fn coeff_ml_eval(coeffs: &[Fp3], point: &[Fp3]) -> Fp3 {
 /// Fold the first variable of a base-field coefficient table:
 /// `c'_i = c_{2i} + α · c_{2i+1}`.
 pub fn fold_coeffs_base(c: &[Goldilocks], alpha: Fp3) -> Vec<Fp3> {
-    c.chunks_exact(2)
+    c.as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| Fp3::from_base(p[0]) + mul_base(alpha, p[1]))
         .collect()
 }

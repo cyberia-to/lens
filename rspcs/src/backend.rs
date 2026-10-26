@@ -417,7 +417,9 @@ impl Backend for Cpu {
     }
 
     fn sponge(&self, init: &State, rate: usize, blocks: usize, lanes: &[u64]) -> Vec<[u64; 4]> {
-        assert!((1..=16).contains(&rate) && blocks >= 1 && lanes.len() % (rate * blocks) == 0);
+        assert!(
+            (1..=16).contains(&rate) && blocks >= 1 && lanes.len().is_multiple_of(rate * blocks)
+        );
         let items = lanes.len() / (rate * blocks);
         let per_item = rate * blocks;
         let run = |first: usize, out: &mut [[u64; 4]]| {

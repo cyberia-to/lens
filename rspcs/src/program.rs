@@ -101,10 +101,10 @@ impl Program {
                 }
                 // push b first so a is evaluated first
                 for &k in kids.iter().rev() {
-                    if let Some(j) = node(k) {
-                        if !seen[j] {
-                            stack.push((j, false));
-                        }
+                    if let Some(j) = node(k)
+                        && !seen[j]
+                    {
+                        stack.push((j, false));
                     }
                 }
             }
@@ -114,10 +114,8 @@ impl Program {
         for (k, &i) in order.iter().enumerate() {
             let (code, a, b) = ops[i];
             for (s, used) in [(a, true), (b, code != OP_NEG && code != OP_MULB)] {
-                if used {
-                    if let Some(j) = node(s) {
-                        last[j] = last[j].max(k);
-                    }
+                if used && let Some(j) = node(s) {
+                    last[j] = last[j].max(k);
                 }
             }
         }
