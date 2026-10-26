@@ -3,7 +3,7 @@
 //! cache directory and a nonce'd (cold) source all give the same bytes as
 //! the CPU backend for permutations, grinding and byte trees.
 
-#![cfg(all(feature = "metal", target_os = "macos"))]
+#![cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 
 use std::path::PathBuf;
 

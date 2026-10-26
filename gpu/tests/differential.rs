@@ -201,7 +201,7 @@ fn grinding_past_the_first_dispatch() {
     }
 }
 
-#[cfg(all(feature = "metal", target_os = "macos"))]
+#[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn metal_states_per_thread_equal_cpu() {
     // several independent states per GPU thread, interleaved round by
@@ -800,7 +800,7 @@ fn mine_on(
     count: u32,
 ) -> Option<u32> {
     match s.backend.name() {
-        #[cfg(all(feature = "metal", target_os = "macos"))]
+        #[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
         "metal" => cyber_lens_gpu::metal::Metal::new()
             .expect("metal")
             .mine(job, base, count)

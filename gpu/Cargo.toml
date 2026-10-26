@@ -21,7 +21,7 @@ nebu.workspace = true
 wgpu = { version = "28", optional = true }
 pollster = { version = "0.4", optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 aruminium = { version = "0.2", path = "../../honeycrisp/aruminium", optional = true }
 
 # a browser is single-threaded: wgpu's handles are Send + Sync there only
@@ -31,7 +31,7 @@ wgpu = { version = "28", optional = true, features = ["fragile-send-sync-non-ato
 
 [features]
 default = []
-# Apple Silicon Metal through honeycrisp's aruminium (macOS only; ignored elsewhere).
+# Apple Silicon Metal through honeycrisp's aruminium (Apple Silicon macOS only, aarch64; ignored elsewhere, including Intel macs).
 metal = ["dep:aruminium"]
 # WebGPU through wgpu (native: Metal/Vulkan/DX12/GL; wasm32: the browser).
 webgpu = ["dep:wgpu", "dep:pollster"]

@@ -121,7 +121,7 @@ fn main() {
         cpu_mine_n,
     );
 
-    #[cfg(all(feature = "metal", target_os = "macos"))]
+    #[cfg(all(feature = "metal", target_os = "macos", target_arch = "aarch64"))]
     for &k in &ks {
         let m = cyber_lens_gpu::metal::Metal::with_states_per_thread(k).expect("metal");
         // agreement on a reachable target first
