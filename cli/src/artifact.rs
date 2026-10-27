@@ -7,8 +7,8 @@
 //! carries many. Hand-rolled so no crate gains a serde requirement. Every
 //! read is bounds-checked (quality passes 6, 7).
 
-use cyber_hemera::Hash;
-use lens::{Commitment, Opening};
+use cyber_hemera::{Hash, Side};
+use lens::{ColumnQuery, Commitment, Opening};
 
 use crate::field::CliField;
 
@@ -22,6 +22,7 @@ pub const TAG_PORPHYRY: u8 = 3;
 
 const OPENING_TENSOR: u8 = 0;
 const OPENING_FOLDING: u8 = 1;
+const OPENING_TENSOR_MERKLE: u8 = 2;
 
 /// A decoded artifact over field `F`: everything `verify` needs but the commitment.
 pub struct Artifact<F: CliField> {
@@ -93,7 +94,7 @@ pub fn decode<F: CliField>(bytes: &[u8]) -> Result<Artifact<F>, String> {
     let batch = r.u8()? != 0;
 
     let n_points = r.u32()?;
-    let mut points = Vec::with_capacity(n_points);
+    let mut points = Vec::with_capacity(n_points.min(r.remaining()));
     for _ in 0..n_points {
         let mut point = Vec::with_capacity(num_vars);
         for _ in 0..num_vars {
@@ -146,6 +147,26 @@ fn encode_opening(out: &mut Vec<u8>, opening: &Opening) -> Result<(), String> {
             }
             put_len_bytes(out, final_value);
         }
+        Opening::TensorMerkle {
+            row_combination,
+            columns,
+        } => {
+            out.push(OPENING_TENSOR_MERKLE);
+            put_len_bytes(out, row_combination);
+            put_u32(out, columns.len());
+            for cq in columns {
+                put_u32(out, cq.index);
+                put_len_bytes(out, &cq.column);
+                put_u32(out, cq.path.len());
+                for (h, side) in &cq.path {
+                    out.extend_from_slice(h.as_bytes());
+                    out.push(match side {
+                        Side::Left => 0,
+                        Side::Right => 1,
+                    });
+                }
+            }
+        }
         Opening::Witness { .. } => {
             return Err("Witness openings are handled by the assayer commands".into());
         }
@@ -159,7 +180,7 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
             let round_commitments = take_commitments(r)?;
             let final_poly = r.len_bytes()?.to_vec();
             let n_q = r.u32()?;
-            let mut query_responses = Vec::with_capacity(n_q);
+            let mut query_responses = Vec::with_capacity(n_q.min(r.remaining()));
             for _ in 0..n_q {
                 let idx = r.u32()?;
                 let val = r.len_bytes()?.to_vec();
@@ -174,10 +195,10 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
         OPENING_FOLDING => {
             let round_commitments = take_commitments(r)?;
             let n_paths = r.u32()?;
-            let mut merkle_paths = Vec::with_capacity(n_paths);
+            let mut merkle_paths = Vec::with_capacity(n_paths.min(r.remaining()));
             for _ in 0..n_paths {
                 let n = r.u32()?;
-                let mut path = Vec::with_capacity(n);
+                let mut path = Vec::with_capacity(n.min(r.remaining()));
                 for _ in 0..n {
                     path.push(take_hash(r)?);
                 }
@@ -188,6 +209,35 @@ fn decode_opening(r: &mut Reader) -> Result<Opening, String> {
                 round_commitments,
                 merkle_paths,
                 final_value,
+            })
+        }
+        OPENING_TENSOR_MERKLE => {
+            let row_combination = r.len_bytes()?.to_vec();
+            let n_cols = r.u32()?;
+            let mut columns = Vec::with_capacity(n_cols.min(r.remaining()));
+            for _ in 0..n_cols {
+                let index = r.u32()?;
+                let column = r.len_bytes()?.to_vec();
+                let n_path = r.u32()?;
+                let mut path = Vec::with_capacity(n_path.min(r.remaining()));
+                for _ in 0..n_path {
+                    let h = take_hash(r)?;
+                    let side = match r.u8()? {
+                        0 => Side::Left,
+                        1 => Side::Right,
+                        other => return Err(format!("unknown merkle side {other}")),
+                    };
+                    path.push((h, side));
+                }
+                columns.push(ColumnQuery {
+                    index,
+                    column,
+                    path,
+                });
+            }
+            Ok(Opening::TensorMerkle {
+                row_combination,
+                columns,
             })
         }
         other => Err(format!("unknown opening variant {other}")),
@@ -203,7 +253,7 @@ fn put_commitments(out: &mut Vec<u8>, cs: &[Commitment]) {
 
 fn take_commitments(r: &mut Reader) -> Result<Vec<Commitment>, String> {
     let n = r.u32()?;
-    let mut cs = Vec::with_capacity(n);
+    let mut cs = Vec::with_capacity(n.min(r.remaining()));
     for _ in 0..n {
         cs.push(Commitment(take_hash(r)?));
     }
@@ -260,5 +310,13 @@ impl<'a> Reader<'a> {
     fn len_bytes(&mut self) -> Result<&'a [u8], String> {
         let n = self.u32()?;
         self.take(n)
+    }
+
+    /// Bytes left to read. A safe upper bound for any single count field's
+    /// preallocation: no element decodes from fewer than one byte, so the
+    /// buffer can never yield more than this many entries regardless of what
+    /// an attacker-supplied count claims.
+    fn remaining(&self) -> usize {
+        self.b.len() - self.pos
     }
 }

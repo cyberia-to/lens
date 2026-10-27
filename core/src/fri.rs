@@ -49,7 +49,10 @@ use nebu::Goldilocks;
 /// ```
 pub fn fri_fold(evals: &[Goldilocks], r: Goldilocks) -> Goldilocks {
     let n = evals.len();
-    assert!(n >= 1 && n.is_power_of_two(), "fri_fold: evals length must be a non-empty power of two");
+    assert!(
+        n >= 1 && n.is_power_of_two(),
+        "fri_fold: evals length must be a non-empty power of two"
+    );
 
     if n == 1 {
         return evals[0];
@@ -63,7 +66,7 @@ pub fn fri_fold(evals: &[Goldilocks], r: Goldilocks) -> Goldilocks {
     while width > 1 {
         let half = width / 2;
         for i in 0..half {
-            let left  = buf[2 * i];
+            let left = buf[2 * i];
             let right = buf[2 * i + 1];
             buf[i] = left + r * (right - left);
         }
@@ -77,7 +80,9 @@ pub fn fri_fold(evals: &[Goldilocks], r: Goldilocks) -> Goldilocks {
 mod tests {
     use super::*;
 
-    fn g(v: u64) -> Goldilocks { Goldilocks::new(v) }
+    fn g(v: u64) -> Goldilocks {
+        Goldilocks::new(v)
+    }
 
     /// Goldilocks prime p = 2^64 - 2^32 + 1.
     const P: u64 = 0xFFFF_FFFF_0000_0001;

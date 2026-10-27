@@ -1,46 +1,182 @@
+# CI for lens.
+#
+# lens depends on sibling crates through path deps (../strata/..., ../hemera/rs, and
+# ../../honeycrisp/aruminium from gpu/),
+# so every job lays out the same stand as the soft3 release train: lens, strata,
+# hemera and honeycrisp checked out side by side; even fmt loads the workspace. The `lockfile` job resolves that stand and
+# uploads the resulting Cargo.lock as an artifact so it can be committed.
 name: CI
 
 on:
   push:
     branches: [master]
   pull_request:
-    branches: [master]
+    branches: [master, 'release/**']
 
 env:
   CARGO_TERM_COLOR: always
+  # hemera's 0.4 line; set to main once hemera#25 (release/0.4 -> main) lands
+  HEMERA_REF: release/0.4
+  # empty = strata's default branch
+  STRATA_REF: ""
+  # empty = honeycrisp's default branch (gpu/ needs ../../honeycrisp/aruminium)
+  HONEYCRISP_REF: ""
 
 jobs:
-  check:
+  lockfile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+        with:
+          workspaces: lens
+      - name: resolve the stand
+        run: cargo metadata --format-version 1 > /dev/null
+        working-directory: lens
+      - name: Cargo.lock changes
+        run: git -C lens diff --stat -- Cargo.lock
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cargo.lock
+          path: lens/Cargo.lock
+      - name: committed Cargo.lock matches the stand
+        run: git -C lens diff --exit-code -- Cargo.lock
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p cyb-nebu -p cyb-kuro -p cyb-jali -p cyb-trop -p cyb-genies -p cyber-lens
+        with:
+          workspaces: lens
+      - name: cargo test
+        run: cargo test --locked
+        working-directory: lens
+
+  heavy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lens
+      - name: cargo test (ignored heavy cases, release)
+        run: cargo test --locked --release -p cyber-lens-rspcs -- --ignored
+        working-directory: lens
 
   clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace -- -D warnings
+        with:
+          workspaces: lens
+      - name: cargo clippy
+        run: cargo clippy --locked --workspace -- -D warnings
+        working-directory: lens
 
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: lens
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/strata
+          path: strata
+          ref: ${{ env.STRATA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/hemera
+          path: hemera
+          ref: ${{ env.HEMERA_REF }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cyberia-to/honeycrisp
+          path: honeycrisp
+          ref: ${{ env.HONEYCRISP_REF }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --check
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lens
+      - name: cargo fmt
+        run: cargo fmt --check
+        working-directory: lens

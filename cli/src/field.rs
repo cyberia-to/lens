@@ -112,7 +112,7 @@ impl CliField for Fq {
 
     fn from_le(bytes: &[u8]) -> Self {
         let mut limbs = [0u64; 8];
-        for (i, chunk) in bytes[..64].chunks_exact(8).enumerate() {
+        for (i, chunk) in bytes[..64].as_chunks::<8>().0.iter().enumerate() {
             let mut b = [0u8; 8];
             b.copy_from_slice(chunk);
             limbs[i] = u64::from_le_bytes(b);
@@ -123,8 +123,8 @@ impl CliField for Fq {
     fn parse(s: &str) -> Result<Self, String> {
         let le = hex_number_le(s, 64)?;
         let mut limbs = [0u64; 8];
-        for (i, chunk) in le.chunks_exact(8).enumerate() {
-            limbs[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        for (i, chunk) in le.as_chunks::<8>().0.iter().enumerate() {
+            limbs[i] = u64::from_le_bytes(*chunk);
         }
         // Canonicalize into [0, q); a hand-typed value ≥ q is reduced.
         Ok(Fq::reduce(&limbs))
@@ -139,6 +139,9 @@ fn hex_number_le(s: &str, width: usize) -> Result<Vec<u8>, String> {
         .strip_prefix("0x")
         .or_else(|| s.strip_prefix("0X"))
         .unwrap_or(s);
+    if !s.is_ascii() {
+        return Err(format!("invalid hex '{s}'"));
+    }
     let s = if s.is_empty() { "0" } else { s };
     let padded = if s.len().is_multiple_of(2) {
         s.to_string()
@@ -157,4 +160,26 @@ fn hex_number_le(s: &str, width: usize) -> Result<Vec<u8>, String> {
     let mut le: Vec<u8> = be.into_iter().rev().collect();
     le.resize(width, 0);
     Ok(le)
+}
+
+#[cfg(test)]
+mod hex_number_le_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_non_ascii_without_panicking() {
+        // a multi-byte UTF-8 char can keep the byte length even (so the
+        // odd-length padding guard does not catch it) while landing a
+        // `&padded[i..i+2]` slice boundary mid-character; hex_number_le
+        // must error, not panic.
+        assert!(hex_number_le("aébcd", 32).is_err());
+        assert!(F2_128::parse("aébcd").is_err());
+        assert!(Fq::parse("aébcd").is_err());
+    }
+
+    #[test]
+    fn accepts_valid_hex_with_and_without_prefix() {
+        assert_eq!(hex_number_le("0x00ff", 4).unwrap(), vec![0xff, 0x00, 0, 0]);
+        assert_eq!(hex_number_le("00ff", 4).unwrap(), vec![0xff, 0x00, 0, 0]);
+    }
 }

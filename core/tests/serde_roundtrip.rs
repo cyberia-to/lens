@@ -58,7 +58,10 @@ fn golden_fixture_is_stable() {
         "folding": folding,
         "witness": witness,
     });
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/opening_golden.json");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/opening_golden.json"
+    );
     if std::env::var_os("LENS_BLESS").is_some() {
         std::fs::write(path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
     }

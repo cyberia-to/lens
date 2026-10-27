@@ -5,7 +5,7 @@
 # ---
 [package]
 name = "cyber-lens"
-version = "0.1.3"
+version = "0.2.0"
 edition.workspace = true
 license-file = "../LICENSE"
 description = "polynomial commitment: five lenses for five algebras"
@@ -22,11 +22,12 @@ path = "lib.rs"
 
 [dependencies]
 cyber-lens-core = { version = "0.1.2", path = "../core" }
-cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
+cyber-lens-brakedown = { version = "0.2.0", path = "../brakedown" }
 cyber-lens-binius = { version = "0.1.1", path = "../binius" }
-cyber-lens-ikat = { version = "0.1.1", path = "../ikat" }
-cyber-lens-assayer = { version = "0.1.1", path = "../assayer" }
-cyber-lens-porphyry = { version = "0.1.1", path = "../porphyry" }
+cyber-lens-ikat = { version = "0.2.0", path = "../ikat" }
+cyber-lens-assayer = { version = "0.2.0", path = "../assayer" }
+cyber-lens-porphyry = { version = "0.2.0", path = "../porphyry" }
+cyber-lens-rspcs = { version = "0.1.0", path = "../rspcs" }
 
 [dev-dependencies]
 nebu.workspace = true
@@ -36,4 +37,4 @@ genies.workspace = true
 cyber-hemera.workspace = true
 
 [features]
-serde = ["cyber-lens-core/serde"]
+serde = ["cyber-lens-core/serde", "cyber-lens-rspcs/serde"]

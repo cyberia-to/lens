@@ -126,29 +126,18 @@ verification is always cheaper than computation (except Viterbi where they match
 
 ## cross-algebra composition
 
-tropical sub-traces fold into the shared F_p accumulator via HyperNova:
-
 ```
 trop computation → witness + certificate
                        ↓
-    commit witness via Brakedown
+    pack as Goldilocks elements, commit (today: Brakedown, legacy)
     encode three checks as F_p CCS constraints
                        ↓
-    HyperNova fold into shared F_p accumulator
-    cost: ~766 F_p constraints per boundary crossing
+    Goldilocks evaluation claims → phase 3 accumulation (intended path)
 ```
 
-universal CCS with selectors:
+phase 3 of the proof-system repair (soft3 `proposals/proof-system-repair.md`, landing in this release) accumulates Reed–Solomon evaluation claims over Goldilocks: each step's claims are batched by a sumcheck into one root plus a fixed number of claims, and the decider is one WHIR opening of the final accumulator (zheng `specs/accumulation.md`, `specs/machine.md`). the earlier fold of every algebra into a shared F_p accumulator through a universal CCS with per-algebra selectors, and its per-fold and per-crossing costs, belonged to the retired design (legacy, unsound) and are withdrawn.
 
-```
-universal_ccs = {
-  sel_Fp:   1 for Goldilocks rows
-  sel_F2:   1 for binary rows
-  sel_ring: 1 for ring-structured rows
-  sel_Fq:   1 for isogeny rows
-  sel_trop: 1 for tropical witness-verify rows
-}
-```
+Assayer already packs the witness and certificate as Goldilocks elements and states its checks as F_p constraints, so the intended path is to commit them through the RS PCS and accumulate their claims like any other step. today's commitment is Brakedown-based (legacy, distance unproven). no cost per crossing is claimed.
 
 ## trop dependency
 

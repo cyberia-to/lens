@@ -1,9 +1,9 @@
 [package]
 name = "cyber-lens-ikat"
-version = "0.1.1"
+version = "0.2.0"
 edition.workspace = true
 license-file = "../LICENSE"
-description = "Ikat polynomial commitment — NTT-batched Brakedown over R_q"
+description = "Ikat polynomial commitment — NTT-batched Brakedown over R_q (legacy: Brakedown code distance unproven)"
 repository.workspace = true
 rust-version.workspace = true
 keywords = ["ikat", "pcs", "fhe", "crypto"]
@@ -11,6 +11,6 @@ categories = ["cryptography"]
 
 [dependencies]
 cyber-lens-core = { version = "0.1.1", path = "../core" }
-cyber-lens-brakedown = { version = "0.1.1", path = "../brakedown" }
+cyber-lens-brakedown = { version = "0.2.0", path = "../brakedown" }
 jali.workspace = true
 nebu.workspace = true

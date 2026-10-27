@@ -1,5 +1,7 @@
 # lens 0.1.0 release plan
 
+> superseded: the pattern-0 item below targets the retired zheng design (Brakedown verifier as a folded CCS instance); the shipped PCS is WHIR / TensorRs in cyber-lens-rspcs, see soft3 proposals/proof-system-repair.
+
 > Standard structure reference: ~/cyber/hemera
 > strata must publish before lens — see strata/.claude/plans/release.md
 
@@ -296,8 +298,10 @@ for `pattern_axis()` because lens does not yet expose a CCS encoding of its veri
 What lens must provide:
 
 1. **`verifier_ccs(params: &BrakedownParams) -> CCSInstance`** in `brakedown/src/verifier_ccs.rs`
-   — returns the Brakedown opening verifier as a CCS instance (~825 constraints across
-   `log(n)` levels). Pure function, no I/O, no randomness.
+   — returns the Brakedown opening verifier as a CCS instance (constraint count of
+   the retired design withdrawn; legacy, distance unproven). Pure function, no I/O,
+   no randomness. Under the proof-system repair this item is dropped: openings are
+   WHIR claims accumulated in zheng (phase 3), not a lens-supplied verifier circuit.
 
 2. **`BrakedownParams`** — stable, serializable struct (`serde` derives, `version: u8`).
    Stored inside zheng `Statement`/`Proof` types — must be stable across lens versions.
@@ -307,8 +311,8 @@ What lens must provide:
 
 Interface contract:
 - lens returns a `CCSInstance` using zheng's own type (via `zheng-types` crate or direct dep)
-- zheng detects pattern-0 rows in `commit()`, calls `verifier_ccs()`, folds via same
-  mechanism as pattern 17 (look)
+- zheng detects pattern-0 rows in `commit()`, calls `verifier_ccs()`, and handled them
+  with the same (legacy, unsound) fold as pattern 17 (look)
 - Inline wiring constraints (C_0a, C_0b) in `patterns.rs` bind trace registers to
   the opening-proof inputs — zheng can implement these immediately without waiting for lens
 

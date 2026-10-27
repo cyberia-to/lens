@@ -11,6 +11,13 @@ opening protocol, composition interface, and crate structure. per-construction
 details live in the individual spec files: [[scalar-field]], [[binary-tower]],
 [[polynomial-ring]], [[tropical-semiring]], [[isogeny-curves]].
 
+the PCS zheng ships is Reed–Solomon over Goldilocks behind the
+`MultilinearPcs` trait (`core/src/pcs.rs`, crate `cyber-lens-rspcs`):
+[[whir]] (bake-off winner) and [[tensor-rs]] (Ligero geometry), hemera
+Merkle trees, challenges and points in Fp3. Brakedown's expander-derived code
+has no proven distance (lens#6); Brakedown and the constructions built on it
+(Ikat, Assayer, Porphyry) are legacy and carry no proven opening soundness.
+
 ## 1. types
 
 all types live in the `cyber-lens-core` crate (depends only on hemera).
@@ -82,7 +89,8 @@ each construction produces structurally different proofs:
 
 ```rust
 enum Opening {
-    /// Brakedown, Ikat, Porphyry: recursive tensor decomposition
+    /// Brakedown, Ikat, Porphyry (legacy): tensor layout, column Merkle
+    /// openings; shipped wire format in [[scalar-field]]
     Tensor {
         round_commitments: Vec<Commitment>,
         final_poly: Vec<u8>,
@@ -197,30 +205,24 @@ N = 2^ν (evaluation table size), λ = 128 (security parameter).
 
 ## 3. opening protocol
 
-### 3.1 tensor decomposition (Brakedown, Ikat, Porphyry)
+### 3.0 Reed–Solomon PCS (WHIR, TensorRs)
 
-```
-OPEN(f, r = (r₁, ..., r_ν)):
-    q₀ = tensor_reduce(f, r)        // √N elements
-    C₁ = commit(q₀)
-    α₁ = transcript.squeeze_field()
+the shipped Goldilocks path. the evaluation table is encoded with an RS code,
+the codeword is committed as a hemera Merkle tree, and an opening at an Fp3
+point is proven by sumcheck-style folding rounds (WHIR) or one tensor row
+combination (TensorRs), each checked at Fiat–Shamir query positions with
+Merkle authentication paths. full protocols: [[whir]], [[tensor-rs]];
+measurements: `audit/rs-whir-pcs-2026-10.md`.
 
-    q₁ = tensor_reduce(q₀, α₁)     // N^{1/4} elements
-    C₂ = commit(q₁)
-    ...
+### 3.1 tensor layout (Brakedown, Ikat, Porphyry — legacy)
 
-    q_d has ≤ λ elements             // d = log log N rounds
-    send q_d directly
-
-    return Opening::Tensor { [C₁, ..., C_d], q_d }
-
-tensor_reduce(g, r):
-    for i in 0..len(g)/2:
-        g'[i] = g[2i] + r · (g[2i+1] - g[2i])
-    return g'
-```
-
-each round squares the compression ratio. prover: O(N). proof: O(log N + λ) elements.
+the evaluation table is laid out as a matrix, each row encoded with the
+expander-derived code, encoded columns committed in a hemera Merkle tree, and
+an opening answers queried columns with their paths plus a weighted row
+equation. the original sketch of this section (recursive tensor reduction with
+unchecked round commitments) was not a binding opening and is withdrawn. the
+code's distance is unproven (lens#6), so no soundness bound is claimed. wire
+format: [[scalar-field]].
 
 ### 3.2 binary folding (Binius)
 
@@ -240,14 +242,11 @@ see [[tropical-semiring]] for per-workload verification details.
 
 ### 3.4 verification
 
-```
-VERIFY(C₀, r, y, proof):
-    reconstruct transcript
-    for round i = 0..d-1:
-        r_i = transcript.squeeze_field()
-        check C_{i+1} consistent with tensor reduction at r_i
-    check q_d evaluates to y at composed point
-```
+the verifier replays the transcript, recomputes every query position, checks
+each queried symbol against the committed Merkle root with its authentication
+path, and checks the round consistency equations of the construction down to
+the claimed value. per-construction rules: [[whir]], [[tensor-rs]],
+[[scalar-field]], [[binary-tower]].
 
 ### 3.5 batch opening
 
@@ -275,7 +274,9 @@ each construction is specified in its own file. summary:
 
 | construction | field | encoding | crate | spec |
 |-------------|-------|----------|-------|------|
-| Brakedown | F_p (nebu) | expander-graph linear code | cyber-lens-brakedown | [[scalar-field]] |
+| WHIR | F_p (nebu), Fp3 points | Reed–Solomon, folding rounds | cyber-lens-rspcs | [[whir]] |
+| TensorRs | F_p (nebu), Fp3 points | Reed–Solomon rows, Ligero geometry | cyber-lens-rspcs | [[tensor-rs]] |
+| Brakedown (legacy) | F_p (nebu) | expander-derived code, distance unproven | cyber-lens-brakedown | [[scalar-field]] |
 | Binius | F₂ tower (kuro) | binary Reed-Solomon, packed rows | cyber-lens-binius | [[binary-tower]] |
 | Ikat | F_p (jali NTT slots) | NTT-batched Brakedown | cyber-lens-ikat | [[polynomial-ring]] |
 | Assayer | F_p (Brakedown delegation) | tropical witness + dual certificate | cyber-lens-assayer | [[tropical-semiring]] |
@@ -283,8 +284,10 @@ each construction is specified in its own file. summary:
 
 ### 4.1 Brakedown
 
-the primary construction. expander-graph linear code over Goldilocks.
-O(N) commit, ~1.3 KiB proof, ~660 field ops to verify. see [[scalar-field]].
+legacy. expander-derived linear code over Goldilocks, tensor layout, column
+Merkle tree. O(N) commit. its distance is unproven (lens#6) and it loses the
+bake-off to WHIR, so no proof-size or verifier figure is claimed for it.
+see [[scalar-field]].
 
 ### 4.2 Binius
 
@@ -342,7 +345,8 @@ isogeny proofs verify in F_p circuits. see [[isogeny-curves]].
 ## 5. composition interface
 
 lens provides commitments per-algebra. [[zheng]] handles composition
-(HyperNova accumulator, CCS selectors, folding).
+(Spartan over CCS, accumulation of evaluation claims, the decider's one
+WHIR opening).
 
 ### 5.1 what lens guarantees
 
@@ -350,7 +354,7 @@ lens provides commitments per-algebra. [[zheng]] handles composition
 - opening protocol uses hemera Fiat-Shamir transcript
 - verification is a pure function: (commitment, point, value, proof) → bool
 
-lens does not know about folding — it produces and verifies individual commitments.
+lens does not know about accumulation — it produces and verifies individual commitments and openings.
 
 ### 5.2 recursion cost per algebra
 
@@ -358,14 +362,15 @@ when zheng verifies a lens opening inside a circuit:
 
 | algebra | hemera in-circuit cost | notes |
 |---------|----------------------|-------|
-| F_p (nebu) | ~736 F_p constraints | native — hemera is Goldilocks Poseidon2 |
+| F_p (nebu) | ~1,440 F_p constraints | native — hemera is Goldilocks Poseidon2 |
 | F₂ (kuro) | ~142K binary constraints | simulating Goldilocks mul in bits |
-| R_q (jali) | ~736 F_p constraints | NTT slots are F_p elements |
-| (min,+) (trop) | ~736 F_p constraints | witness committed via Brakedown/F_p |
+| R_q (jali) | ~1,440 F_p constraints | NTT slots are F_p elements |
+| (min,+) (trop) | ~1,440 F_p constraints | witness committed via Brakedown/F_p |
 | F_q (genies) | prohibitive | simulating Goldilocks in 512-bit field |
 
-the recursion boundary is always Goldilocks. folding protocol is specified
-in [[zheng/specs/recursion]].
+the recursion boundary is always Goldilocks. accumulation is specified in
+zheng `specs/accumulation.md` (landing with phase 3); recursion serves
+composition only.
 
 ## 6. three roles
 
@@ -411,6 +416,8 @@ lens/
 │                   depends on: core, trop, brakedown
 ├── porphyry/       cyber-lens-porphyry     impl Lens<Fq>
 │                   depends on: core, genies
+├── rspcs/          cyber-lens-rspcs        impl MultilinearPcs (WHIR, TensorRs)
+│                   depends on: core, nebu, hemera
 └── src/            cyber-lens              facade re-exports all
                     depends on: all above
 ```
@@ -438,11 +445,15 @@ they depend on a specific construction crate only when instantiating it.
 |-----------|-------|---------|
 | λ | 128 | bits of security |
 | hash | hemera (Poseidon2 over Goldilocks) | collision resistance |
-| expander degree d | 20-30 | encoding density for 128-bit security |
-| expansion factor c | 2-4 | codeword blowup |
+| RS rate ρ (WHIR) | 1/16 lens default; 1/64 in zheng's shipped profile | codeword blowup |
+| folding factor k (WHIR) | 4 | variables folded per round |
+| grinding (WHIR) | 16 bits lens default; 24 in zheng's shipped profile | proof-of-work per challenge |
+| Brakedown code (legacy) | — | distance unproven (lens#6); no parameter gives a proven bound |
 | Fiat-Shamir | hemera sponge | non-interactive proof derivation |
 
-all security reduces to hemera collision resistance.
+security of the RS path: hemera collision resistance (Merkle binding,
+Fiat–Shamir in the random-oracle model) plus proven RS proximity bounds,
+computed per proof by `MultilinearPcs::security_bits`.
 
 ## 10. implementation status
 
@@ -453,10 +464,12 @@ all security reduces to hemera collision resistance.
 | jali (R_q arithmetic) | strata-jali | implemented, 70 tests |
 | trop (tropical arithmetic) | strata-trop | implemented, 87 tests |
 | genies (F_q arithmetic) | strata-genies | implemented, 74 tests |
-| Lens trait + types | cyber-lens-core | specified, not implemented |
-| Brakedown | cyber-lens-brakedown | specified, not implemented |
-| Binius | cyber-lens-binius | specified, not implemented |
-| Ikat | cyber-lens-ikat | specified, not implemented |
-| Assayer | cyber-lens-assayer | specified, not implemented |
-| Porphyry | cyber-lens-porphyry | specified, not implemented |
-| Transcript | cyber-lens-core | specified, not implemented |
+| Lens trait + types | cyber-lens-core | implemented |
+| MultilinearPcs trait | cyber-lens-core | implemented |
+| WHIR, TensorRs | cyber-lens-rspcs | implemented, see `audit/rs-whir-pcs-2026-10.md` |
+| Brakedown | cyber-lens-brakedown | implemented, legacy (distance unproven) |
+| Binius | cyber-lens-binius | implemented |
+| Ikat | cyber-lens-ikat | implemented, legacy (Brakedown-based) |
+| Assayer | cyber-lens-assayer | implemented, legacy (Brakedown-based) |
+| Porphyry | cyber-lens-porphyry | implemented, legacy (Brakedown-based) |
+| Transcript | cyber-lens-core | implemented |

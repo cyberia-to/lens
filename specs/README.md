@@ -19,6 +19,19 @@ trait Lens<F: Field> {
 
 three operations. commit is O(N). open produces a proof. verify checks the proof. all transparent (no trusted setup), all post-quantum. see [[trait]] for the full specification.
 
+## multilinear PCS over Goldilocks (Reed–Solomon)
+
+```
+trait MultilinearPcs {                       // core/src/pcs.rs
+    commit(params, evals: &[Goldilocks]) -> (Commitment, ProverData)
+    open(params, data, point: &[Fp3], transcript) -> (Fp3, Proof)
+    verify(params, commitment, num_vars, point, value, proof, transcript) -> Result<(), PcsError>
+    security_bits(params, num_vars) -> f64   // proven, no conjectures
+}
+```
+
+the contract zheng consumes: Goldilocks tables, Fp3 points and challenges, hemera Merkle trees, security parameters as data in a checked proof header. two implementations in `cyber-lens-rspcs`: [[tensor-rs]] (Ligero geometry, RS rows) and [[whir]] (WHIR, eprint 2024/1586). measurements: `audit/rs-whir-pcs-2026-10.md`. the provers' bulk kernels (hemera permutations, grinding, coset NTT) run on a [[backend]] — CPU, Metal or WebGPU, the same bytes on each.
+
 ## naming convention
 
 every algebra has five names at different layers:
@@ -37,11 +50,11 @@ lens files are named `domain-algebra.md` (full name). construction names are ins
 
 | domain | algebra | full name | construction | impl | spec |
 |--------|---------|-----------|-------------|------|------|
-| scalar | field | scalar field | Brakedown (expander-graph codes over F_p) | [[nebu]] | [[scalar-field]] |
+| scalar | field | scalar field | Brakedown (expander-derived code over F_p; legacy, distance unproven — the shipped Goldilocks PCS is [[whir]]) | [[nebu]] | [[scalar-field]] |
 | binary | tower | binary tower | Binius (binary Reed-Solomon over F₂) | [[kuro]] | [[binary-tower]] |
 | polynomial | ring | polynomial ring | Ikat (NTT-batched, structure IS the pattern) | [[jali]] | [[polynomial-ring]] |
 | tropical | semiring | tropical semiring | Assayer (witness-verify via dual certificate) | [[trop]] | [[tropical-semiring]] |
-| isogeny | curves | isogeny curves | Porphyry (expander codes over deep field F_q) | [[genies]] | [[isogeny-curves]] |
+| isogeny | curves | isogeny curves | Porphyry (expander-derived code over deep field F_q; legacy) | [[genies]] | [[isogeny-curves]] |
 
 ## three roles
 

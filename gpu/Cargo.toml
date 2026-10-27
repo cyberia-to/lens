@@ -1,0 +1,56 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "cyber-lens-gpu"
+version = "0.1.1"
+edition.workspace = true
+license-file = "../LICENSE"
+description = "GPU prover backends for lens: Metal (honeycrisp aruminium, Apple Silicon unified memory) and WebGPU (wgpu: browsers, Vulkan, Android, other GPUs) — byte-identical to the CPU backend"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["gpu", "metal", "webgpu", "goldilocks", "prover"]
+categories = ["cryptography"]
+
+[dependencies]
+cyber-lens-rspcs = { version = "0.1.0", path = "../rspcs" }
+cyber-hemera.workspace = true
+nebu.workspace = true
+wgpu = { version = "28", optional = true }
+pollster = { version = "0.4", optional = true }
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+aruminium = { version = "0.2", path = "../../honeycrisp/aruminium", optional = true }
+
+# a browser is single-threaded: wgpu's handles are Send + Sync there only
+# with this feature (the backend trait needs both)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "28", optional = true, features = ["fragile-send-sync-non-atomic-wasm"] }
+
+[features]
+default = []
+# Apple Silicon Metal through honeycrisp's aruminium (Apple Silicon macOS only, aarch64; ignored elsewhere, including Intel macs).
+metal = ["dep:aruminium"]
+# WebGPU through wgpu (native: Metal/Vulkan/DX12/GL; wasm32: the browser).
+webgpu = ["dep:wgpu", "dep:pollster"]
+
+[[example]]
+name = "gpu_bench"
+
+[[example]]
+name = "hemera_bench"
+required-features = ["metal", "webgpu"]
+
+[[example]]
+name = "metal_cold"
+required-features = ["metal"]
+
+# build.rs regenerates the MSL to embed an offline-compiled metallib when
+# `xcrun metal` exists on the build machine
+[build-dependencies]
+cyber-hemera.workspace = true
+
+[dev-dependencies]
+pollster = "0.4"

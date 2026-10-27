@@ -1,0 +1,28 @@
+# ---
+# tags: lens, config
+# crystal-type: source
+# crystal-domain: comp
+# ---
+[package]
+name = "cyber-lens-rspcs"
+version = "0.1.0"
+edition.workspace = true
+license-file = "../LICENSE"
+description = "Reed–Solomon multilinear PCS over Goldilocks: TensorRs (Ligero geometry) and WHIR, hemera Merkle trees, Fp3 challenges"
+repository.workspace = true
+rust-version.workspace = true
+keywords = ["whir", "ligero", "pcs", "reed-solomon", "zk"]
+categories = ["cryptography"]
+
+[dependencies]
+cyber-lens-core = { version = "0.1.2", path = "../core" }
+nebu.workspace = true
+cyber-hemera.workspace = true
+serde = { version = "1", optional = true }
+
+[dev-dependencies]
+postcard = { version = "1", features = ["alloc"] }
+
+[features]
+# Proof: Serialize + Deserialize, carried as the canonical wire bytes.
+serde = ["dep:serde", "cyber-lens-core/serde"]

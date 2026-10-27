@@ -60,10 +60,12 @@ impl Porphyry {
 
     fn deserialize(bytes: &[u8]) -> Vec<Fq> {
         bytes
-            .chunks_exact(64)
+            .as_chunks::<64>()
+            .0
+            .iter()
             .map(|chunk| {
                 let mut limbs = [0u64; 8];
-                for (i, word) in chunk.chunks_exact(8).enumerate() {
+                for (i, word) in chunk.as_chunks::<8>().0.iter().enumerate() {
                     let mut buf = [0u8; 8];
                     buf.copy_from_slice(word);
                     limbs[i] = u64::from_le_bytes(buf);
@@ -150,15 +152,12 @@ impl Lens<Fq> for Porphyry {
         points: &[(Vec<Fq>, Fq)],
         transcript: &mut Transcript,
     ) -> Opening {
-        if points.len() <= 1 {
-            let (pt, _) = &points[0];
-            return Self::open(poly, pt, transcript);
-        }
-
-        let r_star: Vec<Fq> = (0..poly.num_vars)
-            .map(|_| transcript.squeeze_field())
-            .collect();
-        Self::open(poly, &r_star, transcript)
+        assert_eq!(
+            points.len(),
+            1,
+            "Porphyry supports only single-point batches"
+        );
+        Self::open(poly, &points[0].0, transcript)
     }
 
     fn batch_verify(
@@ -167,24 +166,7 @@ impl Lens<Fq> for Porphyry {
         proof: &Opening,
         transcript: &mut Transcript,
     ) -> bool {
-        if points.len() <= 1 {
-            let (pt, val) = &points[0];
-            return Self::verify(commitment, pt, *val, proof, transcript);
-        }
-
-        let num_vars = points[0].0.len();
-        let r_star: Vec<Fq> = (0..num_vars).map(|_| transcript.squeeze_field()).collect();
-
-        let final_elements = Self::deserialize(if let Opening::Tensor { final_poly, .. } = proof {
-            final_poly
-        } else {
-            return false;
-        });
-        if final_elements.len() != 1 {
-            return false;
-        }
-
-        Self::verify(commitment, &r_star, final_elements[0], proof, transcript)
+        points.len() == 1 && Self::verify(commitment, &points[0].0, points[0].1, proof, transcript)
     }
 }
 
@@ -291,31 +273,38 @@ mod tests {
     }
 
     #[test]
-    fn batch_roundtrip() {
-        let poly = MultilinearPoly::new(vec![
-            Fq::from_u64(5),
-            Fq::from_u64(10),
-            Fq::from_u64(15),
-            Fq::from_u64(20),
-        ]);
+    fn unsupported_batches_fail_closed_instead_of_accepting_unchecked_claims() {
+        let poly = MultilinearPoly::new(vec![Fq::from_u64(5), Fq::from_u64(10)]);
         let commitment = Porphyry::commit(&poly);
-
-        let points: Vec<(Vec<Fq>, Fq)> = vec![
-            (
-                vec![Fq::ZERO, Fq::ZERO],
-                poly.evaluate(&[Fq::ZERO, Fq::ZERO]),
-            ),
-            (vec![Fq::ONE, Fq::ZERO], poly.evaluate(&[Fq::ONE, Fq::ZERO])),
-        ];
-
-        let mut pt = Transcript::new(b"batch");
-        let proof = Porphyry::batch_open(&poly, &points, &mut pt);
-        let mut vt = Transcript::new(b"batch");
+        let one = vec![(vec![Fq::ZERO], Fq::from_u64(5))];
+        let proof = Porphyry::batch_open(&poly, &one, &mut Transcript::new(b"batch"));
         assert!(Porphyry::batch_verify(
             &commitment,
-            &points,
+            &one,
             &proof,
-            &mut vt
+            &mut Transcript::new(b"batch")
         ));
+        for points in [
+            Vec::new(),
+            vec![
+                (vec![Fq::ZERO], Fq::from_u64(999)),
+                (vec![Fq::ONE], Fq::from_u64(888)),
+            ],
+        ] {
+            assert!(!Porphyry::batch_verify(
+                &commitment,
+                &points,
+                &proof,
+                &mut Transcript::new(b"batch")
+            ));
+            assert!(
+                std::panic::catch_unwind(|| Porphyry::batch_open(
+                    &poly,
+                    &points,
+                    &mut Transcript::new(b"batch")
+                ))
+                .is_err()
+            );
+        }
     }
 }
